@@ -1,0 +1,93 @@
+# Local configuration and credentials (keep shareable examples)
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+*.keystore
+*.jks
+
+# JavaScript dependencies, caches and generated output
+node_modules/
+.npm/
+.cache/
+.parcel-cache/
+.turbo/
+.vite/
+dist/
+build/
+web-build/
+*.tsbuildinfo
+
+# Expo prebuild output (the custom recorder sources remain tracked)
+.expo/
+expo-env.d.ts
+/apps/mobile/ios/
+/apps/mobile/android/
+*.jsbundle
+
+# Native build tools and local machine settings
+Pods/
+DerivedData/
+.gradle/
+.kotlin/
+.cxx/
+.externalNativeBuild/
+local.properties
+.xcode.env.local
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.ipa
+*.apk
+*.aab
+*.dSYM/
+*.xcresult/
+
+# Python environments, caches and packaging
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+.eggs/
+
+# Tests, logs and local verification reports
+coverage/
+.coverage
+.coverage.*
+htmlcov/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+/artifacts/
+*.log
+
+# Local databases and their journal files
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# OS and editor files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+.idea/
+*.swp
+*.swo
+*~

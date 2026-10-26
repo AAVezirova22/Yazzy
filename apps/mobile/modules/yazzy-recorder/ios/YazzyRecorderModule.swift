@@ -124,7 +124,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   func locationManager(_ manager:CLLocationManager,didUpdateLocations locations:[CLLocation]){
     guard recording,let fix=locations.last else{return};let age=max(0,Date().timeIntervalSince(fix.timestamp))
     let value:[String:Any]=["latitude":fix.coordinate.latitude,"longitude":fix.coordinate.longitude,"accuracy":max(0,fix.horizontalAccuracy),"fixAge":age,"validFix":fix.horizontalAccuracy>=0 && age<=10,"provider":"PHONE"]
-    do{try store.enqueue(signal:"GPS",value:value,unit:"deg")}catch{error="Queue full; GPS capture stopped";stop()}
+      do{try store.enqueue(signal:"GPS",value:value,unit:"deg")}catch{self.error="Queue full; GPS capture stopped";stop()}
   }
   func locationManager(_ manager:CLLocationManager,didFailWithError error:Error){self.error="GPS unavailable; OBD capture continues"}
   func sync(){
@@ -138,6 +138,6 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
         if err==nil,(response as? HTTPURLResponse)?.statusCode==202,accepted==true{do{try self.store.acknowledge(id);self.syncFailures=0;self.nextSync=Date();self.sync()}catch{self.error="Acknowledgement persistence failed; batch retained"}}
         else{self.syncFailures+=1;self.nextSync=Date().addingTimeInterval(min(300,pow(2,Double(min(self.syncFailures,8)))));self.error="Upload pending; observations retained locally"}
       }}.resume()
-    }catch{error="Could not read durable upload queue"}
+    }catch{self.error="Could not read durable upload queue"}
   }
 }
