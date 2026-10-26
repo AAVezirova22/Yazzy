@@ -1,0 +1,11 @@
+{
+ "schemaVersion": 1,
+ "includedData": "Only seed-generated fictional vehicle telemetry",
+ "datasets": [
+  {"id":"yazzy-synthetic-v1","source":"simulator/scenarios.py","license":"Project-generated synthetic fixtures","origin":"SIMULATED","permittedUse":"isolated engineering tests; no real-world accuracy claim","labelProvenance":"GENERATOR_RULES","downloaded":false},
+  {"id":"VED","source":"https://github.com/gsoh/VED","license":"Verify exact acquired version against source plan","origin":"REAL_RESEARCH","downloaded":false,"enabled":false},
+  {"id":"KIT","source":"https://publikationen.bibliothek.kit.edu/1000085073","license":"Verify acquisition and attribution terms","origin":"REAL_RESEARCH","downloaded":false,"enabled":false},
+  {"id":"carOBD","source":"https://github.com/eron93br/carOBD","license":"Redistribution permission unresolved","origin":"REAL_RESEARCH","downloaded":false,"enabled":false},
+  {"id":"SCANIA_COMPONENT_X","source":"https://researchdata.se/en/catalogue/dataset/2024-34/3","license":"Verify exact acquired version","origin":"TRUCK_RESEARCH","downloaded":false,"enabled":false}
+ ]
+}

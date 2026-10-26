@@ -1,0 +1,2 @@
+const {withAndroidManifest}=require('expo/config-plugins');
+module.exports=function withRecorder(config){return withAndroidManifest(config,c=>{const app=c.modResults.manifest.application[0];app.service=app.service||[];if(!app.service.some(s=>s.$['android:name']==='expo.modules.yazzyrecorder.RecordingService'))app.service.push({$:{'android:name':'expo.modules.yazzyrecorder.RecordingService','android:exported':'false','android:foregroundServiceType':'connectedDevice|location','android:stopWithTask':'false'}});return c;});};

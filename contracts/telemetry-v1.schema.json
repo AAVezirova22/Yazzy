@@ -1,0 +1,256 @@
+{
+  "$defs": {
+    "Position": {
+      "additionalProperties": false,
+      "properties": {
+        "accuracy": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Accuracy",
+          "type": "number"
+        },
+        "fixAge": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Fixage",
+          "type": "number"
+        },
+        "latitude": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Longitude",
+          "type": "number"
+        },
+        "provider": {
+          "enum": [
+            "PHONE",
+            "SIMULATOR",
+            "REPLAY"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "validFix": {
+          "default": true,
+          "title": "Validfix",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude",
+        "accuracy",
+        "provider"
+      ],
+      "title": "Position",
+      "type": "object"
+    },
+    "SignalSample": {
+      "additionalProperties": false,
+      "properties": {
+        "monotonicMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Monotonicms"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "title": "Observedat",
+          "type": "string"
+        },
+        "quality": {
+          "default": "VALID",
+          "enum": [
+            "VALID",
+            "UNAVAILABLE",
+            "UNSUPPORTED",
+            "INVALID",
+            "ESTIMATED"
+          ],
+          "title": "Quality",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "signal": {
+          "title": "Signal",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "sequence",
+        "observedAt",
+        "signal",
+        "value",
+        "unit"
+      ],
+      "title": "SignalSample",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assignmentId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Assignmentid",
+      "type": "string"
+    },
+    "batchId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Batchid",
+      "type": "string"
+    },
+    "decoderVersion": {
+      "default": "elm-v1",
+      "maxLength": 40,
+      "title": "Decoderversion",
+      "type": "string"
+    },
+    "deviceId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Deviceid",
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "IOS",
+        "ANDROID",
+        "SIMULATOR"
+      ],
+      "title": "Platform",
+      "type": "string"
+    },
+    "samples": {
+      "items": {
+        "$ref": "#/$defs/SignalSample"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Samples",
+      "type": "array"
+    },
+    "scenarioSeed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenarioseed"
+    },
+    "scenarioVersion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenarioversion"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "sequenceStart": {
+      "minimum": 0,
+      "title": "Sequencestart",
+      "type": "integer"
+    },
+    "sessionId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Sessionid",
+      "type": "string"
+    },
+    "simulationRunId": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Simulationrunid"
+    },
+    "source": {
+      "enum": [
+        "MOBILE_OBD",
+        "SIMULATED_FLEET"
+      ],
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batchId",
+    "deviceId",
+    "assignmentId",
+    "sessionId",
+    "sequenceStart",
+    "source",
+    "platform",
+    "samples"
+  ],
+  "title": "TelemetryBatch",
+  "type": "object"
+}

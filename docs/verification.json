@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-26",
+  "implementationVersion": "0.1.0",
+  "python": "3.12.14",
+  "backendTests": 70,
+  "browserTests": 5,
+  "localLauncherBothHosts": "PASS",
+  "localOriginRegressionReproducedBeforeFix": true,
+  "nonDevelopmentOriginPolicy": "EXACT_MATCH",
+  "revisionScope": "Local login origin fix; see EVALUATION.md for rerun versus retained evidence",
+  "backendLint": "PASS",
+  "backendTypes": "PASS",
+  "webAndMobileTypes": "PASS",
+  "webProductionBuild": "PASS",
+  "iosAndAndroidHermesBundles": "PASS",
+  "androidPrebuildAndAutolinking": "PASS",
+  "postgresRlsAndMigrationEngine": "PGlite",
+  "postgresRlsAndMigrationChecks": "PASS",
+  "mlReproduction": "EXACT_MATCH",
+  "nativeApplicationCompilation": "NOT_RUN",
+  "physicalHardwareValidation": "NOT_RUN",
+  "dockerDeployment": "NOT_RUN",
+  "dependencyAudit": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 5,
+    "critical": 0,
+    "total": 5
+  },
+  "releaseStatus": "PROTOTYPE_NOT_QUALIFIED"
+}

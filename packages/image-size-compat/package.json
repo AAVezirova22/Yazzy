@@ -1,0 +1,9 @@
+{
+  "name": "image-size",
+  "version": "1.2.2",
+  "private": true,
+  "main": "index.cjs",
+  "dependencies": {
+    "image-size-upstream": "npm:image-size@2.0.4"
+  }
+}
