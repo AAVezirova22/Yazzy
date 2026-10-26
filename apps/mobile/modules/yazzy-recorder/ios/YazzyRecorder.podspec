@@ -1,0 +1,19 @@
+require 'json'
+package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
+Pod::Spec.new do |s|
+  s.name = 'YazzyRecorder'
+  s.version = package['version']
+  s.summary = 'Native-owned read-only vehicle recorder'
+  s.description = s.summary
+  s.author = 'Yazzy'
+  s.homepage = 'https://example.invalid/yazzy'
+  s.license = { :type => 'UNLICENSED' }
+  s.platforms = { :ios => '15.1' }
+  s.source = { :git => '' }
+  s.static_framework = true
+  s.dependency 'ExpoModulesCore'
+  s.swift_version = '5.9'
+  s.source_files = '**/*.{h,m,mm,swift}'
+  s.frameworks = 'CoreBluetooth', 'CoreLocation', 'Security'
+  s.libraries = 'sqlite3'
+end

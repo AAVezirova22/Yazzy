@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "origin": "SIMULATED",
+  "seed": 42,
+  "featureVersion": "trip-context-v1",
+  "dataSha256": "bcfd251a52ea8835b51ec90ca23ce89828f9e701f157b867447412538f09d549",
+  "splits": {
+    "train": 700,
+    "validation": 60,
+    "test": 60,
+    "vehicleDisjoint": true,
+    "timeOrdered": true
+  },
+  "fuel": {
+    "ridgeTestMAE_L": 0.015430002175339448,
+    "constantTestMAE_L": 0.72291904808262,
+    "knownSyntheticRuleMAE_L": 0.015064874958085275
+  },
+  "tripState": {
+    "modelBalancedAccuracy": 1.0,
+    "generatorRuleAccuracy": 1.0
+  },
+  "promotion": "REJECTED_RESEARCH_ONLY",
+  "realVehicleValidation": false,
+  "failureForecastAvailable": false,
+  "limitations": [
+    "Labels follow generator rules; perfect rule performance is expected.",
+    "No independent repair outcomes or held-out real vehicles.",
+    "This report tests the pipeline, not automotive diagnostic accuracy."
+  ]
+}

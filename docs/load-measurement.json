@@ -1,0 +1,18 @@
+{
+  "storage": "SQLite WAL",
+  "devices": 20,
+  "batches": 100,
+  "samplesPerBatch": 48,
+  "concurrency": 20,
+  "errors": 0,
+  "batchesPerSecond": 72.44584244217242,
+  "latencyMs": {
+    "p50": 87.49501099998724,
+    "p95": 800.4758229999425,
+    "p99": 1264.7050699999909
+  },
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "reportedCpuCount": 9,
+  "productionCapacityClaim": false,
+  "summaryP95Ms": 38.647050000008676
+}

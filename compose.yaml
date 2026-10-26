@@ -1,0 +1,92 @@
+name: yazzy
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: yazzy
+      POSTGRES_USER: yazzy_admin
+      POSTGRES_PASSWORD: ${PG_BOOTSTRAP_PASSWORD:?Run python scripts/configure.py}
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?Run python scripts/configure.py}
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./infrastructure/init-runtime.sh:/docker-entrypoint-initdb.d/10-runtime.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U yazzy_admin -d yazzy"]
+      interval: 3s
+      retries: 20
+    networks: [private]
+  redis:
+    image: redis:7.4.6-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes: [broker:/data]
+    networks: [private]
+  migrate:
+    build:
+      context: .
+      dockerfile: infrastructure/backend.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://yazzy_admin:${PG_BOOTSTRAP_PASSWORD}@db:5432/yazzy
+    command: [python, scripts/migrate.py]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [private]
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/backend.Dockerfile
+    env_file: .env
+    environment: &runtime
+      DATABASE_URL: postgresql+psycopg://yazzy_app:${PG_APP_PASSWORD}@db:5432/yazzy
+      REDIS_URL: redis://redis:6379/0
+    command: [uvicorn, yazzy.api.main:app, --host, 0.0.0.0, --port, '8000']
+    ports: ['127.0.0.1:8000:8000']
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [private]
+  dispatcher:
+    build:
+      context: .
+      dockerfile: infrastructure/backend.Dockerfile
+    env_file: .env
+    environment: *runtime
+    command: [python, -m, yazzy.workers.runner]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+    networks: [private]
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/backend.Dockerfile
+    env_file: .env
+    environment: *runtime
+    command: [celery, -A, yazzy.workers.runner:celery, worker, --loglevel=INFO, --concurrency=2]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+    networks: [private]
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/web.Dockerfile
+    ports: ['127.0.0.1:8080:80']
+    depends_on: [api]
+    networks: [private]
+  simulator:
+    profiles: [demo]
+    build:
+      context: .
+      dockerfile: infrastructure/backend.Dockerfile
+    env_file: .env
+    command: [python, -m, simulator.runner, --url, 'http://api:8000', --scenario, CITY, --reset, --live]
+    volumes: [simulator:/state]
+    working_dir: /state
+    depends_on: [api]
+    networks: [private]
+volumes:
+  database:
+  broker:
+  simulator:
+networks:
+  private:
