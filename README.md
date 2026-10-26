@@ -16,6 +16,7 @@ uv sync --project backend --frozen
 python scripts/local.py
 ```
 
+##Start on iphone
 After setting everything up for iphone:
 For normal development uses:
 ```sh
