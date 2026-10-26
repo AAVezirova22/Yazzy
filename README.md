@@ -16,29 +16,6 @@ uv sync --project backend --frozen
 python scripts/local.py
 ```
 
-## Start on iphone
-After setting everything up for iphone:
-For normal development uses:
-```sh
-npx expo start --dev-client
-```
-And if you need to rebuild or reinstall the native app
-```sh
-npx expo run:ios --device
-```
-1. To keep Tailscale running in the background:
-```sh
-tailscale serve --bg 8000
-```
-2. Start the backend from the project root:
-```sh
-python scripts/local.py
-```
-3. Start the mobile development server in another terminal, also starting from the project root:
-```sh
-cd apps/mobile
-npx expo start --dev-client
-```
 
 Open **http://127.0.0.1:5173** or **http://localhost:5173**. Both addresses are accepted by the local development server. Choose **Explore the demo fleet** or **Start my garage**. On the fleet page, create a scenario and generate accelerated history. The local worker processes the same durable job ledger used by Celery. No external AI key is required.
 
@@ -62,6 +39,30 @@ docker compose --profile demo up simulator
 ```
 
 Compose definitions are included; the full Docker deployment was not run in the delivery environment. Docker image/native CI jobs must pass in your environment before a release.
+
+## Start on iphone
+After setting everything up for iphone:
+For normal development uses:
+```sh
+npx expo start --dev-client
+```
+And if you need to rebuild or reinstall the native app
+```sh
+npx expo run:ios --device
+```
+1. To keep Tailscale running in the background:
+```sh
+tailscale serve --bg 8000
+```
+2. Start the backend from the project root:
+```sh
+python scripts/local.py
+```
+3. Start the mobile development server in another terminal, also starting from the project root:
+```sh
+cd apps/mobile
+npx expo start --dev-client
+```
 
 ## Verify
 
