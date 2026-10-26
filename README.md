@@ -87,6 +87,4 @@ The recorder discovers the actual BLE service and characteristics. It does not a
 
 The default advisor is labelled deterministic evidence logic. It does not make a live LLM call. ML benchmarks are synthetic research only; no trained model is promoted and no failure probability, date, exact part fitment or price is invented.
 
-Source, contracts, migrations, locks and CI are included. Secrets, personal telemetry, databases, screenshots, dependency caches and native generated projects are excluded. The delivered repository has local Git history; no remote GitHub repository was supplied or pushed.
-
-The download package includes `Yazzy.bundle` containing the verified local commit. To restore source with history, run `git clone Yazzy.bundle Yazzy-checkout` from the extracted package directory.
+Source, contracts, migrations, locks and CI are included. Secrets, personal telemetry, databases, screenshots, dependency caches and native generated projects are excluded.
