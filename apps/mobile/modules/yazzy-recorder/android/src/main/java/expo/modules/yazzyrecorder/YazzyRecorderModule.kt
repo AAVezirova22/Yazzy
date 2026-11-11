@@ -61,6 +61,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private val adapter get()=manager.adapter
  private val location=context.getSystemService(LocationManager::class.java)
  private val seen=mutableMapOf<String,ScanResult>()
+ private val names=mutableMapOf<String,String>()
  private var gatt:BluetoothGatt?=null
  private var discovered=listOf<Map<String,Any>>()
  private var writing:BluetoothGattCharacteristic?=null
@@ -81,10 +82,12 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  @Volatile private var syncing=false
  private var syncFailures=0
  private var nextSync=0L
- private val scanCallback=object:ScanCallback(){override fun onScanResult(type:Int,result:ScanResult){synchronized(seen){seen[result.device.address]=result}}}
- fun scan(){check(!recording);check(adapter?.isEnabled==true){"Enable Bluetooth"};synchronized(seen){seen.clear()};adapter.bluetoothLeScanner.startScan(scanCallback)}
+ private val scanCallback=object:ScanCallback(){override fun onScanResult(type:Int,result:ScanResult){synchronized(seen){seen[result.device.address]=result;
+  // The advertised name needs no BLUETOOTH_CONNECT permission and often arrives only in the scan response, so remember it.
+  val advertised=result.scanRecord?.deviceName?.trim();if(!advertised.isNullOrEmpty())names[result.device.address]=advertised}}}
+ fun scan(){check(!recording);check(adapter?.isEnabled==true){"Enable Bluetooth"};synchronized(seen){seen.clear();names.clear()};adapter.bluetoothLeScanner.startScan(scanCallback)}
  fun stopScan(){adapter?.bluetoothLeScanner?.stopScan(scanCallback)}
- fun devices():List<Map<String,Any>> = synchronized(seen){seen.values.map{mapOf("id" to it.device.address,"name" to (it.device.name?:"Unnamed adapter"),"rssi" to it.rssi)}}
+ fun devices():List<Map<String,Any>> = synchronized(seen){seen.values.map{mapOf("id" to it.device.address,"name" to (names[it.device.address]?:runCatching{it.device.name}.getOrNull()?.trim()?:""),"rssi" to it.rssi)}}
  fun inspect(id:String){check(!recording);gatt?.close();discovered=emptyList();gatt=adapter.getRemoteDevice(id).connectGatt(context,false,this,BluetoothDevice.TRANSPORT_LE)}
  fun characteristics()=discovered
  fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"queued" to store.count(),"error" to error,"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0))

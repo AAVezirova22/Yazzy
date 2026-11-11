@@ -32,6 +32,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   private let store=RecorderStore()
   private var found=[UUID:CBPeripheral]()
   private var rssi=[UUID:Int]()
+  private var names=[UUID:String]()
   private var peripheral:CBPeripheral?
   private var writeCharacteristic:CBCharacteristic?
   private var inspectDone: (([[String:Any]])->Void)?
@@ -58,8 +59,10 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   func snapshot()->[String:Any]{["recording":recording,"connected":connected,"queued":store.count,"error":error as Any? ?? NSNull(),"signals":signals,"qualification":"PENDING_DEVICE_TEST","tripState":trip.snapshot(now:Date().timeIntervalSince1970)]}
   func discover(_ done:@escaping ([[String:Any]])->Void){
     guard !recording,central.state == .poweredOn else{error="Stop recording and enable Bluetooth before scanning";done([]);return}
-    found.removeAll();rssi.removeAll();central.scanForPeripherals(withServices:nil)
-    DispatchQueue.main.asyncAfter(deadline:.now()+5){self.central.stopScan();done(self.found.map{["id":$0.key.uuidString,"name":$0.value.name ?? "Unnamed adapter","rssi":self.rssi[$0.key] ?? 0]})}
+    found.removeAll();rssi.removeAll();names.removeAll()
+    // Duplicates are allowed so the scan-response packet (which usually carries the local name) is not dropped.
+    central.scanForPeripherals(withServices:nil,options:[CBCentralManagerScanOptionAllowDuplicatesKey:true])
+    DispatchQueue.main.asyncAfter(deadline:.now()+5){self.central.stopScan();done(self.found.map{["id":$0.key.uuidString,"name":self.names[$0.key] ?? $0.value.name ?? "","rssi":self.rssi[$0.key] ?? 0]})}
   }
   func inspect(_ id:String,_ done:@escaping ([[String:Any]])->Void){
     guard !recording,let uuid=UUID(uuidString:id),let p=found[uuid] else{done([]);return}
@@ -79,7 +82,14 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     if let p=peripheral{central.cancelPeripheralConnection(p)};trip.stop(time:Date().timeIntervalSince1970);trip.save();sync();try? store.newSession()
   }
   func centralManagerDidUpdateState(_ central:CBCentralManager){if central.state != .poweredOn{connected=false;error="Bluetooth unavailable"}}
-  func centralManager(_ central:CBCentralManager,didDiscover peripheral:CBPeripheral,advertisementData:[String:Any],rssi RSSI:NSNumber){found[peripheral.identifier]=peripheral;rssi[peripheral.identifier]=RSSI.intValue}
+  func centralManager(_ central:CBCentralManager,didDiscover peripheral:CBPeripheral,advertisementData:[String:Any],rssi RSSI:NSNumber){
+    let id=peripheral.identifier
+    found[id]=peripheral
+    if RSSI.intValue != 127 {rssi[id]=RSSI.intValue}
+    // peripheral.name is frequently nil/stale while scanning; the advertised local name is authoritative.
+    let advertised=(advertisementData[CBAdvertisementDataLocalNameKey] as? String)?.trimmingCharacters(in:.whitespacesAndNewlines)
+    if let n=advertised,!n.isEmpty{names[id]=n}else if names[id]==nil,let n=peripheral.name?.trimmingCharacters(in:.whitespacesAndNewlines),!n.isEmpty{names[id]=n}
+  }
   func centralManager(_ central:CBCentralManager,willRestoreState dict:[String:Any]){if let p=(dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first{peripheral=p;p.delegate=self;error="Bluetooth state restored; verify recording continuity"}}
   func centralManager(_ central:CBCentralManager,didConnect peripheral:CBPeripheral){peripheral.discoverServices(nil)}
   func centralManager(_ central:CBCentralManager,didFailToConnect peripheral:CBPeripheral,error:Error?){connected=false;self.error="Connection failed"}
