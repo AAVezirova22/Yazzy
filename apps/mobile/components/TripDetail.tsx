@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
-import {Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {Alert,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {exportTripPdf,REPORT_SIGNALS,type SeriesPoint} from './tripPdf';
 import Constants from 'expo-constants';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MapView,{Marker,Polyline,type LatLng} from 'react-native-maps';
@@ -9,7 +10,7 @@ const nativeMaps=Platform.OS!=='android'||Constants.expoConfig?.extra?.googleMap
 type Point={observedAt:number;value:number};
 type Series={points:Point[]};
 type DrivingEvent={type:'HARD_ACCELERATION'|'HARD_BRAKING';time:number;peakMetresPerSecond2:number;fromKmh:number;toKmh:number;durationSeconds:number;latitude:number|null;longitude:number|null};
-type Props={trip:any;vehicleId:string;call:(path:string)=>Promise<any>};
+type Props={trip:any;vehicleId:string;vehicleName?:string;call:(path:string)=>Promise<any>};
 
 const minutes=(seconds:number)=>seconds>=3600?`${Math.floor(seconds/3600)} h ${Math.round(seconds%3600/60)} min`:seconds>=60?`${Math.round(seconds/60)} min`:`${Math.round(seconds)} s`;
 const clock=(t:number)=>new Date(t*1000).toLocaleTimeString();
@@ -49,11 +50,11 @@ function RouteSketch({route,events,style}:{route:LatLng[];events:DrivingEvent[];
  </View>;
 }
 
-function TripMap({route,events,style}:{route:LatLng[];events:DrivingEvent[];style:any}){
- const map=useRef<MapView>(null);
+function TripMap({route,events,style,onMap}:{route:LatLng[];events:DrivingEvent[];style:any;onMap?:(m:MapView|null)=>void}){
+ const map=useRef<MapView|null>(null);
  if(!nativeMaps)return <RouteSketch route={route} events={events} style={style}/>;
  const fit=()=>{if(route.length)map.current?.fitToCoordinates(route,{edgePadding:{top:60,right:60,bottom:60,left:60},animated:false});};
- return <MapView ref={map} style={style} onMapReady={fit} onLayout={fit} initialRegion={{latitude:route[0].latitude,longitude:route[0].longitude,latitudeDelta:0.003,longitudeDelta:0.003}}>
+ return <MapView ref={r=>{map.current=r;onMap?.(r);}} style={style} onMapReady={fit} onLayout={fit} initialRegion={{latitude:route[0].latitude,longitude:route[0].longitude,latitudeDelta:0.003,longitudeDelta:0.003}}>
   {route.length>1&&<Polyline coordinates={route} strokeColor="#216f5c" strokeWidth={5}/>}
   <Marker coordinate={route[0]} title="Start" description="Where the trip began" pinColor="green"/>
   {route.length>1&&<Marker coordinate={route[route.length-1]} title="Last position" pinColor="blue"/>}
@@ -61,10 +62,10 @@ function TripMap({route,events,style}:{route:LatLng[];events:DrivingEvent[];styl
  </MapView>;
 }
 
-export function TripDetail({trip,vehicleId,call}:Props){
+export function TripDetail({trip,vehicleId,vehicleName,call}:Props){
  const m=trip.metrics,from=trip.startAt,to=trip.endAt??trip.startAt;
  const [speed,setSpeed]=useState<Series|null>(null),[rpm,setRpm]=useState<Series|null>(null),[failed,setFailed]=useState('');
- const [expanded,setExpanded]=useState(false),insets=useSafeAreaInsets();
+ const [expanded,setExpanded]=useState(false),[exporting,setExporting]=useState(false),insets=useSafeAreaInsets(),inlineMap=useRef<MapView|null>(null);
  const route:LatLng[]=(m.route||[]).map((p:any)=>({latitude:p.latitude,longitude:p.longitude}));
  useEffect(()=>{
   let active=true;
@@ -74,10 +75,21 @@ export function TripDetail({trip,vehicleId,call}:Props){
  },[trip.id]);
  const speeds=(speed?.points||[]).map(p=>p.value),topSpeed=speeds.length?Math.max(...speeds):null;
  const events:DrivingEvent[]=m.drivingEvents||[],braking=events.filter(e=>e.type==='HARD_BRAKING').length,accelerating=events.length-braking;
+ async function exportPdf(){
+  setExporting(true);
+  try{
+   // Fetch every signal the car reported during the trip, so the report is complete and not limited to what the screen shows.
+   const entries=await Promise.all(REPORT_SIGNALS.map(async([id])=>{try{const r=await call(`/vehicles/${vehicleId}/telemetry?signal=${id}&from=${from-1}&to=${to+1}&resolution=300`);return [id,(r.points||[]) as SeriesPoint[]] as const;}catch{return [id,[] as SeriesPoint[]] as const;}}));
+   let mapImageBase64:string|null=null;
+   try{if(nativeMaps&&inlineMap.current)mapImageBase64=await inlineMap.current.takeSnapshot({format:'png',quality:1,result:'base64'});}catch{/* the report falls back to a drawn route */}
+   await exportTripPdf({trip,vehicleName,series:Object.fromEntries(entries),mapImageBase64});
+  }catch(e){Alert.alert('Export failed',(e as Error).message);}
+  finally{setExporting(false);}
+ }
  return <View style={s.wrap}>
   {route.length?<>
    <View>
-    <TripMap route={route} events={events} style={s.map}/>
+    <TripMap route={route} events={events} style={s.map} onMap={r=>{inlineMap.current=r;}}/>
     <Pressable accessibilityRole="button" accessibilityLabel="Expand map" style={s.expand} onPress={()=>setExpanded(true)}><Text style={s.expandText}>⤢</Text></Pressable>
    </View>
    <Text style={s.legend}><Text style={{color:'#2e9d4f'}}>●</Text> start  <Text style={{color:'#2d6cdf'}}>●</Text> last position  <Text style={{color:'#d93025'}}>●</Text> hard braking ({braking})  <Text style={{color:'#f08a00'}}>●</Text> hard acceleration ({accelerating})</Text>
@@ -103,6 +115,7 @@ export function TripDetail({trip,vehicleId,call}:Props){
    <Text style={s.label}>Speed</Text>{speed?<Bars points={speed.points} from={from} to={to} unit="km/h" color="#216f5c"/>:<Text style={s.muted}>Loading…</Text>}
    <Text style={s.label}>Engine speed</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit="rpm" color="#c47a1c"/>:<Text style={s.muted}>Loading…</Text>}
   </>}
+  <Pressable accessibilityRole="button" accessibilityState={{disabled:exporting}} disabled={exporting} style={[s.export,exporting&&{opacity:0.5}]} onPress={exportPdf}><Text style={s.exportText}>{exporting?'Preparing PDF…':'Export trip as PDF'}</Text></Pressable>
   <Text style={s.muted}>Started {new Date(from*1000).toLocaleString()}{m.endReason?` · ended: ${String(m.endReason).replaceAll('_',' ').toLowerCase()}`:''}</Text>
  </View>;
 }
@@ -124,6 +137,8 @@ const s=StyleSheet.create({
  fullLegend:{position:'absolute',left:16,right:16,backgroundColor:'rgba(255,255,255,0.92)',borderRadius:12,padding:10},
  dot:{position:'absolute',width:14,height:14,borderRadius:7,borderWidth:2,borderColor:'white'},
  sketchNote:{position:'absolute',left:8,bottom:6,fontSize:10,color:'#527369'},
+ export:{backgroundColor:'#286c52',borderRadius:8,padding:13,alignItems:'center'},
+ exportText:{color:'white',fontWeight:'600',fontSize:13},
  muted:{color:'#527369',fontSize:12},
  error:{color:'#b3261e'},
  bars:{flexDirection:'row',alignItems:'flex-end',height:72,gap:2},
