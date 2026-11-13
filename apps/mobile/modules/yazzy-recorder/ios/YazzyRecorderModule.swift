@@ -52,12 +52,15 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   private var supported=Set<String>()
   private var pollIndex=0
   private var failures=0
+  private var lastObdAt=Date.distantPast
+  private var startWhenReady=false
+  private let armedKey="yazzy.armed"
   private var syncing=false
   private var syncFailures=0
   private var nextSync=Date.distantPast
   override init(){super.init();central=CBCentralManager(delegate:self,queue:.main,options:[CBCentralManagerOptionRestoreIdentifierKey:"yazzy.obd.central"]);location.delegate=self;location.desiredAccuracy=kCLLocationAccuracyBest;location.distanceFilter=5;location.activityType = .automotiveNavigation}
   var hasPendingCapture:Bool { recording || store.count>0 }
-  func snapshot()->[String:Any]{["recording":recording,"connected":connected,"queued":store.count,"error":error as Any? ?? NSNull(),"signals":signals,"qualification":"PENDING_DEVICE_TEST","tripState":trip.snapshot(now:Date().timeIntervalSince1970)]}
+  func snapshot()->[String:Any]{["recording":recording,"connected":connected,"configured":RecorderSecret.read() != nil,"waitingForAdapter":recording && !connected,"queued":store.count,"error":error as Any? ?? NSNull(),"signals":signals,"qualification":"PENDING_DEVICE_TEST","tripState":trip.snapshot(now:Date().timeIntervalSince1970)]}
   func discover(_ done:@escaping ([[String:Any]])->Void){
     guard !recording,central.state == .poweredOn else{error="Stop recording and enable Bluetooth before scanning";done([]);return}
     found.removeAll();rssi.removeAll();names.removeAll()
@@ -82,19 +85,39 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     else if discovered.isEmpty{completion([],"The adapter exposed no characteristics")}
     else{completion(discovered,nil)}
   }
+  /// Arms the recorder: it connects to the saved adapter now, or whenever the adapter next powers on, until stopped.
   func start() throws {
-    guard !recording,let c=RecorderSecret.read(),let id=c["peripheralId"],let uuid=UUID(uuidString:id),let p=central.retrievePeripherals(withIdentifiers:[uuid]).first else{throw NSError(domain:"SelectDiscoveredAdapter",code:1)}
+    guard !recording else{return}
+    switch central.state {
+    case .poweredOn:break
+    case .unknown,.resetting:startWhenReady=true;return
+    default:throw NSError(domain:"BluetoothUnavailable",code:1)
+    }
+    guard let c=RecorderSecret.read(),let id=c["peripheralId"],let uuid=UUID(uuidString:id),let p=central.retrievePeripherals(withIdentifiers:[uuid]).first else{throw NSError(domain:"SelectDiscoveredAdapter",code:1)}
     for key in ["apiUrl","deviceId","assignmentId","deviceToken","serviceUuid","writeUuid","notifyUuid"] {guard let value=c[key],!value.isEmpty else{throw NSError(domain:"MissingConfiguration",code:1)}}
+    startWhenReady=false;UserDefaults.standard.set(true,forKey:armedKey)
     recording=true;error=nil;peripheral=p;p.delegate=self;central.connect(p)
-    location.requestAlwaysAuthorization();location.allowsBackgroundLocationUpdates=true;location.pausesLocationUpdatesAutomatically=false;location.startUpdatingLocation()
+    location.requestAlwaysAuthorization();location.allowsBackgroundLocationUpdates=true;location.pausesLocationUpdatesAutomatically=false;setLocation(active:false);location.startUpdatingLocation()
     timer?.invalidate();timer=Timer.scheduledTimer(withTimeInterval:0.5,repeats:true){[weak self]_ in self?.tick()}
   }
+  /// While waiting for the adapter the phone only needs coarse, rarely-updated location to stay alive in the background; full accuracy starts once the adapter answers.
+  private func setLocation(active:Bool){
+    location.desiredAccuracy=active ? kCLLocationAccuracyBest:kCLLocationAccuracyThreeKilometers
+    location.distanceFilter=active ? 5:1000
+  }
+  private func resumeIfArmed(){if UserDefaults.standard.bool(forKey:armedKey) && !recording{try? start()}}
   func stop(){
     if recording{try? store.enqueue(signal:"USER_STOP",value:1,unit:"bool")}
+    UserDefaults.standard.set(false,forKey:armedKey);startWhenReady=false
     recording=false;connected=false;timer?.invalidate();location.stopUpdatingLocation()
     if let p=peripheral{central.cancelPeripheralConnection(p)};trip.stop(time:Date().timeIntervalSince1970);trip.save();sync();try? store.newSession()
   }
-  func centralManagerDidUpdateState(_ central:CBCentralManager){if central.state != .poweredOn{connected=false;error="Bluetooth unavailable"}}
+  func centralManagerDidUpdateState(_ central:CBCentralManager){
+    if central.state != .poweredOn{connected=false;error="Bluetooth unavailable";return}
+    if recording{if let p=peripheral{error=nil;central.connect(p)}}  // Bluetooth came back while armed
+    else if startWhenReady{try? start()}
+    else{resumeIfArmed()}                                          // relaunched while armed: re-arm without the UI
+  }
   func centralManager(_ central:CBCentralManager,didDiscover peripheral:CBPeripheral,advertisementData:[String:Any],rssi RSSI:NSNumber){
     let id=peripheral.identifier
     found[id]=peripheral
@@ -105,8 +128,8 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   }
   func centralManager(_ central:CBCentralManager,willRestoreState dict:[String:Any]){if let p=(dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first{peripheral=p;p.delegate=self;error="Bluetooth state restored; verify recording continuity"}}
   func centralManager(_ central:CBCentralManager,didConnect peripheral:CBPeripheral){peripheral.discoverServices(nil)}
-  func centralManager(_ central:CBCentralManager,didFailToConnect peripheral:CBPeripheral,error:Error?){connected=false;self.error="Connection failed";finishInspect("Could not connect to the adapter"+(error.map{": "+$0.localizedDescription} ?? ""),cancel:peripheral)}
-  func centralManager(_ central:CBCentralManager,didDisconnectPeripheral peripheral:CBPeripheral,error:Error?){finishInspect("The adapter disconnected during inspection");connected=false;inFlight=nil;self.error="Connection lost; measurements unavailable";if recording{DispatchQueue.main.asyncAfter(deadline:.now()+5){if self.recording{central.connect(peripheral)}}}}
+  func centralManager(_ central:CBCentralManager,didFailToConnect peripheral:CBPeripheral,error:Error?){connected=false;self.error="Connection failed";if recording{DispatchQueue.main.asyncAfter(deadline:.now()+5){if self.recording{central.connect(peripheral)}}};finishInspect("Could not connect to the adapter"+(error.map{": "+$0.localizedDescription} ?? ""),cancel:peripheral)}
+  func centralManager(_ central:CBCentralManager,didDisconnectPeripheral peripheral:CBPeripheral,error:Error?){finishInspect("The adapter disconnected during inspection");connected=false;inFlight=nil;setLocation(active:false);self.error="Connection lost; measurements unavailable";if recording{DispatchQueue.main.asyncAfter(deadline:.now()+5){if self.recording{central.connect(peripheral)}}}}
   func peripheral(_ peripheral:CBPeripheral,didDiscoverServices error:Error?){guard error==nil else{self.error="Service discovery failed";finishInspect("Service discovery failed: "+(error?.localizedDescription ?? ""),cancel:peripheral);return};pendingServices=peripheral.services?.count ?? 0;if pendingServices==0{finishInspect("The adapter exposed no services",cancel:peripheral);return};for service in peripheral.services ?? []{peripheral.discoverCharacteristics(nil,for:service)}}
   func peripheral(_ peripheral:CBPeripheral,didDiscoverCharacteristicsFor service:CBService,error:Error?){
     let c=RecorderSecret.read()
@@ -124,7 +147,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   }
   func peripheral(_ peripheral:CBPeripheral,didUpdateNotificationStateFor characteristic:CBCharacteristic,error:Error?){
     if error != nil || !characteristic.isNotifying{self.error="Adapter does not accept the selected notification characteristic";return}
-    connected=true;setup=ElmDecoder.setup;supported=[];inFlight=nil;buffer="";failures=0
+    connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
   }
   private func tick(){guard recording else{return};sync();pump()}
   /// Sends the next command only when none is in flight. Called by the 0.5 s watchdog timer and immediately after each reply, so polling is limited by the adapter instead of a fixed delay.
@@ -151,13 +174,14 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     guard error==nil,let bytes=characteristic.value,let command=inFlight else{return}
     buffer+=String(data:bytes,encoding:.ascii) ?? ""
     guard buffer.count<=8192 else{buffer="";inFlight=nil;self.error="Malformed adapter response";return}
-    guard buffer.contains(">") else{return};let frame=buffer.components(separatedBy:">")[0];buffer="";inFlight=nil;failures=0
+    guard buffer.contains(">") else{return};lastObdAt=Date();let frame=buffer.components(separatedBy:">")[0];buffer="";inFlight=nil;failures=0
     if ["0100","0120","0140"].contains(command){supported.formUnion(ElmDecoder.supported(frame,command:command))}
     for (signal,value,unit) in ElmDecoder.decode(frame,command:command){signals[signal]=value;if signal=="VEHICLE_SPEED"{trip.observe(time:Date().timeIntervalSince1970,speed:value,ignition:nil);trip.save()};do{try store.enqueue(signal:signal,value:value,unit:unit)}catch{self.error="Durable queue unavailable or full; recording stopped";stop();return}}
     DispatchQueue.main.asyncAfter(deadline:.now()+0.02){self.pump()}
   }
   func locationManager(_ manager:CLLocationManager,didUpdateLocations locations:[CLLocation]){
-    guard recording,let fix=locations.last else{return};let age=max(0,Date().timeIntervalSince(fix.timestamp))
+    // Only keep positions while the adapter is answering, so waiting for the car never records the phone wandering around.
+    guard recording,connected || Date().timeIntervalSince(lastObdAt)<=20,let fix=locations.last else{return};let age=max(0,Date().timeIntervalSince(fix.timestamp))
     let value:[String:Any]=["latitude":fix.coordinate.latitude,"longitude":fix.coordinate.longitude,"accuracy":max(0,fix.horizontalAccuracy),"fixAge":age,"validFix":fix.horizontalAccuracy>=0 && age<=10,"provider":"PHONE"]
       do{try store.enqueue(signal:"GPS",value:value,unit:"deg")}catch{self.error="Queue full; GPS capture stopped";stop()}
   }

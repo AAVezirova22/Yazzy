@@ -1,1 +1,1 @@
-{"platforms":["apple","android"],"apple":{"modules":["YazzyRecorderModule"]},"android":{"modules":["expo.modules.yazzyrecorder.YazzyRecorderModule"]}}
+{"platforms": ["apple", "android"], "apple": {"modules": ["YazzyRecorderModule"], "appDelegateSubscribers": ["YazzyRecorderAppDelegate"]}, "android": {"modules": ["expo.modules.yazzyrecorder.YazzyRecorderModule"]}}
