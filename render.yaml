@@ -8,10 +8,7 @@ services:
     plan: free
     dockerfilePath: ./infrastructure/backend.Dockerfile
     dockerContext: .
-    dockerCommand: >-
-      sh -c "python scripts/migrate.py &&
-      exec uvicorn yazzy.api.main:app --host 0.0.0.0 --port $PORT
-      --proxy-headers --forwarded-allow-ips='*'"
+    dockerCommand: sh scripts/render-start.sh
     healthCheckPath: /ping
     envVars:
       - key: YAZZY_ENV
