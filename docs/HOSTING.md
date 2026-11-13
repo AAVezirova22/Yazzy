@@ -4,7 +4,7 @@ Runs without your laptop. All three have free tiers; check their current limits 
 
 | Piece | Where | Why |
 |---|---|---|
-| Web app (static React) | **Vercel** | Serverless/static only. `vercel.json` proxies `/api/*` to Render so cookies stay same-origin. |
+| Web app (static React) | **Vercel** | Serverless/static only. `apps/web/vercel.json` proxies `/api/*` to Render so cookies stay same-origin. |
 | API + job worker | **Render** free web service | Long-running Python process. The worker runs inside the API (`YAZZY_EMBEDDED_WORKER=true`). |
 | Database | **Neon** free Postgres | Render's free disk is wiped on redeploy and its free Postgres expires after 30 days. |
 
@@ -27,8 +27,11 @@ Because the demo login is then reachable from the internet, the API **refuses to
 3. Deploy. Note the service URL (default `https://yazzy-api.onrender.com`).
 
 ## 3. Vercel (web)
-1. If your Render URL differs from `https://yazzy-api.onrender.com`, edit the two destinations in `vercel.json`.
-2. **Add New → Project**, import the repo, leave the root as the repository root. `vercel.json` supplies install/build/output settings.
+1. If your Render URL differs from `https://yazzy-api.onrender.com`, edit the two destinations in `apps/web/vercel.json`.
+2. **Add New → Project**, import the repo. Vercel lists the apps it found: choose **Import single project** on **`web`** (root directory `apps/web`).
+   Do not import `backend` or `ml`, and do not group them with *Services*: the API runs on Render.
+   `apps/web/vercel.json` supplies the install (from the repo root, for the npm workspaces), build and output settings.
+   Leave "Include source files outside of the Root Directory" enabled.
 3. Deploy, then make sure Render's `WEB_ORIGIN` equals the final Vercel URL exactly (login checks the `Origin` header).
    Preview deployments and custom domains have different origins; set `WEB_ORIGIN` to the one you actually use.
 

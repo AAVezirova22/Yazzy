@@ -1,5 +1,5 @@
 # Render Blueprint: the Yazzy API (with the job worker embedded) on the free plan.
-# The database lives on Neon (free Postgres); the web app lives on Vercel (see vercel.json).
+# The database lives on Neon (free Postgres); the web app lives on Vercel (see apps/web/vercel.json).
 # Free web services sleep after ~15 minutes without traffic and wake on the next request.
 services:
   - type: web
