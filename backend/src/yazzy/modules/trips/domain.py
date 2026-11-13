@@ -7,6 +7,10 @@ from typing import Any
 CALCULATION_VERSION = "trip-fuel-v1"
 MAX_GAP = 15.0
 END_CONFIRMATION = 180.0
+HARD_ACCELERATION = 2.5  # m/s^2, averaged over at least one second
+HARD_BRAKING = -3.0  # m/s^2
+EVENT_WINDOW = (1.0, 3.0)  # seconds between the two speed readings an acceleration is measured over
+EVENT_POSITION_TOLERANCE = 15.0  # seconds to the nearest GPS fix before a position is withheld
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,53 @@ def good_fix(value):
     )
 
 
+def driving_events(speeds, route):
+    """Hard acceleration and braking from OBD speed. Positions are the nearest GPS fix in time."""
+    low, high = EVENT_WINDOW
+    rates = []
+    for i, (t, v) in enumerate(speeds):
+        j = next((k for k in range(i + 1, len(speeds)) if speeds[k][0] - t >= low), None)
+        if j is None or speeds[j][0] - t > high:
+            continue
+        rates.append((i, j, (speeds[j][1] - v) / 3.6 / (speeds[j][0] - t)))
+    events: list[dict[str, Any]] = []
+    run: list[tuple[int, int, float]] = []
+
+    def close():
+        if not run:
+            return
+        kind = "HARD_ACCELERATION" if run[0][2] > 0 else "HARD_BRAKING"
+        i, _, peak = max(run, key=lambda r: abs(r[2]))
+        first, last = run[0][0], run[-1][1]
+        fix = min(route, key=lambda p: abs(p["time"] - speeds[i][0]), default=None)
+        position = None
+        if fix is not None and abs(fix["time"] - speeds[i][0]) <= EVENT_POSITION_TOLERANCE:
+            position = fix
+        events.append(
+            {
+                "type": kind,
+                "time": speeds[i][0],
+                "peakMetresPerSecond2": round(peak, 2),
+                "fromKmh": speeds[first][1],
+                "toKmh": speeds[last][1],
+                "durationSeconds": speeds[last][0] - speeds[first][0],
+                "latitude": position["latitude"] if position else None,
+                "longitude": position["longitude"] if position else None,
+            }
+        )
+        run.clear()
+
+    for entry in rates:
+        sign = (entry[2] >= HARD_ACCELERATION) - (entry[2] <= HARD_BRAKING)
+        previous = (run[-1][2] > 0) - (run[-1][2] < 0) if run else 0
+        if sign == 0 or (run and (sign != previous or entry[0] != run[-1][0] + 1)):
+            close()
+        if sign:
+            run.append(entry)
+    close()
+    return events
+
+
 def metrics(observations, start, end, capabilities=None):
     capabilities = capabilities or {}
     duration = max(0, end - start)
@@ -82,6 +133,7 @@ def metrics(observations, start, end, capabilities=None):
                     gps_distance += d
     if distance is None and gps_time:
         distance, dist_time, method = gps_distance, gps_time, "FILTERED_GPS"
+    events = driving_events([(t, v) for t, v in speeds if start <= t <= end], route)
     fuel, fuel_time = integrate(rates, start, end)
     fuel_method = "ECU_RATE" if fuel is not None else "UNAVAILABLE"
     counters = [(t, v) for t, v in series(observations, "FUEL_COUNTER") if start <= t <= end]
@@ -148,6 +200,7 @@ def metrics(observations, start, end, capabilities=None):
         "litresPer100Km": ratio,
         "locationCoverage": min(1, gps_time / duration) if duration else 0,
         "route": route[:: max(1, math.ceil(len(route) / 500))],
+        "drivingEvents": events,
         "gaps": sum(
             1 for (a, _), (b, _) in zip(speeds, speeds[1:], strict=False) if b - a > MAX_GAP
         ),

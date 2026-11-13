@@ -2,6 +2,7 @@ import Foundation
 
 enum ElmDecoder {
   static let pids = ["0C","0D","05","06","07","0B","0F","10","11","04","2F","42","46","5E"]
+  static let fastPids = ["0D","0C"]
   static let setup = ["ATZ","ATE0","ATL0","ATS1","ATH0","ATSP0","0100","0120","0140"]
   static func allowed(_ command:String)->Bool { setup.contains(command) || pids.contains(String(command.dropFirst(2))) && command.hasPrefix("01") || ["03","07","0A","ATRV","ATI","ATDP"].contains(command) }
   static func decode(_ reply:String,command:String)->[(String,Double,String)] {

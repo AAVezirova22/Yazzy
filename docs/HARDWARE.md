@@ -23,7 +23,7 @@ Hardware labels remain `PENDING_DEVICE_TEST`. JavaScript/Hermes bundles passing 
 
 1. Install Python 3.12, Node 24, uv, Android Studio/SDK and its supported Java runtime. Run `npm ci --ignore-scripts` at the root.
 2. In PowerShell set `$env:EXPO_PUBLIC_API_URL='https://your-development-host'` and your OIDC variables. Provision your identity as described in OPERATIONS.
-3. In `apps/mobile`, run `npx expo prebuild --platform android`, then `npx expo run:android --device`. The emulator cannot verify Bluetooth. Use a physical Android phone with USB debugging for the hardware spike.
+3. In `apps/mobile`, run `npx expo prebuild --platform android`, then `npx expo run:android --device`. Trip maps on Android use Google Maps: create a Maps SDK for Android key and build with `GOOGLE_MAPS_API_KEY=<key> npx expo run:android --device` (PowerShell: `$env:GOOGLE_MAPS_API_KEY='<key>'`). Without a key the trip screen draws a plain route sketch instead of a map. iOS uses Apple Maps and needs no key. The emulator cannot verify Bluetooth. Use a physical Android phone with USB debugging for the hardware spike.
 4. Grant nearby-device, location and notification permissions. Start recording from the foreground. Verify the ongoing notification and Stop action. Android restrictions and vendor battery management can still interrupt recording.
 5. If your unit requires Classic SPP, stop qualification and add/verify that transport before claiming Android support. Do not guess a BLE service to make the UI appear connected.
 

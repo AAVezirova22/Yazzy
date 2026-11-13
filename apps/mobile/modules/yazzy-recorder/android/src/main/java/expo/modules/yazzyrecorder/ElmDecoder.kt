@@ -2,6 +2,7 @@ package expo.modules.yazzyrecorder
 
 object ElmDecoder {
  val pids=listOf("0C","0D","05","06","07","0B","0F","10","11","04","2F","42","46","5E")
+ val fastPids=listOf("0D","0C")
  val setup=listOf("ATZ","ATE0","ATL0","ATS1","ATH0","ATSP0","0100","0120","0140")
  fun allowed(command:String)=command in setup || command in pids.map{"01$it"} || command in listOf("03","07","0A","ATRV","ATI","ATDP")
  fun supported(reply:String,command:String):Set<String>{val base=command.takeLast(2).toIntOrNull(16)?:return emptySet();return reply.lines().flatMap{val line=it.replace(" ","").uppercase();if(line.startsWith("41"+command.takeLast(2))&&line.length>=12){val mask=line.substring(4,12).toLongOrNull(16)?:0;(0..31).filter{n->mask and (1L shl (31-n))!=0L}.map{n->"%02X".format(base+n+1)}}else emptyList()}.toSet()}

@@ -6,6 +6,7 @@
   },
   "include": [
     "app/**/*.tsx",
+    "components/**/*.tsx",
     "modules/**/*.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"

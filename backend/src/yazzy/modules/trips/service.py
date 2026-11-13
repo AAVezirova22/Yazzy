@@ -21,6 +21,25 @@ def stable_id(*parts):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, ":".join(map(str, parts))))
 
 
+# A recording that goes silent this long (adapter unpowered after the engine is switched
+# off) ends one journey; the next readings begin a new one. Polling normally produces
+# several readings per second, so shorter silences are ordinary Bluetooth hiccups.
+JOURNEY_GAP_SECONDS = 120.0
+
+
+def split_on_gaps(observations, gap=JOURNEY_GAP_SECONDS):
+    chunks, current, previous = [], [], None
+    for o in sorted(observations, key=lambda o: o.time):
+        if previous is not None and o.time - previous > gap:
+            chunks.append(current)
+            current = []
+        current.append(o)
+        previous = o.time
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def reconcile(db, tenant_id, vehicle_id, run_id=None):
     # Vehicle row lock prevents two jobs publishing summaries from different snapshots.
     vehicle = db.scalar(
@@ -64,8 +83,22 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
     )
     # Retained session boundaries make replay idempotent; session handover uncertainty is explicit.
     results, windows = [], []
-    for (device_id, session_id), observations in sessions.items():
+    journeys = [
+        (device_id, session_id, chunk, index == len(chunks) - 1)
+        for (device_id, session_id), all_observations in sessions.items()
+        for chunks in [split_on_gaps(all_observations)]
+        for index, chunk in enumerate(chunks)
+    ]
+    for device_id, session_id, observations, is_last in journeys:
         spans = segment(observations, now)
+        if not is_last:
+            # Readings resumed later, so this journey is known to have ended in the silence.
+            spans = [
+                {**span, "status": "CLOSED", "endReason": span["endReason"] or "RECORDING_GAP"}
+                if span["status"] in {"ACTIVE", "PAUSED", "UNCERTAIN"}
+                else span
+                for span in spans
+            ]
         for revision in revisions:
             p = revision.payload
             if p.get("sessionId") != session_id:
@@ -129,6 +162,16 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
                     "endReason": None,
                 }
             )
+        # One recording = one journey: idle time before the car first moves and after it last
+        # stops belongs to that journey. Parking confirmed by ignition-off stays separate.
+        if len(full) >= 2 and full[0]["status"] == "STATIONARY" != full[1]["status"]:
+            full = [{**full[1], "start": full[0]["start"]}, *full[2:]]
+        if (
+            len(full) >= 2
+            and full[-1]["status"] == "STATIONARY" != full[-2]["status"]
+            and full[-2]["endReason"] != "CONFIRMED_PARKING"
+        ):
+            full = [*full[:-2], {**full[-2], "end": full[-1]["end"]}]
         for span in full:
             calc = metrics(observations, span["start"], span["end"], vehicle.capabilities)
             calc["endReason"] = span["endReason"]
