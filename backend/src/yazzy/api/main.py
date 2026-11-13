@@ -76,7 +76,16 @@ logger = logging.getLogger("yazzy.api")
 @asynccontextmanager
 async def lifespan(app):
     settings.validate()
-    yield
+    stop = None
+    if settings.embedded_worker:
+        from yazzy.workers.runner import start_embedded
+
+        stop = start_embedded()
+    try:
+        yield
+    finally:
+        if stop:
+            stop()
 
 
 app = FastAPI(title="Yazzy vehicle intelligence", version="1.0.0", lifespan=lifespan)
@@ -91,6 +100,7 @@ app.add_middleware(
         "X-CSRF-Token",
         "X-Organisation-Id",
         "Idempotency-Key",
+        "X-Access-Password",
     ],
 )
 app.add_middleware(
@@ -117,6 +127,10 @@ async def guard(request: Request, call_next):
     if length > 1_000_000:
         return JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE"}}, status_code=413)
     response = await call_next(request)
+    if settings.embedded_worker and request.method != "GET":
+        from yazzy.workers.runner import wake_embedded
+
+        wake_embedded()
     response.headers["X-Request-Id"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
@@ -139,6 +153,12 @@ async def conflict(_request, _exception):
     return JSONResponse(status_code=409, content={"detail": {"code": "CONCURRENT_WRITE_CONFLICT"}})
 
 
+@app.get("/ping")
+def ping():
+    """Liveness without touching the database, so host health checks do not wake it."""
+    return {"status": "ok"}
+
+
 @app.get("/health")
 def health(db=Depends(get_db, scope="function")):
     db.execute(select(1))
@@ -150,6 +170,7 @@ def auth_config():
     return {
         "demoEnabled": settings.demo_enabled and settings.environment != "production",
         "oidcEnabled": bool(settings.oidc_issuer),
+        "passwordRequired": bool(settings.access_password),
     }
 
 
@@ -161,6 +182,11 @@ def demo_login(
         fail("DEMO_DISABLED", 404)
     if request.headers.get("origin") not in {None, *settings.allowed_web_origins}:
         fail("ORIGIN_DENIED", 403)
+    if settings.access_password:
+        supplied = request.headers.get("x-access-password", "")
+        if not secrets.compare_digest(supplied.encode(), settings.access_password.encode()):
+            time.sleep(1)  # throttle guessing; this endpoint runs in the threadpool
+            fail("ACCESS_PASSWORD_REQUIRED", 401)
     if mode not in {"fleet", "personal"}:
         fail("INVALID_MODE", 422)
     tenant = "demo-mobility" if mode == "fleet" else "personal-sandbox"
@@ -173,7 +199,12 @@ def demo_login(
         fail("RUN_BOOTSTRAP_FIRST", 503)
     token, csrf = new_session(db, member)
     response.set_cookie(
-        "yazzy_session", token, httponly=True, samesite="lax", secure=False, max_age=28800
+        "yazzy_session",
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.environment != "development",
+        max_age=28800,
     )
     return {"csrfToken": csrf, "tenantId": tenant, "role": member.role}
 

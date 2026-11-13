@@ -5,6 +5,7 @@ Redis is a delivery hint. --local polls the same ledger without a broker.
 
 import argparse
 import logging
+import threading
 import time
 
 from celery import Celery
@@ -165,6 +166,52 @@ def drain(tenant_id=None, limit=1000):
             run_job(job_id, tenant)
             count += 1
     return count
+
+
+_wake = threading.Event()
+
+
+def wake_embedded():
+    """Tell the embedded worker that a write request may have queued a job."""
+    _wake.set()
+
+
+def start_embedded(idle_seconds: float = 600):
+    """Run the --local polling loop on a thread inside the API process.
+
+    Free hosts have no separate worker, and constant polling would keep a serverless
+    database awake, so the thread sleeps until a write request wakes it (or idle_seconds
+    pass, which also recovers jobs whose lease expired). Returns a stop function.
+    """
+    stop = threading.Event()
+
+    def loop():
+        while not stop.is_set():
+            busy = False
+            try:
+                for job_id, tenant, _ in enumerate_due():
+                    busy = True
+                    run_job(job_id, tenant)
+            except Exception:
+                logger.exception("embedded_worker_pass_failed")
+                stop.wait(5)
+                continue
+            if busy:
+                stop.wait(1)  # retries and chained jobs may be due immediately
+                continue
+            _wake.wait(timeout=idle_seconds)
+            _wake.clear()
+            stop.wait(0.3)  # let the request that woke us commit
+
+    thread = threading.Thread(target=loop, name="yazzy-embedded-worker", daemon=True)
+    thread.start()
+
+    def shutdown():
+        stop.set()
+        _wake.set()
+        thread.join(timeout=5)
+
+    return shutdown
 
 
 def main():

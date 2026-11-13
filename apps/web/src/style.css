@@ -30,3 +30,5 @@
  .topbar .workspace-menu strong{color:var(--ink)}
  .topbar .workspace-menu small{color:#75867f}
 }
+
+.access-field{display:flex;flex-direction:column;gap:6px;width:100%;max-width:420px;margin:30px 0 -14px;text-align:left;color:var(--muted);font-size:13px}.access-field input{padding:12px 14px;border:1px solid var(--line);border-radius:10px;font:inherit;color:var(--ink);background:#fff}.access-field input:focus{outline:2px solid var(--teal);outline-offset:1px}
