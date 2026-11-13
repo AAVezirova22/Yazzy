@@ -2918,6 +2918,23 @@
         },
         "summary": "Health"
       }
+    },
+    "/ping": {
+      "get": {
+        "description": "Liveness without touching the database, so host health checks do not wake it.",
+        "operationId": "ping_ping_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ping"
+      }
     }
   }
 }

@@ -40,6 +40,9 @@ docker compose --profile demo up simulator
 
 Compose definitions are included; the full Docker deployment was not run in the delivery environment. Docker image/native CI jobs must pass in your environment before a release.
 
+## Host it for free
+To use the app with your laptop closed, deploy to Vercel + Render + Neon: see [docs/HOSTING.md](docs/HOSTING.md).
+
 ## Start on iphone
 After setting everything up for iphone:
 For normal development uses:

@@ -3,9 +3,17 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 
+def _database_url(raw: str) -> str:
+    """Hosted Postgres providers hand out postgres:// or postgresql:// URLs; use psycopg 3."""
+    for prefix in ("postgres://", "postgresql://"):
+        if raw.startswith(prefix):
+            return "postgresql+psycopg://" + raw[len(prefix) :]
+    return raw
+
+
 @dataclass(frozen=True)
 class Settings:
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./yazzy.db")
+    database_url: str = _database_url(os.getenv("DATABASE_URL", "sqlite:///./yazzy.db"))
     environment: str = os.getenv("YAZZY_ENV", "development")
     demo_enabled: bool = os.getenv("YAZZY_DEMO_ENABLED", "false").lower() == "true"
     web_origin: str = os.getenv("WEB_ORIGIN", "http://localhost:5173")
@@ -18,6 +26,10 @@ class Settings:
     advisor_url: str = os.getenv("ADVISOR_URL", "")
     advisor_key: str = os.getenv("ADVISOR_API_KEY", "")
     advisor_model: str = os.getenv("ADVISOR_MODEL", "")
+    # Hosted single-user mode: the demo login stays on, but behind a shared password.
+    access_password: str = os.getenv("YAZZY_ACCESS_PASSWORD", "")
+    # Run the job worker inside the API process (free hosts have no separate worker).
+    embedded_worker: bool = os.getenv("YAZZY_EMBEDDED_WORKER", "false").lower() == "true"
 
     @property
     def allowed_web_origins(self) -> tuple[str, ...]:
@@ -38,6 +50,11 @@ class Settings:
         return (self.web_origin,)
 
     def validate(self):
+        if self.demo_enabled and self.environment not in {"development", "test"}:
+            if len(self.access_password) < 12:
+                raise ValueError(
+                    "A hosted demo login requires YAZZY_ACCESS_PASSWORD of at least 12 characters"
+                )
         if self.environment == "production":
             if self.demo_enabled:
                 raise ValueError("Demo login must be disabled in production")

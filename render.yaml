@@ -1,0 +1,30 @@
+# Render Blueprint: the Yazzy API (with the job worker embedded) on the free plan.
+# The database lives on Neon (free Postgres); the web app lives on Vercel (see vercel.json).
+# Free web services sleep after ~15 minutes without traffic and wake on the next request.
+services:
+  - type: web
+    name: yazzy-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./infrastructure/backend.Dockerfile
+    dockerContext: .
+    dockerCommand: >-
+      sh -c "python scripts/migrate.py &&
+      exec uvicorn yazzy.api.main:app --host 0.0.0.0 --port $PORT
+      --proxy-headers --forwarded-allow-ips='*'"
+    healthCheckPath: /ping
+    envVars:
+      - key: YAZZY_ENV
+        value: staging # not "production": production forbids the demo login and requires OIDC
+      - key: YAZZY_DEMO_ENABLED
+        value: "true"
+      - key: YAZZY_EMBEDDED_WORKER
+        value: "true"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: YAZZY_ACCESS_PASSWORD # 12+ characters; asked for at login
+        sync: false
+      - key: DATABASE_URL # Neon connection string (use the direct, non-pooler host)
+        sync: false
+      - key: WEB_ORIGIN # your Vercel URL, e.g. https://yazzy.vercel.app (no trailing slash)
+        sync: false
