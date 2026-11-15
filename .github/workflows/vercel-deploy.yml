@@ -1,0 +1,24 @@
+# Deploy the web app to Vercel on every push to main, whoever authored the commit.
+# Vercel's Hobby plan blocks Git-triggered deploys of commits by anyone other than the project owner
+# on private repos; a deploy hook has no such check. Setup: docs/HOSTING.md, "Deploys from any contributor".
+name: Vercel deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel deploy hook
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::Repository secret VERCEL_DEPLOY_HOOK is not set. See docs/HOSTING.md."
+            exit 1
+          fi
+          curl --fail --silent --show-error -X POST "$HOOK"
+          echo "Vercel deployment started for $GITHUB_SHA"

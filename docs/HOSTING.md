@@ -35,6 +35,18 @@ Because the demo login is then reachable from the internet, the API **refuses to
 3. Deploy, then make sure Render's `WEB_ORIGIN` equals the final Vercel URL exactly (login checks the `Origin` header).
    Preview deployments and custom domains have different origins; set `WEB_ORIGIN` to the one you actually use.
 
+### Deploys from any contributor
+On the Hobby plan Vercel only deploys commits authored by the project owner; pushes from other GitHub accounts
+show a red ✗ ("Deployment Blocked"). `.github/workflows/vercel-deploy.yml` works around this by calling a deploy hook
+on every push to `main`. One-time setup, done by the **Vercel project owner**:
+1. Vercel → the `web` project → **Settings → Git → Deploy Hooks**: name `github-main`, branch `main`, **Create Hook**. Copy the URL.
+2. GitHub → the repo → **Settings → Secrets and variables → Actions → New repository secret**:
+   name `VERCEL_DEPLOY_HOOK`, value the hook URL. Treat it like a password: anyone with it can trigger deploys.
+3. GitHub → **Actions → Vercel deploy → Run workflow** to deploy the current `main` and check it works.
+
+The ✗ from Vercel's own Git check still appears on other authors' commits; the deployment that matters is the one
+the hook starts (visible in Vercel's Deployments list).
+
 ## 4. Phone app
 Enter the Render URL (`https://yazzy-api.onrender.com`) in the **API address** field and your access password, then tap
 **Open local personal sandbox**. The password is kept in the device keychain. No native rebuild is needed, and Tailscale is no longer required.
