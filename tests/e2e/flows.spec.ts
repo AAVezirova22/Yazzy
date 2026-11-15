@@ -4,7 +4,7 @@ test('fleet evidence, advisor confirmation, quote, export and navigation',async(
  const errors:string[]=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message)});
  await page.goto('/');await page.getByRole('button',{name:/Explore the demo fleet/}).click();
  await expect(page.getByRole('heading',{name:'Your fleet, at a glance.'})).toBeVisible();
- await expect(page.getByText('YAZ 001',{exact:true})).toBeVisible();
+ await expect(page.getByText('YAZ 001',{exact:true}).first()).toBeVisible();
  await page.screenshot({path:'artifacts/fleet-overview.png',fullPage:true});
  await page.getByRole('button',{name:/Health & alerts/}).click();
  await expect(page.getByText('Fuel compensation increased in comparable warm-idle windows.',{exact:true})).toBeVisible();
@@ -24,7 +24,7 @@ test('fleet evidence, advisor confirmation, quote, export and navigation',async(
  await page.getByRole('button',{name:'Trips',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Trips & stationary sessions'})).toBeVisible();
  await page.locator('summary').first().click();
- await expect(page.getByText(/Distance: OBD_SPEED/).first()).toBeVisible();
+ await expect(page.getByText(/OBD_SPEED · \d+% coverage/).first()).toBeVisible();
  await page.getByRole('button',{name:'Vehicles',exact:true}).click();
  await page.getByLabel('Telemetry signal').selectOption('ENGINE_RPM');
  await expect(page.getByRole('img',{name:/Observed rpm/})).toBeVisible();
@@ -38,11 +38,11 @@ test('fleet evidence, advisor confirmation, quote, export and navigation',async(
 
 test('personal garage keeps real data empty and saves vehicle and fuel',async({page})=>{
  await page.goto('/');await page.getByRole('button',{name:/Start my garage/}).click();
- await expect(page.getByText('My first car',{exact:true})).toBeVisible();
+ await expect(page.getByText('My first car',{exact:true}).first()).toBeVisible();
  await page.getByRole('button',{name:'Add vehicle',exact:true}).click();
  await page.getByLabel('Vehicle name').fill('Test Golf');await page.getByLabel('Make',{exact:true}).fill('Volkswagen');await page.getByLabel('Model',{exact:true}).fill('Golf');
  await page.getByRole('button',{name:'Save record'}).click();
- await expect(page.getByText('Test Golf',{exact:true})).toBeVisible();
+ await expect(page.getByText('Test Golf',{exact:true}).first()).toBeVisible();
  await page.getByRole('button',{name:'Vehicles',exact:true}).click();
  await page.getByRole('button',{name:'Add fuel purchase'}).click();
  await page.getByLabel('Litres',{exact:true}).fill('40');await page.getByLabel('Total paid (€)').fill('65');await page.getByLabel('Odometer (km)').fill('100000');
@@ -50,10 +50,10 @@ test('personal garage keeps real data empty and saves vehicle and fuel',async({p
  await expect(page.getByText('40 L',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Advisor',exact:true}).click();await page.getByRole('button',{name:'Will my battery fail tomorrow?'}).click();
  await expect(page.getByText('INSUFFICIENT DATA',{exact:true})).toBeVisible();
- await page.getByRole('button',{name:/Personal owner Local development/}).click();
+ await page.getByRole('button',{name:/Personal owner/}).click();
  await expect(page.getByRole('button',{name:/Explore the demo fleet/})).toBeVisible();
  await page.getByRole('button',{name:/Explore the demo fleet/}).click();
- await expect(page.getByText('YAZ 001',{exact:true})).toBeVisible();
+ await expect(page.getByText('YAZ 001',{exact:true}).first()).toBeVisible();
  await expect(page.getByText('Test Golf',{exact:true})).toHaveCount(0);
 });
 

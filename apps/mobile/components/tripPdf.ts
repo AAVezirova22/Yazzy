@@ -52,7 +52,7 @@ function sketch(route:any[],events:any[]){
  const line=route.map(p=>at(p).map(v=>v.toFixed(1)).join(',')).join(' ');
  const dot=(p:any,color:string,r:number)=>{const [a,b]=at(p);return `<circle cx="${a.toFixed(1)}" cy="${b.toFixed(1)}" r="${r}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;};
  const marks=events.filter(e=>e.latitude!=null).map(e=>dot(e,e.type==='HARD_BRAKING'?'#d93025':'#f08a00',6)).join('');
- return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img"><rect width="${W}" height="${H}" fill="#e9f0e4" rx="8"/><polyline fill="none" stroke="#216f5c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${line}"/>${dot(route[0],'#2e9d4f',7)}${route.length>1?dot(route[route.length-1],'#2d6cdf',7):''}${marks}<text x="10" y="${H-8}" font-size="10" fill="#527369">Route sketch · north up · drawn to scale</text></svg>`;
+ return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img"><rect width="${W}" height="${H}" fill="#e9f0e4" rx="8"/><polyline fill="none" stroke="#0f766e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${line}"/>${dot(route[0],'#2e9d4f',7)}${route.length>1?dot(route[route.length-1],'#2d6cdf',7):''}${marks}<text x="10" y="${H-8}" font-size="10" fill="#527369">Route sketch · north up · drawn to scale</text></svg>`;
 }
 
 export function buildTripHtml({trip,vehicleName,series,mapImageBase64}:TripReportInput){
@@ -65,15 +65,15 @@ export function buildTripHtml({trip,vehicleName,series,mapImageBase64}:TripRepor
  const signalRows=REPORT_SIGNALS.filter(([id])=>(series[id]||[]).length).map(([id,label,unit])=>{
   const v=series[id].map(p=>p.value),avg=v.reduce((a,b)=>a+b,0)/v.length;
   return `<tr><td>${esc(label)}</td><td>${n(Math.min(...v),1)}</td><td>${n(avg,1)}</td><td>${n(Math.max(...v),1)}</td><td>${esc(unit)}</td><td>${series[id].length}</td></tr>`;}).join('');
- const charts=REPORT_SIGNALS.filter(([id])=>(series[id]||[]).length).map(([id,label,unit],i)=>`<section class="chart"><h3>${esc(label)}</h3>${chart(series[id],from,to,['#216f5c','#c47a1c','#2d6cdf','#8a4fbf'][i%4],unit)}</section>`).join('');
+ const charts=REPORT_SIGNALS.filter(([id])=>(series[id]||[]).length).map(([id,label,unit],i)=>`<section class="chart"><h3>${esc(label)}</h3>${chart(series[id],from,to,['#0f766e','#c47a1c','#2d6cdf','#8a4fbf'][i%4],unit)}</section>`).join('');
  const metricRows=Object.entries(m).filter(([k,v])=>k!=='route'&&k!=='drivingEvents'&&(v===null||['string','number','boolean'].includes(typeof v))).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v===null?'—':typeof v==='number'?Number(v.toFixed(4)):v)}</td></tr>`).join('');
  const eventRows=events.map(e=>`<tr><td>${e.type==='HARD_BRAKING'?'Hard braking':'Hard acceleration'}</td><td>${esc(clock(e.time))}</td><td>${n(e.fromKmh,0)} → ${n(e.toKmh,0)} km/h</td><td>${n(e.durationSeconds,1)} s</td><td>${n(e.peakMetresPerSecond2,1)} m/s²</td><td>${e.latitude!=null?`${e.latitude.toFixed(5)}, ${e.longitude.toFixed(5)}`:'no GPS fix nearby'}</td></tr>`).join('');
  const routeRows=route.map((p,i)=>`<tr><td>${i+1}</td><td>${esc(clock(p.time))}</td><td>${p.latitude.toFixed(6)}</td><td>${p.longitude.toFixed(6)}</td><td>${n(p.accuracy,0)} m</td></tr>`).join('');
  const map=mapImageBase64?`<img class="map" src="data:image/png;base64,${mapImageBase64}"/>`:sketch(route,events);
  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>
-  @page{margin:16mm 14mm}*{box-sizing:border-box}body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#16372f;font-size:11px;line-height:1.45}
+  @page{margin:16mm 14mm}*{box-sizing:border-box}body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#14201f;font-size:11px;line-height:1.45}
   h1{font-size:22px;margin:0}h2{font-size:14px;margin:20px 0 8px;border-bottom:2px solid #d8e2d2;padding-bottom:3px;break-after:avoid}h3{break-after:avoid}tr{break-inside:avoid}h3{font-size:11px;margin:10px 0 3px}
-  .head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #216f5c;padding-bottom:8px}.brand{color:#216f5c;font-weight:700;font-size:15px}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0f766e;padding-bottom:8px}.brand{color:#0f766e;font-weight:700;font-size:15px}
   .muted{color:#527369}.badge{display:inline-block;background:#e4efe0;border-radius:10px;padding:1px 8px;font-size:10px}
   .grid{display:flex;flex-wrap:wrap;gap:8px}.tile{width:calc(25% - 6px);background:#eef3ec;border-radius:8px;padding:8px}.tile b{display:block;font-size:15px}.tile span{color:#527369}.tile i{display:block;font-size:9px;color:#7a8f86;font-style:normal}
   table{border-collapse:collapse;width:100%;margin-top:4px}td,th{border-bottom:1px solid #e3eadc;padding:3px 5px;text-align:left;vertical-align:top}th{background:#eef3ec}
