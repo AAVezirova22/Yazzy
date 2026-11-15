@@ -43,6 +43,15 @@ Compose definitions are included; the full Docker deployment was not run in the 
 ## Host it for free
 To use the app with your laptop closed, deploy to Vercel + Render + Neon: see [docs/HOSTING.md](docs/HOSTING.md).
 
+## Android APK
+Build a standalone APK that talks to the hosted API (no PC needed once installed):
+```sh
+npm run apk
+```
+This regenerates `apps/mobile/android`, builds a signed release APK for ARM phones and copies it to `Yazzy-<version>.apk` in the repository root. Settings come from `apps/mobile/.env.local` (copy `apps/mobile/.env.example`): `GOOGLE_MAPS_API_KEY` and `EXPO_PUBLIC_API_URL`. The `versionCode` is the git commit count, so a newer APK installs over the old one and keeps app data. If a native or config change does not show up, run `python scripts/build_apk.py --clean`.
+
+Prerequisites: JDK 17+, and Android SDK packages `platform-tools`, `platforms;android-36`, `build-tools;36.0.0`, `ndk;27.1.12297006`, `cmake;3.22.1`. The APK is signed with the shared React Native debug key, which is fine for sideloading on your own phones but not for the Play Store.
+
 ## Start on iphone
 After setting everything up for iphone:
 For normal development uses:

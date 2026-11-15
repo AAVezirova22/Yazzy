@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
+    "apk": "python scripts/build_apk.py",
     "typecheck": "npm run typecheck --workspace apps/web && npm run typecheck --workspace apps/mobile",
     "test:e2e": "playwright test",
     "contracts": "openapi-typescript contracts/openapi.json -o packages/api-client/src/schema.ts"
