@@ -31,7 +31,7 @@ class YazzyRecorderModule:Module(){
   Name("YazzyRecorder")
   // Re-arm after the app is opened again: the recorder keeps waiting for the adapter until it is stopped on purpose.
   OnCreate{appContext.reactContext?.let{c->if(RecorderManager.isArmed(c)&&RecorderSecret.read(c)!=null){try{val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent)}catch(_:Exception){}}}}
-  AsyncFunction("discover") Coroutine {val r=RecorderManager.get(appContext.reactContext!!);r.scan();delay(5000);r.stopScan();r.devices()}
+  AsyncFunction("discover") Coroutine { -> val r=RecorderManager.get(appContext.reactContext!!);r.scan();delay(5000);r.stopScan();r.devices()}
   AsyncFunction("inspect") Coroutine {id:String->RecorderManager.get(appContext.reactContext!!).inspect(id)}
   AsyncFunction("configure"){json:String->val c=appContext.reactContext!!;val config=JSONObject(json);for(key in listOf("apiUrl","deviceId","assignmentId","deviceToken","peripheralId","serviceUuid","writeUuid","notifyUuid"))require(config.getString(key).isNotEmpty());val r=RecorderManager.get(c);check(!r.recording && r.store.count()==0){"Stop and upload queued samples before changing assignment"};RecorderSecret.save(c,json)}
   AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent)}
