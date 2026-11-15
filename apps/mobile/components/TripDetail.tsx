@@ -3,6 +3,7 @@ import {Alert,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native'
 import {exportTripPdf,REPORT_SIGNALS,type SeriesPoint} from './tripPdf';
 import Constants from 'expo-constants';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {c} from './theme';
 import MapView,{Marker,Polyline,type LatLng} from 'react-native-maps';
 
 // Android maps need a Google Maps key baked in at build time (see app.config.js); iOS uses Apple Maps.
@@ -41,8 +42,8 @@ function RouteSketch({route,events,style}:{route:LatLng[];events:DrivingEvent[];
  const k=Math.max(0,Math.min((box.width-2*pad)/w,(box.height-2*pad)/h)),offX=(box.width-w*k)/2,offY=(box.height-h*k)/2;
  const at=(p:{latitude:number;longitude:number})=>{const r=raw(p);return {x:offX+(r.x-minX)*k,y:offY+(r.y-minY)*k};};
  const xy=route.map(at);
- return <View style={[style,{backgroundColor:'#e9f0e4',overflow:'hidden'}]} onLayout={e=>setBox(e.nativeEvent.layout)}>
-  {box.width>0&&xy.slice(1).map((b,i)=>{const a=xy[i],len=Math.hypot(b.x-a.x,b.y-a.y);return len<0.5?null:<View key={i} style={{position:'absolute',left:(a.x+b.x)/2-len/2,top:(a.y+b.y)/2-2,width:len,height:4,borderRadius:2,backgroundColor:'#216f5c',transform:[{rotate:Math.atan2(b.y-a.y,b.x-a.x)+'rad'}]}}/>;})}
+ return <View style={[style,{backgroundColor:c.line2,overflow:'hidden'}]} onLayout={e=>setBox(e.nativeEvent.layout)}>
+  {box.width>0&&xy.slice(1).map((b,i)=>{const a=xy[i],len=Math.hypot(b.x-a.x,b.y-a.y);return len<0.5?null:<View key={i} style={{position:'absolute',left:(a.x+b.x)/2-len/2,top:(a.y+b.y)/2-2,width:len,height:4,borderRadius:2,backgroundColor:c.teal,transform:[{rotate:Math.atan2(b.y-a.y,b.x-a.x)+'rad'}]}}/>;})}
   {box.width>0&&<View style={[s.dot,{left:xy[0].x-7,top:xy[0].y-7,backgroundColor:'#2e9d4f'}]}/>}
   {box.width>0&&xy.length>1&&<View style={[s.dot,{left:xy[xy.length-1].x-7,top:xy[xy.length-1].y-7,backgroundColor:'#2d6cdf'}]}/>}
   {box.width>0&&events.filter(e=>e.latitude!=null&&e.longitude!=null).map(e=>{const p=at({latitude:e.latitude as number,longitude:e.longitude as number});return <View key={e.type+e.time} style={[s.dot,{left:p.x-8,top:p.y-8,width:16,height:16,borderRadius:8,backgroundColor:eventColor(e)}]}/>;})}
@@ -55,7 +56,7 @@ function TripMap({route,events,style,onMap}:{route:LatLng[];events:DrivingEvent[
  if(!nativeMaps)return <RouteSketch route={route} events={events} style={style}/>;
  const fit=()=>{if(route.length)map.current?.fitToCoordinates(route,{edgePadding:{top:60,right:60,bottom:60,left:60},animated:false});};
  return <MapView ref={r=>{map.current=r;onMap?.(r);}} style={style} onMapReady={fit} onLayout={fit} initialRegion={{latitude:route[0].latitude,longitude:route[0].longitude,latitudeDelta:0.003,longitudeDelta:0.003}}>
-  {route.length>1&&<Polyline coordinates={route} strokeColor="#216f5c" strokeWidth={5}/>}
+  {route.length>1&&<Polyline coordinates={route} strokeColor={c.teal} strokeWidth={5}/>}
   <Marker coordinate={route[0]} title="Start" description="Where the trip began" pinColor="green"/>
   {route.length>1&&<Marker coordinate={route[route.length-1]} title="Last position" pinColor="blue"/>}
   {events.filter(e=>e.latitude!=null&&e.longitude!=null).map(e=><Marker key={e.type+e.time} coordinate={{latitude:e.latitude as number,longitude:e.longitude as number}} title={eventLabel(e)} description={eventText(e)} pinColor={e.type==='HARD_BRAKING'?'red':'orange'}/>)}
@@ -112,8 +113,8 @@ export function TripDetail({trip,vehicleId,vehicleName,call}:Props){
   {m.fuelMethod==='UNAVAILABLE'&&<Text style={s.muted}>Fuel unavailable: this car did not report a fuel-rate or air-flow signal, so nothing is estimated.</Text>}
   <Text style={s.label}>Driving events</Text>{events.length?events.map(e=><Text key={e.type+e.time} style={s.event}><Text style={{color:e.type==='HARD_BRAKING'?'#d93025':'#f08a00'}}>● </Text>{eventLabel(e)} · {eventText(e)}{e.latitude==null?' · no GPS fix nearby':''}</Text>):<Text style={s.muted}>No hard braking or hard acceleration detected (braking harder than 3 m/s², accelerating harder than 2.5 m/s²).</Text>}
   {failed?<Text style={s.error}>Could not load readings: {failed}</Text>:<>
-   <Text style={s.label}>Speed</Text>{speed?<Bars points={speed.points} from={from} to={to} unit="km/h" color="#216f5c"/>:<Text style={s.muted}>Loading…</Text>}
-   <Text style={s.label}>Engine speed</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit="rpm" color="#c47a1c"/>:<Text style={s.muted}>Loading…</Text>}
+   <Text style={s.label}>Speed</Text>{speed?<Bars points={speed.points} from={from} to={to} unit="km/h" color={c.teal}/>:<Text style={s.muted}>Loading…</Text>}
+   <Text style={s.label}>Engine speed</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit="rpm" color={c.amber}/>:<Text style={s.muted}>Loading…</Text>}
   </>}
   <Pressable accessibilityRole="button" accessibilityState={{disabled:exporting}} disabled={exporting} style={[s.export,exporting&&{opacity:0.5}]} onPress={exportPdf}><Text style={s.exportText}>{exporting?'Preparing PDF…':'Export trip as PDF'}</Text></Pressable>
   <Text style={s.muted}>Started {new Date(from*1000).toLocaleString()}{m.endReason?` · ended: ${String(m.endReason).replaceAll('_',' ').toLowerCase()}`:''}</Text>
@@ -121,26 +122,26 @@ export function TripDetail({trip,vehicleId,vehicleName,call}:Props){
 }
 
 const s=StyleSheet.create({
- wrap:{marginTop:12,gap:10},
- map:{height:240,borderRadius:14,overflow:'hidden'},
- grid:{flexDirection:'row',flexWrap:'wrap',gap:8},
- cell:{width:'48%',backgroundColor:'#eef3ec',borderRadius:12,padding:10},
- value:{fontSize:18,fontWeight:'700',color:'#16372f'},
- label:{fontWeight:'700',color:'#16372f',marginTop:4},
- expand:{position:'absolute',top:8,right:8,width:38,height:38,borderRadius:10,backgroundColor:'rgba(255,255,255,0.92)',alignItems:'center',justifyContent:'center',shadowColor:'#000',shadowOpacity:0.2,shadowRadius:4,shadowOffset:{width:0,height:1}},
- expandText:{fontSize:22,color:'#16372f',marginTop:-2},
- legend:{fontSize:12,color:'#527369'},
- event:{fontSize:12,color:'#35543e',lineHeight:18},
+ wrap:{marginTop:14,paddingTop:14,borderTopWidth:1,borderTopColor:c.line2,gap:10},
+ map:{height:220,borderRadius:16,overflow:'hidden'},
+ grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:8},
+ cell:{width:'48.8%',backgroundColor:c.surface2,borderWidth:1,borderColor:c.line2,borderRadius:14,padding:12},
+ value:{fontSize:18,fontWeight:'700',color:c.ink,fontVariant:['tabular-nums']},
+ label:{fontSize:11.5,fontWeight:'700',letterSpacing:1,textTransform:'uppercase',color:c.muted,marginTop:8},
+ expand:{position:'absolute',top:10,right:10,width:40,height:40,borderRadius:20,backgroundColor:'rgba(255,255,255,0.95)',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:c.line},
+ expandText:{fontSize:20,color:c.ink,marginTop:-2},
+ legend:{fontSize:12,color:c.muted,lineHeight:18},
+ event:{fontSize:12.5,color:c.ink2,lineHeight:19},
  full:{flex:1,backgroundColor:'#000'},
- close:{position:'absolute',left:16,backgroundColor:'rgba(255,255,255,0.95)',borderRadius:20,paddingVertical:10,paddingHorizontal:16},
- closeText:{fontWeight:'700',color:'#16372f'},
- fullLegend:{position:'absolute',left:16,right:16,backgroundColor:'rgba(255,255,255,0.92)',borderRadius:12,padding:10},
+ close:{position:'absolute',left:16,backgroundColor:'rgba(255,255,255,0.97)',borderRadius:999,paddingVertical:10,paddingHorizontal:16,borderWidth:1,borderColor:c.line},
+ closeText:{fontWeight:'700',color:c.ink},
+ fullLegend:{position:'absolute',left:16,right:16,backgroundColor:'rgba(255,255,255,0.95)',borderRadius:14,padding:12},
  dot:{position:'absolute',width:14,height:14,borderRadius:7,borderWidth:2,borderColor:'white'},
- sketchNote:{position:'absolute',left:8,bottom:6,fontSize:10,color:'#527369'},
- export:{backgroundColor:'#286c52',borderRadius:8,padding:13,alignItems:'center'},
- exportText:{color:'white',fontWeight:'600',fontSize:13},
- muted:{color:'#527369',fontSize:12},
- error:{color:'#b3261e'},
+ sketchNote:{position:'absolute',left:10,bottom:8,fontSize:10,color:c.muted},
+ export:{flexDirection:'row',justifyContent:'center',backgroundColor:c.teal,borderRadius:999,padding:14,alignItems:'center',marginTop:4},
+ exportText:{color:'white',fontWeight:'700',fontSize:14},
+ muted:{color:c.muted,fontSize:12.5,lineHeight:18},
+ error:{color:c.red},
  bars:{flexDirection:'row',alignItems:'flex-end',height:72,gap:2},
  bar:{flex:1,borderRadius:2},
 });

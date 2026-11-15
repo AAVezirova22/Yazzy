@@ -10,7 +10,7 @@ for(const host of ['localhost','127.0.0.1']) {
   const run=page.waitForResponse(r=>r.url().endsWith('/simulation/runs')&&r.request().method()==='POST');
   await page.getByRole('button',{name:'Run scenario',exact:true}).click();
   expect((await run).status()).toBe(201);
-  await expect(page.getByText('YAZ 001',{exact:true})).toBeVisible();
+  await expect(page.getByText('YAZ 001',{exact:true}).first()).toBeVisible();
   await expect(page.getByText('Fuel compensation changed',{exact:true}).first()).toBeVisible({timeout:60000});
  });
 }
