@@ -120,6 +120,15 @@ def test_revoked_device(client, enrolled):
     assert upload(client, e, payload(e)).status_code == 401
 
 
+def test_reenrolling_phone_replaces_previous(client, enrolled):
+    vehicle, first = enrolled
+    again = client.post("/api/v1/devices/enrolments", json={"vehicleId": vehicle["id"]})
+    assert again.status_code == 201, again.text
+    second = again.json()
+    assert upload(client, first, payload(first)).status_code == 401
+    assert upload(client, second, payload(second)).status_code == 202
+
+
 def test_tenant_isolation_all_read_paths(client, fleet_client):
     v = fleet_client.post("/api/v1/vehicles", json={"name": "Other tenant"}).json()
     for suffix in [

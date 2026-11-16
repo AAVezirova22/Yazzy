@@ -8,7 +8,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import {TripDetail} from '../components/TripDetail';
 import {c,mono,ui} from '../components/theme';
-import {available,Recorder,type Peripheral,type Characteristic,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
+import {available,Recorder,knownChannels,pickChannels,type Peripheral,type Characteristic,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
 WebBrowser.maybeCompleteAuthSession();
 const defaultApi=process.env.EXPO_PUBLIC_API_URL||'http://localhost:8000';
 const issuer=(process.env.EXPO_PUBLIC_OIDC_ISSUER||'').trim();
@@ -72,7 +72,9 @@ export default function Home(){
  async function perform(fn:()=>Promise<void>){setBusy(true);try{await fn()}catch(e){Alert.alert('Yazzy',(e as Error).message)}finally{setBusy(false)}}
  useEffect(()=>{(async()=>{const v=await SecureStore.getItemAsync('yazzy-access');if(v){setToken(v);return;}if(await SecureStore.getItemAsync('yazzy-sandbox')==='1')await sandboxLogin();})().catch(()=>{});},[]);
  // Restore the adapter and the write/notify choice from the last session so they never have to be picked again.
- useEffect(()=>{SecureStore.getItemAsync('yazzy-adapter').then(v=>{if(!v)return;const a=JSON.parse(v);setPeripheral(a.peripheral.id);setPeripherals([{...a.peripheral,rssi:0}]);setCharacteristics(a.characteristics);setWrite(a.write);setNotify(a.notify);}).catch(()=>{});},[]);
+ useEffect(()=>{SecureStore.getItemAsync('yazzy-adapter').then(v=>{if(!v)return;const a=JSON.parse(v);setPeripheral(a.peripheral.id);setPeripherals([{...a.peripheral,rssi:0}]);setCharacteristics(a.characteristics);
+  // A pair saved before OBD channels were recognised may be the chip's vendor service, which never answers; prefer a known channel.
+  const k=knownChannels(a.characteristics||[]);setWrite(k?.write||a.write);setNotify(k?.notify||a.notify);}).catch(()=>{});},[]);
  useEffect(()=>{if(!peripheral||!write||!notify)return;const p=peripherals.find(x=>x.id===peripheral);if(p)SecureStore.setItemAsync('yazzy-adapter',JSON.stringify({peripheral:p,characteristics,write,notify})).catch(()=>{});},[peripheral,write,notify]);
  useEffect(()=>{if(response?.type==='success'&&discovery)perform(async()=>{const t=await AuthSession.exchangeCodeAsync({clientId,code:response.params.code,redirectUri:AuthSession.makeRedirectUri({scheme:'yazzy'}),extraParams:{code_verifier:request?.codeVerifier||''}},discovery);await SecureStore.setItemAsync('yazzy-access',t.accessToken);if(t.refreshToken)await SecureStore.setItemAsync('yazzy-refresh',t.refreshToken);setToken(t.accessToken);});},[response]);
  useEffect(()=>{if(token)perform(async()=>{const v=await call('/vehicles');setVehicles(v);const saved=await SecureStore.getItemAsync('yazzy-vehicle');const pick=v.find((x:any)=>x.id===saved)||v[0];if(pick)setSelected(pick.id);});},[token]);
@@ -100,6 +102,7 @@ export default function Home(){
  const lastTrip=latest(sum?.trips,'startAt'),lastService=latest(sum?.service,'observedAt'),findingCount=sum?.findings?.length??0;
  const live=snapshot.recording&&snapshot.connected;
  const recorderLabel=snapshot.recording?(snapshot.connected?'Recording':'Armed · waiting for car'):'Not recording';
+ const recommended=pickChannels(characteristics);
  const ready={signedIn:!!token,vehicle:!!selected,adapter:!!peripheral,channels:!!(write&&notify)};
 
  const signIn=<View style={ui.card}>
@@ -193,14 +196,14 @@ export default function Home(){
     <Text style={[ui.body,{marginBottom:10}]}>Close other OBD apps. Scan while parked. Select the actual service and characteristics discovered from your unit; no UUIDs are assumed.</Text>
     {btn('Discover nearby adapters',()=>perform(async()=>{await permissions();setPeripherals(await Recorder.discover());}),false,false,'bluetooth')}
    </View>
-   {peripherals.length>0&&<View style={[ui.card,{paddingVertical:6}]}>{peripherals.map((p,i)=><Pressable key={p.id} accessibilityRole="button" accessibilityState={{disabled:busy,selected:peripheral===p.id}} disabled={busy} style={[s.listRow,i>0&&s.listRowBorder,busy&&{opacity:0.5}]} onPress={()=>perform(async()=>{setPeripheral(p.id);setWrite(null);setNotify(null);setCharacteristics([]);const list=await Recorder.inspect(p.id);setCharacteristics(list);const services=[...new Set(list.map(c=>c.service))].filter(svc=>list.some(c=>c.service===svc&&c.write)&&list.some(c=>c.service===svc&&c.notify));if(services.length===1){const w=list.filter(c=>c.service===services[0]&&c.write),n=list.filter(c=>c.service===services[0]&&c.notify);if(w.length===1&&n.length===1){setWrite(w[0]);setNotify(n[0]);}}})}>
+   {peripherals.length>0&&<View style={[ui.card,{paddingVertical:6}]}>{peripherals.map((p,i)=><Pressable key={p.id} accessibilityRole="button" accessibilityState={{disabled:busy,selected:peripheral===p.id}} disabled={busy} style={[s.listRow,i>0&&s.listRowBorder,busy&&{opacity:0.5}]} onPress={()=>perform(async()=>{setPeripheral(p.id);setWrite(null);setNotify(null);setCharacteristics([]);const list=await Recorder.inspect(p.id);setCharacteristics(list);const pick=pickChannels(list);if(pick){setWrite(pick.write);setNotify(pick.notify);}})}>
     <View style={[ui.iconBox,peripheral===p.id&&{backgroundColor:c.hero}]}><Icon name={p.likelyObd?'radio-outline':'bluetooth-outline'} size={18} color={peripheral===p.id?c.teal300:c.teal}/></View>
     <View style={{flex:1}}><Text style={s.rowTitle}>{p.name}</Text><Text style={s.rowSub}>{p.rssi?`${p.rssi} dBm`:'saved'}{p.likelyObd?' · likely OBD adapter':''}</Text></View>
     {peripheral===p.id?<Icon name="checkmark-circle" size={22} color={c.teal}/>:<View style={s.radio}/>}
    </Pressable>)}</View>}
    {busy&&peripheral&&!characteristics.length&&<Text style={[ui.body,{marginBottom:12}]}>Connecting to the adapter and reading its services…</Text>}
    {[...new Set(characteristics.map(c=>c.service))].map(svc=><View key={svc} style={ui.card}>
-    <Text style={ui.label}>Service</Text><Text style={s.mono}>{svc}</Text>
+    <View style={[ui.row,{justifyContent:'space-between'}]}><Text style={ui.label}>Service</Text>{recommended?.write.service===svc&&<View style={[ui.chip,{backgroundColor:c.teal50}]}><Text style={[ui.chipText,{color:c.teal}]}>Recommended for OBD</Text></View>}</View><Text style={s.mono}>{svc}</Text>
     {characteristics.filter(x=>x.service===svc).map(ch=><View key={ch.service+ch.uuid} style={s.charRow}>
      <Text style={s.mono}>{ch.uuid}</Text>
      <View style={[ui.row,{gap:8,flexWrap:'wrap'}]}>

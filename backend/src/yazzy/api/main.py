@@ -381,12 +381,13 @@ def enrol(data: Enrollment, ctx=Depends(authenticate), db=Depends(get_db, scope=
     )
     db.add(d)
     db.flush()
-    a = create_assignment(db, ctx, d, v, time.time())
+    # Re-enrolling a phone (after a reinstall its saved token is gone) replaces the vehicle's previous phone recorder.
+    a = create_assignment(db, ctx, d, v, time.time(), replace_source="MOBILE_OBD")
     audit(db, ctx, "DEVICE_ENROLLED", d.id)
     return {"deviceId": d.id, "assignmentId": a.id, "deviceToken": token, "validFrom": a.valid_from}
 
 
-def create_assignment(db, ctx, d, v, start):
+def create_assignment(db, ctx, d, v, start, replace_source=None):
     db.execute(select(Device).where(Device.id == d.id).with_for_update())
     db.execute(select(Vehicle).where(Vehicle.id == v.id).with_for_update())
     active = list(
@@ -400,7 +401,11 @@ def create_assignment(db, ctx, d, v, start):
     )
     for previous in active:
         if previous.vehicle_id == v.id and previous.device_id != d.id:
-            fail("PRIMARY_SOURCE_ALREADY_ASSIGNED", 409)
+            other = db.get(Device, previous.device_id)
+            if not (replace_source and other and other.source == replace_source):
+                fail("PRIMARY_SOURCE_ALREADY_ASSIGNED", 409)
+            other.revoked = True
+            audit(db, ctx, "DEVICE_REPLACED", other.id)
         if start <= previous.valid_from:
             fail("OVERLAPPING_ASSIGNMENT", 409)
         previous.valid_until = start

@@ -33,9 +33,13 @@ class YazzyRecorderModule:Module(){
   OnCreate{appContext.reactContext?.let{c->if(RecorderManager.isArmed(c)&&RecorderSecret.read(c)!=null){try{val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent)}catch(_:Exception){}}}}
   AsyncFunction("discover") Coroutine { -> val r=RecorderManager.get(appContext.reactContext!!);r.scan();delay(5000);r.stopScan();r.devices()}
   AsyncFunction("inspect") Coroutine {id:String->RecorderManager.get(appContext.reactContext!!).inspect(id)}
-  AsyncFunction("configure"){json:String->val c=appContext.reactContext!!;val config=JSONObject(json);for(key in listOf("apiUrl","deviceId","assignmentId","deviceToken","peripheralId","serviceUuid","writeUuid","notifyUuid"))require(config.getString(key).isNotEmpty());val r=RecorderManager.get(c);check(!r.recording && r.store.count()==0){"Stop and upload queued samples before changing assignment"};RecorderSecret.save(c,json)}
-  AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent)}
-  AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java))}
+  AsyncFunction("configure"){json:String->val c=appContext.reactContext!!;val config=JSONObject(json);for(key in listOf("apiUrl","deviceId","assignmentId","deviceToken","peripheralId","serviceUuid","writeUuid","notifyUuid"))require(config.getString(key).isNotEmpty());val r=RecorderManager.get(c);check(!r.recording){"Stop recording before changing the adapter"}
+   // Queued samples belong to the saved device and assignment, so only a change of those needs an empty queue; re-picking characteristics does not.
+   val previous=RecorderSecret.read(c);val sameAssignment=previous!=null&&listOf("apiUrl","deviceId","assignmentId","deviceToken").all{previous.optString(it)==config.getString(it)}
+   check(sameAssignment||r.store.count()==0){"Stop and upload queued samples before changing assignment"};RecorderSecret.save(c,json)}
+  // startService returns a ComponentName, which cannot cross to JS; return nothing so the call resolves.
+  AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent);Unit}
+  AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
   AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync()}
   AsyncFunction("snapshot"){RecorderManager.get(appContext.reactContext!!).snapshot()}
  }
@@ -87,6 +91,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private var sentAt=0L
  private var buffer=""
  private var failures=0
+ @Volatile private var answered=false
  @Volatile private var lastObdAt=0L
  @Volatile private var syncing=false
  private var syncFailures=0
@@ -132,9 +137,9 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   descriptor.value=if(notify.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY!=0)BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
   g.writeDescriptor(descriptor)
  }}
- override fun onDescriptorWrite(g:BluetoothGatt,d:BluetoothGattDescriptor,status:Int){handler.post{if(status==BluetoothGatt.GATT_SUCCESS){connected=true;lastObdAt=SystemClock.elapsedRealtime();error=null;if(recording)startLocation();setup=ArrayDeque(ElmDecoder.setup);supported.clear();buffer="";inFlight=null;failures=0}else error="Notification subscription failed"}}
+ override fun onDescriptorWrite(g:BluetoothGatt,d:BluetoothGattDescriptor,status:Int){handler.post{if(status==BluetoothGatt.GATT_SUCCESS){connected=true;lastObdAt=SystemClock.elapsedRealtime();error=null;if(recording)startLocation();setup=ArrayDeque(ElmDecoder.setup);supported.clear();buffer="";inFlight=null;failures=0;answered=false}else error="Notification subscription failed"}}
  override fun onCharacteristicChanged(g:BluetoothGatt,c:BluetoothGattCharacteristic){val bytes=c.value?.copyOf()?:return;handler.post{receive(bytes)}}
- private fun receive(bytes:ByteArray){val command=inFlight?:return;buffer+=bytes.toString(Charsets.US_ASCII);if(buffer.length>8192){buffer="";inFlight=null;error="Malformed adapter response";return};if(!buffer.contains('>'))return;val frame=buffer.substringBefore('>');buffer="";inFlight=null;failures=0;lastObdAt=SystemClock.elapsedRealtime()
+ private fun receive(bytes:ByteArray){val command=inFlight?:return;buffer+=bytes.toString(Charsets.US_ASCII);if(buffer.length>8192){buffer="";inFlight=null;error="Malformed adapter response";return};if(!buffer.contains('>'))return;val frame=buffer.substringBefore('>');buffer="";inFlight=null;failures=0;answered=true;lastObdAt=SystemClock.elapsedRealtime()
   if(command in listOf("0100","0120","0140"))supported.addAll(ElmDecoder.supported(frame.replace('\r','\n'),command))
   for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
   handler.postDelayed({poll()},20)
@@ -143,7 +148,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  /** Sends the next command only when none is in flight. Called by the 0.5 s watchdog and straight after each reply. */
  private fun poll(){if(!recording||!connected)return
   val ch=writing?:run{error="Write characteristic not found on the adapter; re-select it on the Connect tab";return}
-  if(inFlight!=null){if(SystemClock.elapsedRealtime()-sentAt>8000){inFlight=null;buffer="";failures++;error="Diagnostic timeout; capture gap";if(failures>=3)gatt?.disconnect()};return}
+  if(inFlight!=null){if(SystemClock.elapsedRealtime()-sentAt>8000){inFlight=null;buffer="";failures++;error=if(answered)"Diagnostic timeout; capture gap" else "Adapter not answering on this channel. Stop, then pick the recommended write/notify pair on Drive › Adapter";if(failures>=3)gatt?.disconnect()};return}
   val command=if(setup.isNotEmpty())setup.removeFirst()else{
    val polls=ElmDecoder.pids.filter{it in supported};if(polls.isEmpty()){error="No supported PIDs detected";return}
    // Speed and RPM drive trip detection, so they are polled every cycle; the remaining PIDs rotate in between.
