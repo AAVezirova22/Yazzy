@@ -30,6 +30,8 @@ class Settings:
     access_password: str = os.getenv("YAZZY_ACCESS_PASSWORD", "")
     # Run the job worker inside the API process (free hosts have no separate worker).
     embedded_worker: bool = os.getenv("YAZZY_EMBEDDED_WORKER", "false").lower() == "true"
+    # Shared secret for scripts/build_apk.py --publish; unset disables APK uploads.
+    release_token: str = os.getenv("YAZZY_RELEASE_TOKEN", "")
 
     @property
     def allowed_web_origins(self) -> tuple[str, ...]:

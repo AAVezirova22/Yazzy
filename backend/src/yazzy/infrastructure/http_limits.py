@@ -8,6 +8,8 @@ from starlette.responses import JSONResponse
 
 from yazzy.config import settings
 
+RELEASE_UPLOAD_BYTES = 150_000_000
+
 
 class RequestLimits:
     def __init__(self, app, max_bytes=1_000_000):
@@ -47,13 +49,15 @@ class RequestLimits:
             return await JSONResponse(
                 {"detail": {"code": "RATE_LIMITED"}}, 429, headers={"Retry-After": "60"}
             )(scope, receive, send)
+        # APK uploads (scripts/build_apk.py --publish) are the only large bodies.
+        limit = RELEASE_UPLOAD_BYTES if scope["path"] == "/api/v1/app/releases" else self.max_bytes
         body = bytearray()
         while True:
             message = await receive()
             if message["type"] == "http.disconnect":
                 return
             body.extend(message.get("body", b""))
-            if len(body) > self.max_bytes:
+            if len(body) > limit:
                 return await JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE"}}, 413)(
                     scope, receive, send
                 )

@@ -7,7 +7,7 @@
     "NSLocationWhenInUseUsageDescription": "Record route and distance while you explicitly record a trip.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Continue an explicitly started journey when the screen is locked.",
     "UIBackgroundModes": ["bluetooth-central", "location"]}},
-  "android": {"package": "com.yazzy.vehicle", "permissions": ["BLUETOOTH_SCAN", "BLUETOOTH_CONNECT", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_CONNECTED_DEVICE", "FOREGROUND_SERVICE_LOCATION", "POST_NOTIFICATIONS"]},
+  "android": {"package": "com.yazzy.vehicle", "permissions": ["BLUETOOTH_SCAN", "BLUETOOTH_CONNECT", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_CONNECTED_DEVICE", "FOREGROUND_SERVICE_LOCATION", "POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"]},
   "plugins": ["expo-router", "expo-secure-store", "./plugins/withRecorder"],
   "experiments": {"typedRoutes": true}
  }

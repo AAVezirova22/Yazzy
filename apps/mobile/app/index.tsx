@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import {TripDetail} from '../components/TripDetail';
+import {Updater} from '../components/Updater';
 import {c,mono,ui} from '../components/theme';
 import {available,Recorder,knownChannels,pickChannels,type Peripheral,type Characteristic,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
 WebBrowser.maybeCompleteAuthSession();
@@ -126,6 +127,7 @@ export default function Home(){
   <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
   {view==='Garage'&&<>
+   {token?<Updater api={api} call={call} token={token}/>:null}
    {!token&&<>
     <View style={s.hero}>
      <Text style={s.heroEyebrow}>Vehicle intelligence</Text>

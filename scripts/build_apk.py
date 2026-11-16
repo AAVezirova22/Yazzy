@@ -3,7 +3,9 @@
 Usage (from the repository root):
     python scripts/build_apk.py           # regenerate native project, build, copy APK to repo root
     python scripts/build_apk.py --clean   # wipe apps/mobile/android first (after native/config changes misbehave)
+    python scripts/build_apk.py --publish # also upload it, so installed apps offer a one-tap update
 
+--publish needs YAZZY_RELEASE_TOKEN in apps/mobile/.env.local and the same value on the API server.
 Reads apps/mobile/.env.local (gitignored) for GOOGLE_MAPS_API_KEY and EXPO_PUBLIC_API_URL.
 Output: Yazzy-<version>.apk in the repository root (gitignored).
 """
@@ -15,6 +17,8 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +62,7 @@ def run(command, cwd, env):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--clean", action="store_true", help="delete apps/mobile/android before prebuild")
+    parser.add_argument("--publish", action="store_true", help="upload the APK to the API for in-app updates")
     args = parser.parse_args()
 
     sdk = find_sdk()
@@ -107,6 +112,28 @@ def main():
     target = ROOT / f"Yazzy-{version}.apk"
     shutil.copyfile(built, target)
     print(f"\nAPK ready: {target}  (versionCode {version_code}, API {env['EXPO_PUBLIC_API_URL']})")
+    if args.publish:
+        publish(target, env, version_code, version)
+
+
+def publish(apk: Path, env: dict, version_code: str, version: str):
+    token = env.get("YAZZY_RELEASE_TOKEN")
+    if not token:
+        sys.exit("--publish needs YAZZY_RELEASE_TOKEN in apps/mobile/.env.local (and the same value on the API).")
+    api = env["EXPO_PUBLIC_API_URL"]
+    size = apk.stat().st_size
+    print(f"Uploading {size // 1048576} MB to {api} (a sleeping free server can take a minute to wake)...", flush=True)
+    with apk.open("rb") as body:
+        request = urllib.request.Request(
+            f"{api}/api/v1/app/releases?versionCode={version_code}&version={version}",
+            data=body, method="POST",
+            headers={"X-Release-Token": token, "Content-Type": "application/octet-stream",
+                     "Content-Length": str(size)})
+        try:
+            with urllib.request.urlopen(request, timeout=600):
+                print(f"Published: installed apps will offer build {version_code}")
+        except urllib.error.HTTPError as error:
+            sys.exit(f"Publish failed: HTTP {error.code} {error.read().decode(errors='replace')[:300]}")
 
 
 if __name__ == "__main__":

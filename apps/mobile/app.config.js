@@ -8,5 +8,5 @@ module.exports=({config})=>{
  const versionCode=Number(process.env.YAZZY_VERSION_CODE)||undefined;
  return {...config,
   android:{...config.android,...(versionCode?{versionCode}:{}),...(key?{config:{googleMaps:{apiKey:key}}}:{})},
-  extra:{...config.extra,googleMapsKey:Boolean(key)}};
+  extra:{...config.extra,googleMapsKey:Boolean(key),...(versionCode?{versionCode}:{})}};
 };

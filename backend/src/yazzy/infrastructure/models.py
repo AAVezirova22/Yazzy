@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    LargeBinary,
     String,
     UniqueConstraint,
 )
@@ -328,3 +329,16 @@ Index(
     sqlite_where=Assignment.valid_until.is_(None),
     postgresql_where=Assignment.valid_until.is_(None),
 )
+
+
+class AppRelease(Base):
+    """The latest Android APK, so the app can update itself. Not tenant data; only one row is kept."""
+
+    __tablename__ = "app_releases"
+    id: Mapped[str] = mapped_column(primary_key=True, default=uid)
+    version_code: Mapped[int]
+    version: Mapped[str]
+    size: Mapped[int]
+    sha256: Mapped[str]
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    created_at: Mapped[float] = mapped_column(default=time.time)

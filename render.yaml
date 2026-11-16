@@ -25,3 +25,5 @@ services:
         sync: false
       - key: WEB_ORIGIN # your Vercel URL, e.g. https://yazzy.vercel.app (no trailing slash)
         sync: false
+      - key: YAZZY_RELEASE_TOKEN # same value as in apps/mobile/.env.local; lets build_apk.py --publish upload APKs
+        sync: false
