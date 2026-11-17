@@ -1,14 +1,15 @@
-import {useEffect,useState,type ComponentProps,type ReactNode} from 'react';
-import {ActivityIndicator,Alert,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
-import {SafeAreaView,useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useEffect,useState} from 'react';
+import {ActivityIndicator,Alert,Modal,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,TextInput,useWindowDimensions,View} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {StatusBar} from 'expo-status-bar';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SecureStore from 'expo-secure-store';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import {TripDetail} from '../components/TripDetail';
+import {TripDetail,distance,minutes} from '../components/TripDetail';
 import {Updater} from '../components/Updater';
-import {c,mono,ui} from '../components/theme';
+import {c,mono,shadow,ui} from '../components/theme';
+import {Button,Check,Empty,Icon,Notice,RoundButton,ScreenHeader,Segment,Stat} from '../components/kit';
+import {CarArt,RouteArt,WeekBars} from '../components/art';
 import {available,Recorder,knownChannels,pickChannels,type Peripheral,type Characteristic,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
 WebBrowser.maybeCompleteAuthSession();
 const defaultApi=process.env.EXPO_PUBLIC_API_URL||'http://localhost:8000';
@@ -16,41 +17,34 @@ const issuer=(process.env.EXPO_PUBLIC_OIDC_ISSUER||'').trim();
 const clientId=process.env.EXPO_PUBLIC_OIDC_CLIENT_ID||'yazzy-mobile';
 const empty:RecorderSnapshot={recording:false,connected:false,queued:0,error:null,signals:{},qualification:'PENDING_DEVICE_TEST'};
 
-type IconName=ComponentProps<typeof Ionicons>['name'];
 // Bottom tabs group the original views: Home=Garage, Health=Health+Service, Drive=Record+Connect, More=Advisor.
 const TABS:{key:string;icon:string;views:string[]}[]=[
  {key:'Home',icon:'home',views:['Garage']},
  {key:'Trips',icon:'map',views:['Trips']},
  {key:'Health',icon:'pulse',views:['Health','Service']},
  {key:'Drive',icon:'speedometer',views:['Record','Connect']},
- {key:'More',icon:'ellipsis-horizontal-circle',views:['Advisor']},
+ {key:'More',icon:'grid',views:['Advisor']},
 ];
 const fmt=(value:number|null|undefined,digits=1)=>value==null||Number.isNaN(value)?'—':value.toFixed(digits);
 const day=(t:number)=>new Date(t*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-const when=(t:number)=>new Date(t*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const weekday=(t:number)=>new Date(t*1000).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'});
+const clock=(t:number)=>new Date(t*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+const ago=(t:number)=>{const d=Math.floor((Date.now()/1000-t)/86400);return d<=0?'Today':d===1?'Yesterday':`${d} days ago`;};
 const latest=(list:any[]|null|undefined,key:string)=>(list||[]).reduce((a:any,x:any)=>!a||x[key]>a[key]?x:a,null);
-
-function Icon({name,size=18,color=c.ink2}:{name:string;size?:number;color?:string}){return <Ionicons name={name as IconName} size={size} color={color}/>;}
-function Segment({items,value,onChange}:{items:[string,string][];value:string;onChange:(v:string)=>void}){
- return <View style={s.segment}>{items.map(([key,label])=><Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:value===key}} onPress={()=>onChange(key)} style={[s.segmentItem,value===key&&s.segmentActive]}><Text style={[s.segmentText,value===key&&s.segmentTextActive]}>{label}</Text></Pressable>)}</View>;
+const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening';};
+const pretty=(v:unknown)=>String(v||'').replaceAll('_',' ').toLowerCase();
+/** Kilometres driven on each of the last seven days, today last. */
+function lastWeek(trips:any[]|null|undefined){
+ const out=new Array(7).fill(0),today=new Date();today.setHours(0,0,0,0);
+ for(const t of trips||[]){if(t.startAt==null||!t.metrics?.distanceKm)continue;const d=new Date(t.startAt*1000);d.setHours(0,0,0,0);const back=Math.round((today.getTime()-d.getTime())/86400000);if(back>=0&&back<7)out[6-back]+=t.metrics.distanceKm;}
+ return out;
 }
-function Tile({label,icon,value,unit,detail,tone,onPress}:{label:string;icon:string;value:string;unit?:string;detail:string;tone?:'warn'|'ok';onPress:()=>void}){
- const fg=tone==='warn'?c.amber:tone==='ok'?c.green:c.teal,bg=tone==='warn'?c.amber50:tone==='ok'?c.green50:c.teal50;
- return <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}${unit?' '+unit:''}. ${detail}`} onPress={onPress} style={s.tile}>
-  <View style={s.tileTop}><View style={[ui.iconBox,{backgroundColor:bg}]}><Icon name={icon} size={18} color={fg}/></View><Icon name="chevron-forward" size={16} color={c.faint}/></View>
-  <Text style={ui.label}>{label}</Text>
-  <Text style={[s.tileValue,tone==='warn'&&{color:c.amber}]} numberOfLines={1}>{value}{unit?<Text style={s.tileUnit}> {unit}</Text>:null}</Text>
-  <Text style={s.tileDetail} numberOfLines={2}>{detail}</Text>
- </Pressable>;
-}
-function Check({ok,label}:{ok:boolean;label:string}){return <View style={s.checkRow}><Icon name={ok?'checkmark-circle':'close-circle'} size={20} color={ok?c.green:c.faint}/><Text style={[s.checkText,!ok&&{color:c.muted}]}>{label}</Text></View>;}
-function Section({title,subtitle,right}:{title:string;subtitle?:string;right?:ReactNode}){return <View style={s.section}><View style={{flex:1}}><Text style={s.sectionTitle}>{title}</Text>{subtitle?<Text style={ui.body}>{subtitle}</Text>:null}</View>{right}</View>;}
 
 export default function Home(){
- const [api,setApi]=useState(defaultApi),[token,setToken]=useState(''),[csrf,setCsrf]=useState(''),[vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[view,setView]=useState('Garage'),[snapshot,setSnapshot]=useState(empty),[peripherals,setPeripherals]=useState<Peripheral[]>([]),[peripheral,setPeripheral]=useState(''),[characteristics,setCharacteristics]=useState<Characteristic[]>([]),[write,setWrite]=useState<Characteristic|null>(null),[notify,setNotify]=useState<Characteristic|null>(null),[data,setData]=useState<any[]>([]),[message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null),[busy,setBusy]=useState(false),[name,setName]=useState(''),[openTrip,setOpenTrip]=useState('');
+ const [api,setApi]=useState(defaultApi),[token,setToken]=useState(''),[csrf,setCsrf]=useState(''),[vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[view,setView]=useState('Garage'),[snapshot,setSnapshot]=useState(empty),[peripherals,setPeripherals]=useState<Peripheral[]>([]),[peripheral,setPeripheral]=useState(''),[characteristics,setCharacteristics]=useState<Characteristic[]>([]),[write,setWrite]=useState<Characteristic|null>(null),[notify,setNotify]=useState<Characteristic|null>(null),[data,setData]=useState<any[]>([]),[message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null),[busy,setBusy]=useState(false),[name,setName]=useState(''),[tripView,setTripView]=useState<any>(null),[garageOpen,setGarageOpen]=useState(false);
  const [discovery,setDiscovery]=useState<AuthSession.DiscoveryDocument|null>(null),[authError,setAuthError]=useState(''),[accessPassword,setAccessPassword]=useState('');
  const [summary,setSummary]=useState<{vehicleId:string;fuel:any;trips:any[]|null;findings:any[]|null;service:any[]|null}|null>(null);
- const insets=useSafeAreaInsets();
+ const insets=useSafeAreaInsets(),{width}=useWindowDimensions();
  useEffect(()=>{
   // useAutoDiscovery rejects null, so discovery is optional in local sandbox mode.
   if(!issuer)return;
@@ -94,299 +88,316 @@ export default function Home(){
  },[token,selected,view]);
  async function load(tab:string){if(tab!==view&&['Trips','Health','Service'].includes(tab))setData([]);setView(tab);if(!selected)return;if(['Trips','Health','Service'].includes(tab))await perform(async()=>setData(await call(`/vehicles/${selected}/${tab==='Trips'?'trips':tab==='Health'?'findings':'maintenance-records'}`)));}
  async function permissions(){if(Platform.OS==='android'){await PermissionsAndroid.requestMultiple([PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,...(Number(Platform.Version)>=33?[PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS]:[])]);}}
- async function start(){const key=JSON.stringify([selected,peripheral,write?.service,write?.uuid,notify?.service,notify?.uuid]);if(snapshot.configured&&(!(write&&notify&&peripheral)||await SecureStore.getItemAsync('yazzy-configured')===key)){await permissions();await Recorder.start();return;}if(!token)throw new Error('Not signed in. On the Home tab, open the local personal sandbox (or sign in) first.');if(!selected)throw new Error('No vehicle selected. On the Home tab, add a vehicle and tap it so it shows a ✓.');if(!peripheral)throw new Error('No adapter selected. On Drive › Adapter, discover and tap your adapter.');if(!write||!notify)throw new Error('Pick one write and one notify characteristic from the same service on Drive › Adapter.');if(write.service!==notify.service)throw new Error('Write and notify must come from the same service. Re-pick them on Drive › Adapter.');const saved=await SecureStore.getItemAsync('collector-'+selected);const enrol=saved?JSON.parse(saved):await call('/devices/enrolments',{vehicleId:selected});await SecureStore.setItemAsync('collector-'+selected,JSON.stringify(enrol));await Recorder.configure({apiUrl:api,deviceId:enrol.deviceId,assignmentId:enrol.assignmentId,deviceToken:enrol.deviceToken,peripheralId:peripheral,serviceUuid:write.service,writeUuid:write.uuid,notifyUuid:notify.uuid});await SecureStore.setItemAsync('yazzy-configured',key);await permissions();await Recorder.start();}
- const btn=(title:string,fn:()=>void,secondary=false,disabled=false,icon?:string)=><Pressable accessibilityRole="button" accessibilityState={{disabled}} disabled={disabled} style={({pressed})=>[ui.button,secondary&&ui.secondary,disabled&&{opacity:0.5},pressed&&{opacity:0.85}]} onPress={fn}>{icon?<Icon name={icon} size={17} color={secondary?c.ink2:'#fff'}/>:null}<Text style={[ui.buttonText,secondary&&ui.secondaryText]}>{title}</Text></Pressable>;
+ async function start(){const key=JSON.stringify([selected,peripheral,write?.service,write?.uuid,notify?.service,notify?.uuid]);if(snapshot.configured&&(!(write&&notify&&peripheral)||await SecureStore.getItemAsync('yazzy-configured')===key)){await permissions();await Recorder.start();return;}if(!token)throw new Error('Not signed in. On the Home tab, open the personal sandbox (or sign in) first.');if(!selected)throw new Error('No vehicle selected. On Home, tap the switch button and pick or add a vehicle.');if(!peripheral)throw new Error('No adapter selected. On Drive › Adapter, scan and tap your adapter.');if(!write||!notify)throw new Error('Pick one write and one notify characteristic from the same service on Drive › Adapter.');if(write.service!==notify.service)throw new Error('Write and notify must come from the same service. Re-pick them on Drive › Adapter.');const saved=await SecureStore.getItemAsync('collector-'+selected);const enrol=saved?JSON.parse(saved):await call('/devices/enrolments',{vehicleId:selected});await SecureStore.setItemAsync('collector-'+selected,JSON.stringify(enrol));await Recorder.configure({apiUrl:api,deviceId:enrol.deviceId,assignmentId:enrol.assignmentId,deviceToken:enrol.deviceToken,peripheralId:peripheral,serviceUuid:write.service,writeUuid:write.uuid,notifyUuid:notify.uuid});await SecureStore.setItemAsync('yazzy-configured',key);await permissions();await Recorder.start();}
 
  const vehicle=vehicles.find((x:any)=>x.id===selected);
  const tab=TABS.find(t=>t.views.includes(view))||TABS[0];
  const sum=summary&&summary.vehicleId===selected?summary:null;
  const lastTrip=latest(sum?.trips,'startAt'),lastService=latest(sum?.service,'observedAt'),findingCount=sum?.findings?.length??0;
+ const week=lastWeek(sum?.trips),weekKm=week.reduce((a,b)=>a+b,0);
  const live=snapshot.recording&&snapshot.connected;
- const recorderLabel=snapshot.recording?(snapshot.connected?'Recording':'Armed · waiting for car'):'Not recording';
+ const recorderLabel=live?`Recording${snapshot.signals.VEHICLE_SPEED!=null?` · ${snapshot.signals.VEHICLE_SPEED} km/h`:''}`:snapshot.recording?'Waiting for your car':'Not recording';
  const recommended=pickChannels(characteristics);
  const ready={signedIn:!!token,vehicle:!!selected,adapter:!!peripheral,channels:!!(write&&notify)};
+ const dark=view==='Garage';
+ const carWidth=Math.min(width-24,380);
+ const routeOf=(t:any)=>(t?.status==='STATIONARY'||(t?.metrics?.route||[]).length<2?[]:t.metrics.route) as {latitude:number;longitude:number}[];
+ const pickVehicle=(id:string)=>{setSelected(id);SecureStore.setItemAsync('yazzy-vehicle',id).catch(()=>{});setGarageOpen(false);};
 
  const signIn=<View style={ui.card}>
-  <Text style={ui.cardTitle}>Connect to your workspace</Text>
-  <Text style={[ui.body,{marginBottom:14}]}>Use your configured OIDC account. The web demo works independently without car data.</Text>
-  <Text style={[ui.label,s.fieldLabel]}>Server</Text>
+  <Text style={ui.title}>Sign in</Text>
+  <Text style={[ui.body,{marginTop:4,marginBottom:16}]}>Connect to your Yazzy server to see your garage.</Text>
+  <Text style={s.fieldLabel}>Server</Text>
   <TextInput accessibilityLabel="API address" style={ui.input} value={api} onChangeText={setApi} autoCapitalize="none"/>
-  <Text style={[ui.label,s.fieldLabel]}>Access password</Text>
+  <Text style={s.fieldLabel}>Access password</Text>
   <TextInput accessibilityLabel="Access password" placeholder="Needed for hosted servers" placeholderTextColor={c.faint} style={ui.input} value={accessPassword} onChangeText={setAccessPassword} autoCapitalize="none" autoCorrect={false} secureTextEntry/>
-  {btn('Open local personal sandbox',()=>perform(async()=>{await sandboxLogin();}),false,false,'log-in-outline')}
-  {issuer?btn('Sign in securely',()=>perform(async()=>{await promptAsync();}),true,!discovery||!request||busy,'shield-checkmark-outline'):<Text style={[ui.body,{marginTop:8}]}>Set EXPO_PUBLIC_OIDC_ISSUER and EXPO_PUBLIC_OIDC_CLIENT_ID before building. The local personal sandbox is available only on development servers.</Text>}
-  {authError?<Text accessibilityRole="alert" style={s.error}>{authError}</Text>:null}
+  <Button title="Open my garage" icon="arrow-forward" onPress={()=>perform(async()=>{await sandboxLogin();})}/>
+  {issuer?<Button kind="light" title="Sign in securely" icon="shield-checkmark-outline" disabled={!discovery||!request||busy} onPress={()=>perform(async()=>{await promptAsync();})}/>:null}
+  {authError?<Text accessibilityRole="alert" style={[ui.body,{color:c.red,marginTop:8}]}>{authError}</Text>:null}
  </View>;
 
- return <SafeAreaView style={s.safe} edges={['top','left','right']}>
-  <StatusBar style="dark"/>
-  <View style={s.topbar}>
-   <View style={ui.row}><View style={s.mark}><Icon name="pulse" size={15} color="#fff"/></View><Text style={s.brand}>yazzy</Text></View>
-   <View style={[ui.row,{gap:10}]}>{busy?<ActivityIndicator color={c.teal}/>:null}<View style={s.pill}><Text style={s.pillText}>PERSONAL GARAGE</Text></View></View>
-  </View>
-  <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+ const statusPill=<Pressable accessibilityRole="button" accessibilityLabel={`Recorder: ${recorderLabel}. Open Drive`} onPress={()=>load('Record')} style={s.statusPill}>
+  <View style={[s.dot,{backgroundColor:live?'#4ade80':snapshot.recording?c.blue300:c.nightMuted}]}/>
+  <Text style={s.statusText}>{recorderLabel}</Text>
+  <Icon name="chevron-forward" size={13} color={c.nightMuted}/>
+ </Pressable>;
 
-  {view==='Garage'&&<>
-   {token?<Updater api={api} call={call} token={token}/>:null}
-   {!token&&<>
-    <View style={s.hero}>
-     <Text style={s.heroEyebrow}>Vehicle intelligence</Text>
-     <Text style={s.heroTitle}>Your car, in context.</Text>
-     <Text style={s.heroText}>Know what changed. Understand what to check next.</Text>
-    </View>
-    {signIn}
-   </>}
-   {token&&(vehicle?<View style={s.hero}>
-    <View style={[ui.row,{justifyContent:'space-between',alignItems:'flex-start',gap:10}]}>
+ return <View style={s.screen}>
+  <StatusBar style={dark?'light':'dark'}/>
+  <ScrollView contentContainerStyle={{paddingBottom:(token?110:30)+insets.bottom}} keyboardShouldPersistTaps="handled">
+
+  {view==='Garage'&&!token&&<>
+   <View style={[s.top,{paddingTop:insets.top+18,paddingBottom:96}]}>
+    <Text style={s.wordmark}>yazzy</Text>
+    <Text style={s.topTitle}>Your car,{'\n'}in context.</Text>
+    <Text style={s.topText}>Trips, fuel and health from your own OBD adapter.</Text>
+   </View>
+   <View style={[s.car,{marginTop:-(carWidth*0.4)+40}]}><CarArt width={carWidth}/></View>
+   <View style={s.pad}>{signIn}</View>
+  </>}
+
+  {view==='Garage'&&token&&<>
+   <View style={[s.top,{paddingTop:insets.top+16,paddingBottom:vehicle?92:28}]}>
+    <View style={[ui.row,{alignItems:'flex-start',gap:12}]}>
      <View style={{flex:1}}>
-      <Text style={s.heroEyebrow} numberOfLines={1}>{[vehicle.make,vehicle.model,vehicle.year].filter(Boolean).join(' ')||'Your vehicle'}</Text>
-      <Text style={s.heroTitle} numberOfLines={2}>{vehicle.name}</Text>
+      <Text style={s.greet}>{greeting()}</Text>
+      <Text style={s.topTitle} numberOfLines={2}>{vehicle?vehicle.name:'Your garage'}</Text>
+      <Text style={s.topText} numberOfLines={1}>{vehicle?([vehicle.make,vehicle.model,vehicle.year].filter(Boolean).join(' ')||(vehicle.origin==='REAL'?'Personal vehicle':pretty(vehicle.origin))):'Add your first vehicle to begin'}</Text>
      </View>
-     <View style={s.heroIcon}><Icon name="car-sport-outline" size={22} color={c.teal300}/></View>
+     {busy?<ActivityIndicator color="#fff" style={{marginTop:12}}/>:null}
+     <RoundButton dark icon="swap-horizontal" label="Switch or add vehicle" onPress={()=>setGarageOpen(true)}/>
     </View>
-    <View style={[ui.row,{gap:8,marginTop:14,flexWrap:'wrap'}]}>
-     <View style={s.heroChip}><View style={[s.dot,{backgroundColor:live?'#4ade80':snapshot.recording?c.teal300:c.heroMuted}]}/><Text style={s.heroChipText}>{recorderLabel}</Text></View>
-     <View style={[s.heroChip,{backgroundColor:'transparent'}]}><Text style={[s.heroChipText,{color:c.heroMuted}]}>{vehicle.origin==='REAL'?'Real data':vehicle.origin}</Text></View>
-    </View>
-    <View style={s.heroMetrics}>
-     {live?<>
-      <View><Text style={s.heroLabel}>Speed</Text><Text style={s.heroValue}>{snapshot.signals.VEHICLE_SPEED??'—'}<Text style={s.heroUnit}> km/h</Text></Text></View>
-      <View><Text style={s.heroLabel}>Engine</Text><Text style={s.heroValue}>{snapshot.signals.ENGINE_RPM??'—'}<Text style={s.heroUnit}> rpm</Text></Text></View>
-     </>:<>
-      <View><Text style={s.heroLabel}>Distance</Text><Text style={s.heroValue}>{fmt(sum?.fuel?.distanceKm)}<Text style={s.heroUnit}> km</Text></Text></View>
-      <View><Text style={s.heroLabel}>Trips</Text><Text style={s.heroValue}>{sum?.fuel?.tripCount??'—'}</Text></View>
-     </>}
-    </View>
-    <View style={s.heroFoot}>
-     <Pressable accessibilityRole="button" style={s.heroBtn} onPress={()=>load('Record')}><Icon name="speedometer-outline" size={16} color={c.ink}/><Text style={s.heroBtnText}>{snapshot.recording?'Open recorder':'Start a drive'}</Text></Pressable>
-     <Pressable accessibilityRole="button" style={[s.heroBtn,s.heroBtnGhost]} onPress={()=>load('Trips')}><Text style={[s.heroBtnText,{color:'#fff'}]}>Trips</Text><Icon name="chevron-forward" size={15} color="#fff"/></Pressable>
-    </View>
-   </View>:<View style={s.hero}>
-    <Text style={s.heroEyebrow}>Your garage is ready</Text>
-    <Text style={s.heroTitle}>Add your first vehicle</Text>
-    <Text style={s.heroText}>Trips, health findings and service records will appear here.</Text>
-   </View>)}
-   {token&&vehicle&&<View style={s.tiles}>
-    <Tile label="Fuel" icon="water-outline" value={fmt(sum?.fuel?.fuelLitres)} unit="L" detail={sum?.fuel?.litresPer100Km!=null?`${fmt(sum.fuel.litresPer100Km)} L/100 km average`:sum?.fuel?.purchasedLitres?`${fmt(sum.fuel.purchasedLitres)} L purchased`:'Consumed on recorded trips'} onPress={()=>load('Trips')}/>
-    <Tile label="Health" icon="pulse-outline" tone={sum?findingCount?'warn':'ok':undefined} value={!sum?'—':findingCount?`${findingCount} to review`:'No findings'} detail={findingCount?'Evidence-backed change':'No persistent supported change'} onPress={()=>load('Health')}/>
-    <Tile label="Last trip" icon="navigate-outline" value={lastTrip?fmt(lastTrip.metrics?.distanceKm):'—'} unit={lastTrip?'km':undefined} detail={lastTrip?when(lastTrip.startAt):'No recorded journeys yet'} onPress={()=>{if(lastTrip)setOpenTrip(lastTrip.id);load('Trips');}}/>
-    <Tile label="Service" icon="construct-outline" value={lastService?day(lastService.observedAt):'None yet'} detail={lastService?lastService.description:'No maintenance records'} onPress={()=>load('Service')}/>
-   </View>}
-   <Section title="Your garage" subtitle={vehicles.length?`${vehicles.length} vehicle${vehicles.length===1?'':'s'} · tap to select`:undefined}/>
-   <View style={[ui.card,{paddingVertical:6}]}>
-    {vehicles.length?vehicles.map((v,i)=><Pressable key={v.id} accessibilityRole="button" accessibilityState={{selected:selected===v.id}} style={[s.listRow,i>0&&s.listRowBorder]} onPress={()=>{setSelected(v.id);SecureStore.setItemAsync('yazzy-vehicle',v.id).catch(()=>{});}}>
-     <View style={[ui.iconBox,selected===v.id&&{backgroundColor:c.hero}]}><Icon name="car-sport-outline" size={19} color={selected===v.id?c.teal300:c.teal}/></View>
-     <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={s.rowSub}>{[v.make,v.model].filter(Boolean).join(' ')||'Vehicle'} · {v.origin}</Text></View>
-     {selected===v.id?<Icon name="checkmark-circle" size={22} color={c.teal}/>:<View style={s.radio}/>}
-    </Pressable>):<Text style={[ui.body,{paddingVertical:12}]}>No connected vehicle data. Your adapter’s sensors, transport and background behaviour still need qualification.</Text>}
-    {token&&<View style={[s.listRowBorder,{paddingTop:14,paddingBottom:8}]}>
-     <TextInput style={ui.input} placeholder="New vehicle name" placeholderTextColor={c.faint} value={name} onChangeText={setName}/>
-     {btn('Add vehicle',()=>perform(async()=>{await call('/vehicles',{name});setVehicles(await call('/vehicles'));setName('');}),true,false,'add')}
-    </View>}
+    {vehicle?<View style={{marginTop:16,alignItems:'flex-start'}}>{statusPill}</View>:null}
    </View>
-   <View style={[ui.card,s.infoCard]}><Icon name="flask-outline" size={18} color={c.teal}/><View style={{flex:1}}><Text style={s.rowTitle}>Start without car data</Text><Text style={ui.body}>Open the web dashboard’s separate simulated fleet. No synthetic reading is assigned to your real car.</Text></View></View>
-  </>}
-
-  {tab.key==='Drive'&&<>
-   <Section title="Drive" subtitle={vehicle?vehicle.name:'No vehicle selected'}/>
-   <Segment items={[['Record','Record'],['Connect','Adapter']]} value={view} onChange={v=>load(v)}/>
-  </>}
-
-  {view==='Connect'&&<>
-   <View style={ui.card}>
-    <Text style={ui.cardTitle}>Qualify your Vgate</Text>
-    <Text style={[ui.body,{marginBottom:10}]}>Close other OBD apps. Scan while parked. Select the actual service and characteristics discovered from your unit; no UUIDs are assumed.</Text>
-    {btn('Discover nearby adapters',()=>perform(async()=>{await permissions();setPeripherals(await Recorder.discover());}),false,false,'bluetooth')}
-   </View>
-   {peripherals.length>0&&<View style={[ui.card,{paddingVertical:6}]}>{peripherals.map((p,i)=><Pressable key={p.id} accessibilityRole="button" accessibilityState={{disabled:busy,selected:peripheral===p.id}} disabled={busy} style={[s.listRow,i>0&&s.listRowBorder,busy&&{opacity:0.5}]} onPress={()=>perform(async()=>{setPeripheral(p.id);setWrite(null);setNotify(null);setCharacteristics([]);const list=await Recorder.inspect(p.id);setCharacteristics(list);const pick=pickChannels(list);if(pick){setWrite(pick.write);setNotify(pick.notify);}})}>
-    <View style={[ui.iconBox,peripheral===p.id&&{backgroundColor:c.hero}]}><Icon name={p.likelyObd?'radio-outline':'bluetooth-outline'} size={18} color={peripheral===p.id?c.teal300:c.teal}/></View>
-    <View style={{flex:1}}><Text style={s.rowTitle}>{p.name}</Text><Text style={s.rowSub}>{p.rssi?`${p.rssi} dBm`:'saved'}{p.likelyObd?' · likely OBD adapter':''}</Text></View>
-    {peripheral===p.id?<Icon name="checkmark-circle" size={22} color={c.teal}/>:<View style={s.radio}/>}
-   </Pressable>)}</View>}
-   {busy&&peripheral&&!characteristics.length&&<Text style={[ui.body,{marginBottom:12}]}>Connecting to the adapter and reading its services…</Text>}
-   {[...new Set(characteristics.map(c=>c.service))].map(svc=><View key={svc} style={ui.card}>
-    <View style={[ui.row,{justifyContent:'space-between'}]}><Text style={ui.label}>Service</Text>{recommended?.write.service===svc&&<View style={[ui.chip,{backgroundColor:c.teal50}]}><Text style={[ui.chipText,{color:c.teal}]}>Recommended for OBD</Text></View>}</View><Text style={s.mono}>{svc}</Text>
-    {characteristics.filter(x=>x.service===svc).map(ch=><View key={ch.service+ch.uuid} style={s.charRow}>
-     <Text style={s.mono}>{ch.uuid}</Text>
-     <View style={[ui.row,{gap:8,flexWrap:'wrap'}]}>
-      {ch.write&&<Pressable accessibilityRole="button" onPress={()=>{setWrite(ch);if(notify&&notify.service!==ch.service)setNotify(null);}} style={[s.choice,write?.service===ch.service&&write?.uuid===ch.uuid&&s.choiceOn]}><Text style={[s.choiceText,write?.service===ch.service&&write?.uuid===ch.uuid&&s.choiceTextOn]}>{write?.service===ch.service&&write?.uuid===ch.uuid?'✓ Write characteristic':'Use for write'}</Text></Pressable>}
-      {ch.notify&&<Pressable accessibilityRole="button" onPress={()=>{setNotify(ch);if(write&&write.service!==ch.service)setWrite(null);}} style={[s.choice,notify?.service===ch.service&&notify?.uuid===ch.uuid&&s.choiceOn]}><Text style={[s.choiceText,notify?.service===ch.service&&notify?.uuid===ch.uuid&&s.choiceTextOn]}>{notify?.service===ch.service&&notify?.uuid===ch.uuid?'✓ Notify characteristic':'Use for notifications'}</Text></Pressable>}
-     </View>
-    </View>)}
-   </View>)}
-   {characteristics.length>0&&<View style={[ui.card,s.infoCard,write&&notify?{borderColor:'#bfe0d9',backgroundColor:c.teal50}:null]}><Icon name={write&&notify?'checkmark-circle':'information-circle-outline'} size={20} color={write&&notify?c.teal:c.muted}/><Text style={[ui.body,{flex:1}]}>Selected: write {write?write.uuid:'none'} · notify {notify?notify.uuid:'none'}{write&&notify?' ✓ ready':' (pick both from the same service)'}</Text></View>}
-   <Text style={s.note}>Transport: BLE qualification path. Bluetooth Classic support requires a separate verified transport implementation if your Android unit needs it.</Text>
-  </>}
-
-  {view==='Record'&&<>
-   <View style={s.gauge}>
-    <View style={[ui.row,{justifyContent:'space-between'}]}>
-     <View style={s.heroChip}><View style={[s.dot,{backgroundColor:live?'#4ade80':snapshot.recording?c.teal300:c.heroMuted}]}/><Text style={s.heroChipText}>{snapshot.recording?(snapshot.connected?'Recording session':'Armed'):'Ready when you are'}</Text></View>
-     <Text style={s.gaugeQual}>{snapshot.qualification}</Text>
-    </View>
-    <View style={s.gaugeNumbers}>
-     <View style={{flex:1}}><Text style={s.gaugeValue}>{snapshot.signals.VEHICLE_SPEED??'—'}</Text><Text style={s.heroLabel}>km/h</Text></View>
-     <View style={s.gaugeDivider}/>
-     <View style={{flex:1,paddingLeft:20}}><Text style={s.gaugeValue}>{snapshot.signals.ENGINE_RPM??'—'}</Text><Text style={s.heroLabel}>rpm</Text></View>
-    </View>
-    <View style={[ui.row,{gap:16,flexWrap:'wrap'}]}>
-     <View style={[ui.row,{gap:6}]}><Icon name="bluetooth" size={14} color={snapshot.connected?c.teal300:c.heroMuted}/><Text style={s.gaugeMeta}>Bluetooth: {snapshot.connected?'connected':'disconnected'}</Text></View>
-     <View style={[ui.row,{gap:6}]}><Icon name="cloud-upload-outline" size={14} color={c.heroMuted}/><Text style={s.gaugeMeta}>Upload queue: {snapshot.queued}</Text></View>
-    </View>
-   </View>
-   {snapshot.error?<View style={[ui.card,s.infoCard,{backgroundColor:c.red50,borderColor:'#f5c8c2'}]}><Icon name="alert-circle-outline" size={20} color={c.red}/><Text style={[s.error,{flex:1,marginVertical:0}]}>{snapshot.error}</Text></View>:null}
-   {snapshot.recording&&!snapshot.connected&&<View style={[ui.card,s.infoCard,{backgroundColor:c.teal50,borderColor:'#bfe0d9'}]}><Icon name="time-outline" size={20} color={c.teal}/><Text style={[ui.body,{flex:1,color:c.ink2}]}>Armed: waiting for your adapter. Turn the car on and it connects by itself, even if this screen is closed. Each time the car starts, a new trip begins.</Text></View>}
-   {snapshot.recording?btn(snapshot.connected?'Stop recording':'Disarm auto-connect',()=>perform(()=>Recorder.stop()),false,false,'stop-circle-outline'):btn(snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start selected adapter',()=>perform(start),false,false,'play-circle-outline')}
-   {btn('Retry upload',()=>perform(()=>Recorder.sync()),true,false,'refresh-outline')}
-   <View style={[ui.card,{marginTop:12}]}>
-    <Text style={[ui.label,{marginBottom:6}]}>Before you drive</Text>
-    <Check ok={ready.signedIn} label="Signed in"/>
-    <Check ok={ready.vehicle} label={vehicle?`Vehicle · ${vehicle.name}`:'Vehicle selected'}/>
-    <Check ok={ready.adapter} label="Adapter chosen"/>
-    <Check ok={ready.channels} label="Write / notify characteristics"/>
-   </View>
-   <Text style={s.note}>Do not use controls while driving. Background reliability is not verified. OS termination may interrupt capture; queued observations remain on device.</Text>
-  </>}
-
-  {tab.key==='Health'&&<>
-   <Section title="Health" subtitle={vehicle?vehicle.name:'No vehicle selected'}/>
-   <Segment items={[['Health','Findings'],['Service','Service']]} value={view} onChange={v=>load(v)}/>
-  </>}
-  {view==='Trips'&&<Section title="Trips" subtitle={vehicle?`${vehicle.name} · tap a trip for map and details`:'No vehicle selected'}/>}
-  {['Trips','Health','Service'].includes(view)&&<>
-   {!data.length&&<View style={[ui.card,s.emptyCard]}><View style={s.emptyIcon}><Icon name={view==='Trips'?'map-outline':view==='Health'?'pulse-outline':'construct-outline'} size={22} color={c.teal}/></View><Text style={s.rowTitle}>No records yet</Text><Text style={[ui.body,{textAlign:'center'}]}>Unsupported or unobserved values are never shown as zero.</Text></View>}
-   {data.map(d=>{const trip=view==='Trips'&&d.metrics&&d.startAt!=null;const open=openTrip===d.id;
-    if(view==='Health')return <View key={d.id} style={[ui.card,{borderColor:'#f0dcc0'}]}>
-     <View style={[ui.row,{gap:8,marginBottom:10,flexWrap:'wrap'}]}><View style={[ui.chip,{backgroundColor:c.amber50}]}><Icon name="warning-outline" size={13} color={c.amber}/><Text style={[ui.chipText,{color:c.amber}]}>{String(d.status||'').replaceAll('_',' ')}</Text></View>{d.origin?<View style={ui.chip}><Text style={ui.chipText}>{d.origin}</Text></View>:null}</View>
-     <Text style={ui.cardTitle}>{d.summary||d.description}</Text>
-     {d.evidence&&<View style={s.nextStep}><Text style={[ui.label,{color:c.amber,marginBottom:4}]}>Recommended next step</Text><Text style={[ui.body,{color:c.ink2}]}>{d.evidence.recommendedNextStep}</Text></View>}
-     {d.evidence&&<Text style={[ui.body,{fontSize:12.5}]}>Exact failed part and failure date unavailable.</Text>}
-    </View>;
-    if(view==='Service')return <View key={d.id} style={[ui.card,s.infoCard]}>
-     <View style={[ui.iconBox,{backgroundColor:c.green50}]}><Icon name="checkmark" size={18} color={c.green}/></View>
-     <View style={{flex:1}}><Text style={s.rowTitle}>{d.description||d.summary}</Text><Text style={s.rowSub}>{d.observedAt?when(d.observedAt):''}{d.actualCost!=null?` · ${d.currency||''} ${fmt(d.actualCost,2)}`:''}{d.status?` · ${d.status}`:''}</Text></View>
-    </View>;
-    return <View key={d.id} style={[ui.card,open&&{borderColor:'#bfe0d9'}]}>
-     <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} disabled={!trip} onPress={()=>setOpenTrip(open?'':d.id)}>
-      <View style={[ui.row,{gap:12}]}>
-       <View style={ui.iconBox}><Icon name={d.status==='STATIONARY'?'pause-outline':'navigate-outline'} size={18} color={c.teal}/></View>
-       <View style={{flex:1}}><Text style={s.rowTitle}>{d.startAt!=null?when(d.startAt):d.summary||d.description}</Text><Text style={s.rowSub}>{String(d.status||'').replaceAll('_',' ').toLowerCase()} {d.origin?`· ${d.origin}`:''}</Text></View>
-       {trip?<Icon name={open?'chevron-up':'chevron-down'} size={18} color={c.faint}/>:null}
+   {vehicle?<View style={[s.car,{marginTop:-(carWidth*0.4)+34}]}><CarArt width={carWidth}/></View>:null}
+   <View style={[s.pad,{paddingTop:vehicle?4:20}]}>
+    <Updater api={api} call={call} token={token}/>
+    {!vehicle?<View style={ui.card}>
+     <Text style={ui.title}>No vehicle yet</Text>
+     <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Add your car to start recording trips, fuel and health.</Text>
+     <Button title="Add a vehicle" icon="add" onPress={()=>setGarageOpen(true)}/>
+    </View>:<>
+     <View style={s.tiles}>
+      <Stat title="Distance" icon="trending-up" value={fmt(sum?.fuel?.distanceKm,0)} unit="km" caption={sum?.fuel?.tripCount?`${fmt(weekKm)} km this week · ${sum.fuel.tripCount} trips`:'No trips yet'} onPress={()=>load('Trips')} style={{flex:1}}>
+       <WeekBars values={week}/>
+      </Stat>
+      <View style={{flex:1,gap:12}}>
+       <Stat title="Fuel" icon="water" value={sum?.fuel?.litresPer100Km!=null?fmt(sum.fuel.litresPer100Km):fmt(sum?.fuel?.fuelLitres)} unit={sum?.fuel?.litresPer100Km!=null?'L/100':'L'} caption={sum?.fuel?.litresPer100Km!=null?'Average use':'Used on trips'} onPress={()=>load('Trips')}/>
+       <Stat title="Health" icon="pulse" tone={sum?findingCount?'warn':'ok':undefined} value={!sum?'—':findingCount?String(findingCount):'All clear'} unit={findingCount?'to review':undefined} caption={findingCount?'Evidence-backed':'No findings'} onPress={()=>load('Health')}/>
       </View>
-      {d.metrics&&<View style={s.tripStats}>
-       <View style={{flex:1}}><Text style={s.tripValue}>{d.metrics.distanceKm?.toFixed(2)??'—'}<Text style={s.tripUnit}> km</Text></Text><Text style={s.rowSub}>distance</Text></View>
-       <View style={{flex:1}}><Text style={s.tripValue}>{d.metrics.fuelLitres?.toFixed(2)??'—'}<Text style={s.tripUnit}> L</Text></Text><Text style={s.rowSub}>fuel</Text></View>
-       <View style={{flex:1}}><Text style={s.tripValue}>{Math.round(d.metrics.fuelCoverage*100)}<Text style={s.tripUnit}> %</Text></Text><Text style={s.rowSub}>fuel coverage</Text></View>
-      </View>}
-      {trip&&!open&&d.status==='STATIONARY'&&<Text style={[ui.body,{marginTop:10}]}>Stationary session (the car did not move faster than 5 km/h).</Text>}
-      {trip&&!open&&<Text style={s.tapHint}>Tap for map, speed and details</Text>}
+     </View>
+     <View style={[ui.card,s.tripCard]}>
+      <View style={{flex:1,paddingRight:12}}>
+       <Text style={ui.title}>Last trip</Text>
+       <Text style={[ui.caption,{marginTop:2}]}>{lastTrip?`${weekday(lastTrip.startAt)} · ${clock(lastTrip.startAt)}`:'No recorded journeys yet'}</Text>
+       <Text style={[ui.value,{marginTop:12}]}>{lastTrip?distance(lastTrip.metrics?.distanceKm):'—'}</Text>
+       <Text style={ui.caption}>{lastTrip?minutes(lastTrip.metrics?.durationSeconds||0):'Start a drive from the Drive tab'}</Text>
+       <Button title={lastTrip?'View trip':'Start a drive'} icon={lastTrip?'navigate':'play'} onPress={()=>lastTrip?setTripView(lastTrip):load('Record')} style={{marginTop:14,minHeight:44,alignSelf:'flex-start',paddingHorizontal:16}}/>
+      </View>
+      {routeOf(lastTrip).length?<RouteArt route={routeOf(lastTrip)} style={s.tripThumb} stroke={3.5}/>
+       :<View style={[s.tripThumb,{alignItems:'center',justifyContent:'center'}]}><Icon name="map-outline" size={30} color={c.faint}/></View>}
+     </View>
+     <Pressable accessibilityRole="button" onPress={()=>load('Service')} style={({pressed})=>[ui.card,s.rowCard,pressed&&{opacity:0.9}]}>
+      <View style={[s.circle,{backgroundColor:c.green50}]}><Icon name="construct" size={18} color={c.green}/></View>
+      <View style={{flex:1}}><Text style={s.rowTitle}>Service</Text><Text style={ui.caption} numberOfLines={1}>{lastService?`${lastService.description} · ${ago(lastService.observedAt)}`:'No maintenance records yet'}</Text></View>
+      <Icon name="chevron-forward" size={16} color={c.ink}/>
      </Pressable>
-     {trip&&open&&<TripDetail trip={d} vehicleId={selected} vehicleName={vehicle?.name} call={call}/>}
-    </View>;
-   })}
-  </>}
-
-  {view==='Advisor'&&<>
-   <Section title="More"/>
-   <View style={ui.card}>
-    <View style={[ui.row,{gap:12,marginBottom:10}]}><View style={ui.iconBox}><Icon name="sparkles-outline" size={18} color={c.teal}/></View><Text style={[ui.cardTitle,{marginBottom:0}]}>Evidence advisor</Text></View>
-    <Text style={[ui.body,{marginBottom:14}]}>Deterministic evidence explanations. No invented readings or failure probabilities.</Text>
-    <TextInput style={ui.input} value={message} onChangeText={setMessage} placeholder="Ask about your vehicle" placeholderTextColor={c.faint}/>
-    {btn('Ask',()=>perform(async()=>setAnswer(await call('/assistant/messages',{vehicleId:selected,message}))),false,false,'send')}
-    {answer&&<View style={s.answer}><Text style={[ui.body,{color:c.ink2}]}>{answer.text}</Text>{answer.type==='CONFIRMATION'&&btn('Review and confirm inspection task',()=>perform(async()=>{await call('/pending-actions/'+answer.pendingActionId+'/confirm',{});Alert.alert('Work order created')}),false,false,'checkmark')}</View>}
+    </>}
    </View>
-   {token?<View style={ui.card}>
-    <Text style={[ui.label,{marginBottom:10}]}>Connection</Text>
-    <View style={[ui.row,{gap:12}]}><View style={ui.iconBox}><Icon name="server-outline" size={18} color={c.teal}/></View><View style={{flex:1}}><Text style={s.rowTitle} numberOfLines={1}>{api.replace(/^https?:\/\//,'')}</Text><Text style={s.rowSub}>{token==='LOCAL_DEMO'?'Personal sandbox':'Signed in securely'}</Text></View><Icon name="checkmark-circle" size={20} color={c.green}/></View>
-   </View>:signIn}
-   <View style={[ui.card,s.infoCard]}><Icon name="shield-checkmark-outline" size={18} color={c.teal}/><Text style={[ui.body,{flex:1}]}>Read-only diagnostics. Yazzy never clears codes or actuates anything in your car.</Text></View>
   </>}
 
-  <Text style={s.foot}>Qualification pending · Read-only diagnostics · No clearing or actuation</Text>
+  {view!=='Garage'&&<View style={[s.pad,{paddingTop:insets.top+8}]}>
+   {tab.key==='Trips'&&<ScreenHeader title="Trips" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy?<ActivityIndicator color={c.blue}/>:<RoundButton icon="refresh" label="Refresh trips" onPress={()=>load('Trips')}/>}/>}
+   {tab.key==='Health'&&<><ScreenHeader title="Health" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy?<ActivityIndicator color={c.blue}/>:null}/><Segment items={[['Health','Findings'],['Service','Service']]} value={view} onChange={v=>load(v)}/></>}
+   {tab.key==='Drive'&&<><ScreenHeader title="Drive" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy?<ActivityIndicator color={c.blue}/>:null}/><Segment items={[['Record','Record'],['Connect','Adapter']]} value={view} onChange={v=>load(v)}/></>}
+   {tab.key==='More'&&<ScreenHeader title="More"/>}
+
+   {['Trips','Health','Service'].includes(view)&&!data.length&&!busy&&<Empty icon={view==='Trips'?'map-outline':view==='Health'?'pulse-outline':'construct-outline'} title={view==='Health'?'No findings':'Nothing here yet'} text={view==='Trips'?'Recorded drives appear here with their route.':view==='Health'?'No persistent change in the readings your car supports.':'Maintenance records you add appear here.'}/>}
+
+   {view==='Trips'&&data.map(d=>{const trip=d.metrics&&d.startAt!=null,route=routeOf(d);
+    return <Pressable key={d.id} accessibilityRole="button" disabled={!trip} onPress={()=>setTripView(d)} style={({pressed})=>[ui.card,s.rowCard,{padding:12},pressed&&{opacity:0.9}]}>
+     {route.length?<RouteArt route={route} style={s.listThumb} stroke={2.5} grid={false}/>:<View style={[s.listThumb,{alignItems:'center',justifyContent:'center'}]}><Icon name={d.status==='STATIONARY'?'pause':'navigate'} size={20} color={c.blue}/></View>}
+     <View style={{flex:1}}>
+      <Text style={s.rowTitle}>{d.startAt!=null?weekday(d.startAt):d.summary||d.description}</Text>
+      <Text style={ui.caption}>{d.startAt!=null?clock(d.startAt):''}{d.status==='STATIONARY'?' · stationary':''}</Text>
+      {d.metrics?<View style={[ui.row,{gap:14,marginTop:8}]}>
+       <Text style={s.metric}>{distance(d.metrics.distanceKm)}</Text>
+       <Text style={s.metricMuted}>{minutes(d.metrics.durationSeconds||0)}</Text>
+       {d.metrics.fuelLitres!=null?<Text style={s.metricMuted}>{fmt(d.metrics.fuelLitres,2)} L</Text>:null}
+      </View>:null}
+     </View>
+     {trip?<Icon name="chevron-forward" size={16} color={c.ink}/>:null}
+    </Pressable>;})}
+
+   {view==='Health'&&data.map(d=><View key={d.id} style={ui.card}>
+    <View style={[ui.row,{gap:12,alignItems:'flex-start'}]}>
+     <View style={[s.circle,{backgroundColor:c.amber50}]}><Icon name="warning" size={18} color={c.amber}/></View>
+     <View style={{flex:1}}><Text style={s.rowTitle}>{d.summary||d.description}</Text><Text style={[ui.caption,{marginTop:2,textTransform:'capitalize'}]}>{pretty(d.status)}{d.origin?` · ${pretty(d.origin)}`:''}</Text></View>
+    </View>
+    {d.evidence&&<View style={s.nextStep}><Text style={s.nextLabel}>Recommended next step</Text><Text style={[ui.body,{color:c.ink2}]}>{d.evidence.recommendedNextStep}</Text></View>}
+    {d.evidence&&<Text style={ui.caption}>Exact failed part and failure date unavailable.</Text>}
+   </View>)}
+
+   {view==='Service'&&data.map((d,i)=><View key={d.id} style={s.timeline}>
+    <View style={{alignItems:'center'}}><View style={[s.circle,{backgroundColor:c.green50,width:36,height:36}]}><Icon name="checkmark" size={17} color={c.green}/></View>{i<data.length-1?<View style={s.timeLine}/>:null}</View>
+    <View style={[ui.card,{flex:1,marginBottom:12,padding:14}]}>
+     <Text style={s.rowTitle}>{d.description||d.summary}</Text>
+     <Text style={[ui.caption,{marginTop:2}]}>{d.observedAt?`${day(d.observedAt)} · ${ago(d.observedAt)}`:''}{d.actualCost!=null?` · ${d.currency||''} ${fmt(d.actualCost,2)}`:''}</Text>
+    </View>
+   </View>)}
+
+   {view==='Record'&&<>
+    <View style={s.live}>
+     <View style={[ui.row,{justifyContent:'space-between'}]}>
+      <View style={s.statusPill}><View style={[s.dot,{backgroundColor:live?'#4ade80':snapshot.recording?c.blue300:c.nightMuted}]}/><Text style={s.statusText}>{live?'Recording':snapshot.recording?'Armed':'Ready when you are'}</Text></View>
+      <Icon name="bluetooth" size={18} color={snapshot.connected?c.blue300:c.nightMuted}/>
+     </View>
+     <View style={s.liveNumbers}>
+      <View style={{flex:1.3}}><Text style={s.liveValue}>{snapshot.signals.VEHICLE_SPEED??'—'}</Text><Text style={s.liveUnit}>km/h</Text></View>
+      <View style={s.liveDivider}/>
+      <View style={{flex:1,paddingLeft:18}}><Text style={[s.liveValue,{fontSize:34}]}>{snapshot.signals.ENGINE_RPM??'—'}</Text><Text style={s.liveUnit}>rpm</Text></View>
+     </View>
+     <View style={[ui.row,{gap:18,flexWrap:'wrap'}]}>
+      <Text style={s.liveMeta}>{snapshot.connected?'Adapter connected':'Adapter not connected'}</Text>
+      <Text style={s.liveMeta}>{snapshot.queued} waiting to upload</Text>
+     </View>
+    </View>
+    {snapshot.error?<Notice tone="error">{snapshot.error}</Notice>:null}
+    {snapshot.recording&&!snapshot.connected&&<Notice icon="time">Waiting for your adapter. Turn the car on and it connects by itself, even with the app closed. Each start of the car begins a new trip.</Notice>}
+    {snapshot.recording?<Button kind="dark" title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" onPress={()=>perform(()=>Recorder.stop())}/>
+     :<Button title={snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording'} icon="play" onPress={()=>perform(start)}/>}
+    <Button kind="light" title="Upload now" icon="cloud-upload-outline" onPress={()=>perform(()=>Recorder.sync())}/>
+    <View style={[ui.card,{marginTop:12}]}>
+     <Text style={[ui.title,{marginBottom:4}]}>Before you drive</Text>
+     <Check ok={ready.signedIn} label="Signed in"/>
+     <Check ok={ready.vehicle} label={vehicle?`Vehicle · ${vehicle.name}`:'Vehicle selected'}/>
+     <Check ok={ready.adapter} label="Adapter chosen"/>
+     <Check ok={ready.channels} label="Data channel selected"/>
+    </View>
+    <Text style={s.note}>Don't use the app while driving. Android may stop background recording; anything not yet uploaded stays on the phone.</Text>
+   </>}
+
+   {view==='Connect'&&<>
+    <View style={ui.card}>
+     <Text style={ui.title}>Find your adapter</Text>
+     <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Plug the adapter in, close other OBD apps and scan while parked.</Text>
+     <Button title="Scan for adapters" icon="bluetooth" onPress={()=>perform(async()=>{await permissions();setPeripherals(await Recorder.discover());})}/>
+    </View>
+    {peripherals.length>0&&<View style={[ui.card,{paddingVertical:6}]}>{peripherals.map((p,i)=>{const on=peripheral===p.id;return <Pressable key={p.id} accessibilityRole="button" accessibilityState={{disabled:busy,selected:on}} disabled={busy} style={[s.listRow,i>0&&s.listRowBorder,busy&&{opacity:0.5}]} onPress={()=>perform(async()=>{setPeripheral(p.id);setWrite(null);setNotify(null);setCharacteristics([]);const list=await Recorder.inspect(p.id);setCharacteristics(list);const pick=pickChannels(list);if(pick){setWrite(pick.write);setNotify(pick.notify);}})}>
+     <View style={[s.circle,on?{backgroundColor:c.blue}:{backgroundColor:c.blue50}]}><Icon name={p.likelyObd?'radio':'bluetooth'} size={18} color={on?'#fff':c.blue}/></View>
+     <View style={{flex:1}}><Text style={s.rowTitle}>{p.name}</Text><Text style={ui.caption}>{p.rssi?`Signal ${p.rssi} dBm`:'Saved adapter'}{p.likelyObd?' · OBD adapter':''}</Text></View>
+     {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
+    </Pressable>;})}</View>}
+    {busy&&peripheral&&!characteristics.length&&<Notice icon="sync">Connecting to the adapter and reading its services…</Notice>}
+    {characteristics.length>0&&<Notice tone={write&&notify?'ok':'info'}>{write&&notify?`Ready: data channel ${short(write.uuid)} / ${short(notify.uuid)}`:'Pick one write and one notify channel from the same service.'}</Notice>}
+    {[...new Set(characteristics.map(x=>x.service))].map(svc=><View key={svc} style={ui.card}>
+     <View style={[ui.row,{justifyContent:'space-between',gap:8}]}>
+      <Text style={ui.title}>Service</Text>
+      {recommended?.write.service===svc&&<View style={s.badge}><Icon name="star" size={11} color={c.blue}/><Text style={s.badgeText}>Recommended</Text></View>}
+     </View>
+     <Text style={s.mono}>{svc}</Text>
+     {characteristics.filter(x=>x.service===svc).map(ch=>{const w=write?.service===ch.service&&write?.uuid===ch.uuid,n=notify?.service===ch.service&&notify?.uuid===ch.uuid;return <View key={ch.service+ch.uuid} style={s.charRow}>
+      <Text style={s.mono}>{ch.uuid}</Text>
+      <View style={[ui.row,{gap:8,flexWrap:'wrap'}]}>
+       {ch.write&&<Pressable accessibilityRole="button" accessibilityState={{selected:w}} onPress={()=>{setWrite(ch);if(notify&&notify.service!==ch.service)setNotify(null);}} style={[s.choice,w&&s.choiceOn]}>{w?<Icon name="checkmark" size={14} color="#fff"/>:null}<Text style={[s.choiceText,w&&{color:'#fff'}]}>Write</Text></Pressable>}
+       {ch.notify&&<Pressable accessibilityRole="button" accessibilityState={{selected:n}} onPress={()=>{setNotify(ch);if(write&&write.service!==ch.service)setWrite(null);}} style={[s.choice,n&&s.choiceOn]}>{n?<Icon name="checkmark" size={14} color="#fff"/>:null}<Text style={[s.choiceText,n&&{color:'#fff'}]}>Notify</Text></Pressable>}
+      </View>
+     </View>;})}
+    </View>)}
+    <Text style={s.note}>Bluetooth LE adapters only. Classic Bluetooth adapters are not supported yet.</Text>
+   </>}
+
+   {view==='Advisor'&&<>
+    <Pressable accessibilityRole="button" onPress={()=>setGarageOpen(true)} style={({pressed})=>[ui.card,s.rowCard,pressed&&{opacity:0.9}]}>
+     <View style={[s.circle,{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={c.blue}/></View>
+     <View style={{flex:1}}><Text style={s.rowTitle}>Vehicles</Text><Text style={ui.caption}>{vehicles.length} in your garage{vehicle?` · ${vehicle.name} selected`:''}</Text></View>
+     <Icon name="chevron-forward" size={16} color={c.ink}/>
+    </Pressable>
+    <View style={ui.card}>
+     <Text style={ui.title}>Ask about your car</Text>
+     <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Answers come from your car's recorded evidence, never invented readings.</Text>
+     <View style={[ui.row,{gap:10}]}>
+      <TextInput style={[ui.input,{flex:1,marginBottom:0}]} value={message} onChangeText={setMessage} placeholder="Why did fuel use go up?" placeholderTextColor={c.faint}/>
+      <Pressable accessibilityRole="button" accessibilityLabel="Ask" onPress={()=>perform(async()=>setAnswer(await call('/assistant/messages',{vehicleId:selected,message})))} style={s.send}><Icon name="arrow-up" size={20} color="#fff"/></Pressable>
+     </View>
+     {answer&&<View style={s.answer}><Text style={[ui.body,{color:c.ink2}]}>{answer.text}</Text>{answer.type==='CONFIRMATION'&&<Button title="Confirm inspection task" icon="checkmark" onPress={()=>perform(async()=>{await call('/pending-actions/'+answer.pendingActionId+'/confirm',{});Alert.alert('Work order created')})}/>}</View>}
+    </View>
+    {token?<View style={[ui.card,s.rowCard]}>
+     <View style={[s.circle,{backgroundColor:c.green50}]}><Icon name="cloud-done" size={18} color={c.green}/></View>
+     <View style={{flex:1}}><Text style={s.rowTitle} numberOfLines={1}>{api.replace(/^https?:\/\//,'')}</Text><Text style={ui.caption}>{token==='LOCAL_DEMO'?'Personal garage':'Signed in securely'}</Text></View>
+    </View>:signIn}
+    <Text style={s.note}>Read-only diagnostics. Yazzy never clears codes or controls anything in your car.</Text>
+   </>}
+  </View>}
   </ScrollView>
-  <View style={[s.tabbar,{paddingBottom:Math.max(insets.bottom,6)}]}>
-   {TABS.map(t=>{const active=tab.key===t.key;return <Pressable key={t.key} accessibilityRole="tab" accessibilityState={{selected:active}} accessibilityLabel={t.key} style={s.tabItem} onPress={()=>load(t.views[0])}>
-    <View style={[s.tabIcon,active&&s.tabIconActive]}><Icon name={active?t.icon:`${t.icon}-outline`} size={21} color={active?c.teal:c.muted}/>{t.key==='Drive'&&snapshot.recording?<View style={[s.tabDot,{backgroundColor:snapshot.connected?c.green:c.teal300}]}/>:null}</View>
-    <Text style={[s.tabText,active&&s.tabTextActive]}>{t.key}</Text>
+
+  {token?<View style={[s.nav,{bottom:Math.max(insets.bottom,10)+8}]}>
+   {TABS.map(t=>{const active=tab.key===t.key;return <Pressable key={t.key} accessibilityRole="tab" accessibilityState={{selected:active}} accessibilityLabel={t.key} style={s.navItem} onPress={()=>load(t.views[0])}>
+    <View style={[s.navIcon,active&&s.navIconOn]}><Icon name={active?t.icon:`${t.icon}-outline`} size={21} color={active?'#fff':c.nightMuted}/></View>
+    {t.key==='Drive'&&snapshot.recording?<View style={[s.navDot,{backgroundColor:snapshot.connected?'#4ade80':c.blue300}]}/>:null}
    </Pressable>;})}
-  </View>
- </SafeAreaView>;
+  </View>:null}
+
+  <Modal visible={garageOpen} transparent animationType="slide" onRequestClose={()=>setGarageOpen(false)}>
+   <Pressable accessibilityLabel="Close" style={s.backdrop} onPress={()=>setGarageOpen(false)}/>
+   <View style={[s.sheet,{paddingBottom:insets.bottom+20}]}>
+    <View style={s.grabber}/>
+    <View style={[ui.row,{justifyContent:'space-between',marginBottom:8}]}><Text style={s.sheetTitle}>Your vehicles</Text><RoundButton icon="close" label="Close" size={36} onPress={()=>setGarageOpen(false)}/></View>
+    <ScrollView style={{maxHeight:300}}>
+     {vehicles.map((v,i)=>{const on=selected===v.id;return <Pressable key={v.id} accessibilityRole="button" accessibilityState={{selected:on}} style={[s.listRow,i>0&&s.listRowBorder]} onPress={()=>pickVehicle(v.id)}>
+      <View style={[s.circle,on?{backgroundColor:c.night}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
+      <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{[v.make,v.model].filter(Boolean).join(' ')||(v.origin==='REAL'?'Personal vehicle':pretty(v.origin))}</Text></View>
+      {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
+     </Pressable>;})}
+     {!vehicles.length&&<Text style={[ui.body,{paddingVertical:10}]}>No vehicles yet. Add your first one below.</Text>}
+    </ScrollView>
+    <View style={[ui.row,{gap:10,marginTop:12}]}>
+     <TextInput style={[ui.input,{flex:1,marginBottom:0}]} placeholder="New vehicle name" placeholderTextColor={c.faint} value={name} onChangeText={setName}/>
+     <Pressable accessibilityRole="button" accessibilityLabel="Add vehicle" disabled={!name.trim()} onPress={()=>perform(async()=>{const v=await call('/vehicles',{name});setVehicles(await call('/vehicles'));setName('');if(v?.id)pickVehicle(v.id);})} style={[s.send,!name.trim()&&{opacity:0.4}]}><Icon name="add" size={22} color="#fff"/></Pressable>
+    </View>
+   </View>
+  </Modal>
+
+  <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>
+   {tripView?<TripDetail trip={tripView} vehicleId={selected} vehicleName={vehicle?.name} call={call} onClose={()=>setTripView(null)}/>:null}
+  </Modal>
+ </View>;
 }
 
+const short=(uuid:string)=>uuid.slice(4,8);
+
 const s=StyleSheet.create({
- safe:{flex:1,backgroundColor:c.bg},
- topbar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:20,paddingTop:8,paddingBottom:10},
- mark:{width:28,height:28,borderRadius:9,backgroundColor:c.teal,alignItems:'center',justifyContent:'center',marginRight:8},
- brand:{fontSize:21,fontWeight:'800',color:c.ink,letterSpacing:-0.6},
- pill:{borderRadius:999,borderWidth:1,borderColor:c.line,paddingVertical:4,paddingHorizontal:10,backgroundColor:c.surface},
- pillText:{fontSize:10.5,fontWeight:'700',letterSpacing:1,color:c.muted},
- content:{paddingHorizontal:16,paddingTop:6,paddingBottom:28},
- hero:{backgroundColor:c.hero,borderRadius:22,padding:20,marginBottom:14},
- heroEyebrow:{fontSize:12,fontWeight:'700',letterSpacing:1.2,textTransform:'uppercase',color:c.teal300,marginBottom:6},
- heroTitle:{fontSize:30,fontWeight:'800',color:'#fff',letterSpacing:-0.8,lineHeight:34},
- heroText:{fontSize:14,lineHeight:21,color:c.heroMuted,marginTop:8},
- heroIcon:{width:44,height:44,borderRadius:14,backgroundColor:c.hero2,borderWidth:1,borderColor:c.heroLine,alignItems:'center',justifyContent:'center'},
- heroChip:{flexDirection:'row',alignItems:'center',gap:7,borderRadius:999,borderWidth:1,borderColor:c.heroLine,backgroundColor:c.hero2,paddingVertical:5,paddingHorizontal:11},
- heroChipText:{fontSize:12,fontWeight:'700',color:'#e7efed'},
- dot:{width:7,height:7,borderRadius:4},
- heroMetrics:{flexDirection:'row',gap:36,marginTop:22,marginBottom:18},
- heroLabel:{fontSize:11,fontWeight:'700',letterSpacing:1,textTransform:'uppercase',color:c.heroMuted,marginBottom:4},
- heroValue:{fontSize:28,fontWeight:'700',color:'#fff',letterSpacing:-0.6,fontVariant:['tabular-nums']},
- heroUnit:{fontSize:14,fontWeight:'500',color:c.heroMuted,letterSpacing:0},
- heroFoot:{flexDirection:'row',gap:10,paddingTop:16,borderTopWidth:1,borderTopColor:c.heroLine},
- heroBtn:{flexDirection:'row',alignItems:'center',gap:7,backgroundColor:'#fff',borderRadius:999,paddingVertical:10,paddingHorizontal:15},
- heroBtnGhost:{backgroundColor:'transparent',borderWidth:1,borderColor:c.heroLine},
- heroBtnText:{fontSize:13.5,fontWeight:'700',color:c.ink},
- tiles:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:12,marginBottom:6},
- tile:{width:'48.4%',backgroundColor:c.surface,borderWidth:1,borderColor:c.line,borderRadius:18,padding:14},
- tileTop:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:12},
- tileValue:{fontSize:20,fontWeight:'700',color:c.ink,letterSpacing:-0.4,marginTop:4,marginBottom:2,fontVariant:['tabular-nums']},
- tileUnit:{fontSize:13,fontWeight:'500',color:c.muted},
- tileDetail:{fontSize:12.5,lineHeight:17,color:c.muted},
- section:{flexDirection:'row',alignItems:'flex-end',marginTop:14,marginBottom:10,paddingHorizontal:2},
- sectionTitle:{fontSize:24,fontWeight:'800',color:c.ink,letterSpacing:-0.6,marginBottom:2},
- segment:{flexDirection:'row',backgroundColor:c.line2,borderRadius:999,padding:4,marginBottom:14},
- segmentItem:{flex:1,paddingVertical:9,borderRadius:999,alignItems:'center'},
- segmentActive:{backgroundColor:c.surface,borderWidth:1,borderColor:c.line},
- segmentText:{fontSize:13.5,fontWeight:'600',color:c.muted},
- segmentTextActive:{color:c.ink},
+ screen:{flex:1,backgroundColor:c.bg},
+ pad:{paddingHorizontal:16},
+ top:{backgroundColor:c.night,paddingHorizontal:20},
+ wordmark:{fontSize:20,fontWeight:'800',color:'#fff',letterSpacing:-0.5,marginBottom:28},
+ greet:{fontSize:15,color:c.nightMuted,fontWeight:'500'},
+ topTitle:{fontSize:30,fontWeight:'800',color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
+ topText:{fontSize:14,color:c.nightMuted,marginTop:6},
+ car:{alignItems:'center'},
+ statusPill:{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:c.night2,borderRadius:999,paddingVertical:7,paddingHorizontal:12},
+ statusText:{fontSize:13,fontWeight:'600',color:'#e6ebf1'},
+ dot:{width:8,height:8,borderRadius:4},
+ tiles:{flexDirection:'row',gap:12,marginBottom:14},
+ tripCard:{flexDirection:'row',alignItems:'stretch'},
+ tripThumb:{width:128,minHeight:150,borderRadius:18},
+ rowCard:{flexDirection:'row',alignItems:'center',gap:12},
+ circle:{width:40,height:40,borderRadius:20,alignItems:'center',justifyContent:'center'},
+ rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
+ listThumb:{width:68,height:68,borderRadius:16,backgroundColor:c.blue50},
+ metric:{fontSize:14,fontWeight:'700',color:c.ink,fontVariant:['tabular-nums']},
+ metricMuted:{fontSize:14,fontWeight:'500',color:c.muted,fontVariant:['tabular-nums']},
+ nextStep:{backgroundColor:c.amber50,borderRadius:14,padding:12,marginTop:14,marginBottom:8},
+ nextLabel:{fontSize:12.5,fontWeight:'700',color:c.amber,marginBottom:4},
+ timeline:{flexDirection:'row',gap:12},
+ timeLine:{width:2,flex:1,backgroundColor:c.track,marginVertical:4},
+ live:{backgroundColor:c.night,borderRadius:26,padding:20,marginBottom:14},
+ liveNumbers:{flexDirection:'row',alignItems:'center',marginVertical:26},
+ liveValue:{fontSize:60,fontWeight:'800',color:'#fff',letterSpacing:-2,fontVariant:['tabular-nums']},
+ liveUnit:{fontSize:13,fontWeight:'600',color:c.nightMuted,marginTop:2},
+ liveDivider:{width:1,alignSelf:'stretch',backgroundColor:c.nightLine},
+ liveMeta:{fontSize:13,color:c.nightMuted},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12},
  listRowBorder:{borderTopWidth:1,borderTopColor:c.line2},
- rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
- rowSub:{fontSize:12.5,color:c.muted,marginTop:2},
- radio:{width:20,height:20,borderRadius:10,borderWidth:2,borderColor:c.line},
- infoCard:{flexDirection:'row',gap:12,alignItems:'flex-start'},
- fieldLabel:{marginBottom:6},
- error:{color:c.red,fontSize:13,marginVertical:10},
- note:{fontSize:12,lineHeight:18,color:c.muted,marginTop:4,marginBottom:10,paddingHorizontal:4},
- mono:{fontFamily:mono,fontSize:11,color:c.ink2,marginTop:3},
+ radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},
+ badge:{flexDirection:'row',alignItems:'center',gap:4,backgroundColor:c.blue50,borderRadius:999,paddingVertical:4,paddingHorizontal:9},
+ badgeText:{fontSize:12,fontWeight:'700',color:c.blue},
+ mono:{fontFamily:mono,fontSize:11,color:c.muted,marginTop:4},
  charRow:{borderTopWidth:1,borderTopColor:c.line2,marginTop:12,paddingTop:10,gap:8},
- choice:{borderRadius:999,borderWidth:1,borderColor:c.line,paddingVertical:8,paddingHorizontal:12,backgroundColor:c.surface2},
- choiceOn:{backgroundColor:c.teal,borderColor:c.teal},
- choiceText:{fontSize:12.5,fontWeight:'700',color:c.ink2},
- choiceTextOn:{color:'#fff'},
- gauge:{backgroundColor:c.hero,borderRadius:22,padding:20,marginBottom:12},
- gaugeQual:{fontSize:10.5,fontWeight:'700',letterSpacing:1,color:c.heroMuted},
- gaugeNumbers:{flexDirection:'row',alignItems:'center',marginVertical:24},
- gaugeValue:{fontSize:52,fontWeight:'800',color:'#fff',letterSpacing:-1.5,fontVariant:['tabular-nums']},
- gaugeDivider:{width:1,alignSelf:'stretch',backgroundColor:c.heroLine},
- gaugeMeta:{fontSize:12.5,color:c.heroMuted},
- checkRow:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:7},
- checkText:{fontSize:14,color:c.ink,fontWeight:'500'},
- emptyCard:{alignItems:'center',paddingVertical:28,gap:6},
- emptyIcon:{width:48,height:48,borderRadius:15,backgroundColor:c.teal50,alignItems:'center',justifyContent:'center',marginBottom:6},
- nextStep:{backgroundColor:c.amber50,borderRadius:12,padding:12,marginVertical:10},
- tripStats:{flexDirection:'row',marginTop:14,paddingTop:12,borderTopWidth:1,borderTopColor:c.line2},
- tripValue:{fontSize:17,fontWeight:'700',color:c.ink,fontVariant:['tabular-nums']},
- tripUnit:{fontSize:12,fontWeight:'500',color:c.muted},
- tapHint:{fontSize:12.5,color:c.teal,fontWeight:'600',marginTop:10},
- answer:{backgroundColor:c.teal50,borderRadius:14,padding:14,marginTop:10},
- foot:{fontSize:11,color:c.faint,textAlign:'center',marginTop:16},
- tabbar:{flexDirection:'row',backgroundColor:c.surface,borderTopWidth:1,borderTopColor:c.line,paddingTop:6},
- tabItem:{flex:1,alignItems:'center',gap:2},
- tabIcon:{width:52,height:30,borderRadius:15,alignItems:'center',justifyContent:'center'},
- tabIconActive:{backgroundColor:c.teal50},
- tabDot:{position:'absolute',top:3,right:12,width:8,height:8,borderRadius:4,borderWidth:1.5,borderColor:c.surface},
- tabText:{fontSize:11.5,fontWeight:'600',color:c.muted},
- tabTextActive:{color:c.teal},
+ choice:{flexDirection:'row',alignItems:'center',gap:6,borderRadius:999,paddingVertical:8,paddingHorizontal:14,backgroundColor:c.surface2,borderWidth:1,borderColor:c.line},
+ choiceOn:{backgroundColor:c.blue,borderColor:c.blue},
+ choiceText:{fontSize:13,fontWeight:'700',color:c.ink2},
+ fieldLabel:{fontSize:13,fontWeight:'600',color:c.ink2,marginBottom:6},
+ note:{fontSize:12.5,lineHeight:18,color:c.muted,marginTop:6,marginBottom:10,paddingHorizontal:4,textAlign:'center'},
+ send:{width:48,height:48,borderRadius:24,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
+ answer:{backgroundColor:c.blue50,borderRadius:16,padding:14,marginTop:12},
+ nav:{position:'absolute',left:20,right:20,height:64,borderRadius:32,backgroundColor:c.night,flexDirection:'row',alignItems:'center',paddingHorizontal:8,...shadow,shadowOpacity:0.25,elevation:10},
+ navItem:{flex:1,alignItems:'center',justifyContent:'center',height:'100%'},
+ navIcon:{width:46,height:46,borderRadius:23,alignItems:'center',justifyContent:'center'},
+ navIconOn:{backgroundColor:c.blue},
+ navDot:{position:'absolute',top:12,right:'26%',width:8,height:8,borderRadius:4,borderWidth:1.5,borderColor:c.night},
+ backdrop:{flex:1,backgroundColor:'rgba(15,23,32,0.45)'},
+ sheet:{backgroundColor:c.surface,borderTopLeftRadius:28,borderTopRightRadius:28,paddingHorizontal:20,paddingTop:10},
+ grabber:{alignSelf:'center',width:40,height:5,borderRadius:3,backgroundColor:c.track,marginBottom:14},
+ sheetTitle:{fontSize:20,fontWeight:'800',color:c.ink,letterSpacing:-0.4},
 });

@@ -32,14 +32,11 @@ export function Updater({api,call,token}:{api:string;call:(path:string)=>Promise
   finally{setProgress(null);}
  }
  const mb=release.size?` · ${Math.round(release.size/1048576)} MB`:'';
- return <View style={[ui.card,{borderColor:'#bfe0d9',backgroundColor:c.teal50}]}>
-  <View style={[ui.row,{gap:12,marginBottom:10}]}>
-   <View style={[ui.iconBox,{backgroundColor:c.surface}]}><Ionicons name="cloud-download-outline" size={19} color={c.teal}/></View>
-   <View style={{flex:1}}><Text style={ui.cardTitle}>Update available</Text><Text style={ui.body}>Build {release.versionCode} (you have {installed}){mb}</Text></View>
-  </View>
-  <Pressable accessibilityRole="button" disabled={progress!==null} style={({pressed})=>[ui.button,(pressed||progress!==null)&&{opacity:0.85}]} onPress={update}>
-   <Ionicons name="download-outline" size={17} color="#fff"/>
-   <Text style={ui.buttonText}>{progress===null?'Update':`Downloading… ${Math.round(progress*100)}%`}</Text>
+ return <View style={[ui.card,{flexDirection:'row',alignItems:'center',gap:12}]}>
+  <View style={{width:42,height:42,borderRadius:21,backgroundColor:c.blue50,alignItems:'center',justifyContent:'center'}}><Ionicons name="sparkles" size={19} color={c.blue}/></View>
+  <View style={{flex:1}}><Text style={ui.title}>New version</Text><Text style={ui.caption}>{progress===null?`Build ${release.versionCode}${mb}`:`Downloading… ${Math.round(progress*100)}%`}</Text></View>
+  <Pressable accessibilityRole="button" accessibilityLabel="Update the app" disabled={progress!==null} onPress={update} style={({pressed})=>[{backgroundColor:c.blue,borderRadius:999,paddingVertical:10,paddingHorizontal:16},(pressed||progress!==null)&&{opacity:0.7}]}>
+   <Text style={{color:'#fff',fontWeight:'700',fontSize:14}}>{progress===null?'Update':`${Math.round(progress*100)}%`}</Text>
   </Pressable>
  </View>;
 }
