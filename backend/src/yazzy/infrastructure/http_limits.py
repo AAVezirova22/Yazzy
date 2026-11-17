@@ -8,7 +8,8 @@ from starlette.responses import JSONResponse
 
 from yazzy.config import settings
 
-RELEASE_UPLOAD_BYTES = 150_000_000
+# One APK part (yazzy.api.releases.PART_BYTES) plus slack.
+RELEASE_PART_BYTES = 4 * 1024 * 1024 + 1024
 
 
 class RequestLimits:
@@ -49,8 +50,8 @@ class RequestLimits:
             return await JSONResponse(
                 {"detail": {"code": "RATE_LIMITED"}}, 429, headers={"Retry-After": "60"}
             )(scope, receive, send)
-        # APK uploads (scripts/build_apk.py --publish) are the only large bodies.
-        limit = RELEASE_UPLOAD_BYTES if scope["path"] == "/api/v1/app/releases" else self.max_bytes
+        # APK part uploads (scripts/build_apk.py --publish) are the only bodies over 1 MB.
+        limit = RELEASE_PART_BYTES if "/api/v1/app/releases/" in scope["path"] else self.max_bytes
         body = bytearray()
         while True:
             message = await receive()

@@ -332,7 +332,10 @@ Index(
 
 
 class AppRelease(Base):
-    """The latest Android APK, so the app can update itself. Not tenant data; only one row is kept."""
+    """The latest Android APK, so the app can update itself. Not tenant data.
+
+    The file lives in AppReleasePart rows of a few MB each (see yazzy.api.releases).
+    """
 
     __tablename__ = "app_releases"
     id: Mapped[str] = mapped_column(primary_key=True, default=uid)
@@ -340,5 +343,14 @@ class AppRelease(Base):
     version: Mapped[str]
     size: Mapped[int]
     sha256: Mapped[str]
-    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    complete: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[float] = mapped_column(default=time.time)
+
+
+class AppReleasePart(Base):
+    __tablename__ = "app_release_parts"
+    release_id: Mapped[str] = mapped_column(
+        ForeignKey("app_releases.id", ondelete="CASCADE"), primary_key=True
+    )
+    index: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)

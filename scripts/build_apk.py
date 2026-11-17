@@ -11,6 +11,7 @@ Output: Yazzy-<version>.apk in the repository root (gitignored).
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -120,20 +121,37 @@ def publish(apk: Path, env: dict, version_code: str, version: str):
     token = env.get("YAZZY_RELEASE_TOKEN")
     if not token:
         sys.exit("--publish needs YAZZY_RELEASE_TOKEN in apps/mobile/.env.local (and the same value on the API).")
-    api = env["EXPO_PUBLIC_API_URL"]
-    size = apk.stat().st_size
-    print(f"Uploading {size // 1048576} MB to {api} (a sleeping free server can take a minute to wake)...", flush=True)
-    with apk.open("rb") as body:
-        request = urllib.request.Request(
-            f"{api}/api/v1/app/releases?versionCode={version_code}&version={version}",
-            data=body, method="POST",
-            headers={"X-Release-Token": token, "Content-Type": "application/octet-stream",
-                     "Content-Length": str(size)})
-        try:
-            with urllib.request.urlopen(request, timeout=600):
-                print(f"Published: installed apps will offer build {version_code}")
-        except urllib.error.HTTPError as error:
-            sys.exit(f"Publish failed: HTTP {error.code} {error.read().decode(errors='replace')[:300]}")
+    api = env["EXPO_PUBLIC_API_URL"] + "/api/v1/app/releases"
+    data = apk.read_bytes()
+
+    def send(method, url, body, content_type, attempts=4):
+        for attempt in range(attempts):
+            request = urllib.request.Request(url, data=body, method=method, headers={
+                "X-Release-Token": token, "Content-Type": content_type})
+            try:
+                with urllib.request.urlopen(request, timeout=180) as response:
+                    return json.loads(response.read() or b"{}")
+            except urllib.error.HTTPError as error:
+                if error.code < 500 or attempt == attempts - 1:
+                    sys.exit(f"Publish failed: HTTP {error.code} {error.read().decode(errors='replace')[:300]}")
+            except (urllib.error.URLError, TimeoutError) as error:
+                if attempt == attempts - 1:
+                    sys.exit(f"Publish failed: {error}")
+            print("  retrying...", flush=True)
+
+    # The free server has 512 MB of memory, so the APK goes up in parts of a few MB.
+    print(f"Uploading {len(data) // 1048576} MB to {env['EXPO_PUBLIC_API_URL']} "
+          "(a sleeping free server can take a minute to wake)...", flush=True)
+    meta = {"versionCode": int(version_code), "version": version, "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest()}
+    started = send("POST", api, json.dumps(meta).encode(), "application/json")
+    release, part = started["id"], started["partBytes"]
+    parts = range(0, len(data), part)
+    for number, offset in enumerate(parts):
+        send("PUT", f"{api}/{release}/parts/{number}", data[offset:offset + part], "application/octet-stream")
+        print(f"  part {number + 1}/{len(parts)}", flush=True)
+    send("POST", f"{api}/{release}/complete", b"", "application/json")
+    print(f"Published: installed apps will offer build {version_code}")
 
 
 if __name__ == "__main__":
