@@ -1,10 +1,10 @@
-import {useState} from 'react';
+import {memo,useState} from 'react';
 import {Text,View,type StyleProp,type ViewStyle} from 'react-native';
 import Svg,{Circle,Defs,Ellipse,G,Line,LinearGradient,Path,Polyline,Rect,Stop} from 'react-native-svg';
 import {c} from './theme';
 
 /** A generic side-view car drawn in vectors: no photo, no brand, a few kilobytes. Faces right. */
-export function CarArt({width=300}:{width?:number}){
+export const CarArt=memo(function CarArt({width=300}:{width?:number}){
  const wheel=(x:number)=><G key={x}>
   <Circle cx={x} cy={90} r={21} fill="#0d1117"/>
   <Circle cx={x} cy={90} r={14} fill="url(#rim)"/>
@@ -30,12 +30,12 @@ export function CarArt({width=300}:{width?:number}){
   <Path d="M19 64 L29 61" stroke="#e5484d" strokeWidth={3.5} strokeLinecap="round"/>
   {wheel(80)}{wheel(245)}
  </Svg>;
-}
+});
 
 type LatLng={latitude:number;longitude:number};
 
 /** Draws a route to scale (north up) on a faint street-grid card. Used for trip thumbnails and as the map fallback. */
-export function RouteArt({route,style,stroke=4,grid=true,markers=[]}:{route:LatLng[];style?:StyleProp<ViewStyle>;stroke?:number;grid?:boolean;markers?:{latitude:number;longitude:number;color:string}[]}){
+export const RouteArt=memo(function RouteArt({route,style,stroke=4,grid=true,markers=[]}:{route:LatLng[];style?:StyleProp<ViewStyle>;stroke?:number;grid?:boolean;markers?:{latitude:number;longitude:number;color:string}[]}){
  const [box,setBox]=useState({width:0,height:0});
  const pts=thin(route,160);
  let body=null;
@@ -60,7 +60,7 @@ export function RouteArt({route,style,stroke=4,grid=true,markers=[]}:{route:LatL
   </Svg>;
  }
  return <View style={[{backgroundColor:'#e6ebf1',overflow:'hidden'},style]} onLayout={e=>{const {width,height}=e.nativeEvent.layout;if(width!==box.width||height!==box.height)setBox({width,height});}}>{body}</View>;
-}
+});
 
 /** Keeps at most n points, evenly spaced, always including the last one. */
 function thin<T>(list:T[],n:number):T[]{
@@ -71,7 +71,7 @@ function thin<T>(list:T[],n:number):T[]{
 }
 
 /** Seven small bars for the last seven days. Values in km; days without driving stay as faint stubs. */
-export function WeekBars({values,height=58}:{values:number[];height?:number}){
+export const WeekBars=memo(function WeekBars({values,height=58}:{values:number[];height?:number}){
  const top=Math.max(1,...values),today=new Date().getDay();
  return <View style={{marginTop:'auto',paddingTop:16}}>
   <View style={{flexDirection:'row',alignItems:'flex-end',gap:5,height}}>
@@ -81,4 +81,4 @@ export function WeekBars({values,height=58}:{values:number[];height?:number}){
    {values.map((_,i)=><Text key={i} style={{flex:1,textAlign:'center',fontSize:10.5,fontWeight:i===values.length-1?'700':'500',color:i===values.length-1?c.ink:c.faint}}>{'SMTWTFS'[(today-6+i+7)%7]}</Text>)}
   </View>
  </View>;
-}
+});

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {Alert,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {StatusBar} from 'expo-status-bar';
 import Constants from 'expo-constants';
@@ -61,7 +61,10 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  const m=trip.metrics,from=trip.startAt,to=trip.endAt??trip.startAt;
  const [speed,setSpeed]=useState<Series|null>(null),[rpm,setRpm]=useState<Series|null>(null),[failed,setFailed]=useState('');
  const [expanded,setExpanded]=useState(false),[exporting,setExporting]=useState(false),insets=useSafeAreaInsets(),inlineMap=useRef<MapView|null>(null);
- const route:LatLng[]=(m.route||[]).map((p:any)=>({latitude:p.latitude,longitude:p.longitude}));
+ const route:LatLng[]=useMemo(()=>(m.route||[]).map((p:any)=>({latitude:p.latitude,longitude:p.longitude})),[trip.id]);
+ // Creating a Google map is the heaviest step on a low-end phone: let the page slide in first, then add the map.
+ const [mapReady,setMapReady]=useState(false);
+ useEffect(()=>{const t=setTimeout(()=>setMapReady(true),350);return()=>clearTimeout(t);},[]);
  useEffect(()=>{
   let active=true;
   const query=(signal:string)=>call(`/vehicles/${vehicleId}/telemetry?signal=${signal}&from=${from-1}&to=${to+1}&resolution=200`);
@@ -85,7 +88,7 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  return <View style={s.page}>
   <StatusBar style="dark"/>
   <View style={s.mapBox}>
-   {route.length?<TripMap route={route} events={events} style={StyleSheet.absoluteFill} onMap={r=>{inlineMap.current=r;}}/>
+   {route.length?(mapReady?<TripMap route={route} events={events} style={StyleSheet.absoluteFill} onMap={r=>{inlineMap.current=r;}}/>:null)
     :<View style={[StyleSheet.absoluteFill,s.noMap]}><Icon name="location-outline" size={26} color={c.faint}/><Text style={[ui.caption,{marginTop:6}]}>No GPS position was recorded for this trip</Text></View>}
    <View style={[s.mapBar,{top:insets.top+10}]}>
     <Pressable accessibilityRole="button" accessibilityLabel="Back to trips" onPress={onClose} style={({pressed})=>[s.back,pressed&&{opacity:0.85}]}>

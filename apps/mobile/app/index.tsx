@@ -1,5 +1,5 @@
-import {useEffect,useState} from 'react';
-import {ActivityIndicator,Alert,Modal,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,TextInput,useWindowDimensions,View} from 'react-native';
+import {memo,useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {ActivityIndicator,Alert,AppState,Modal,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,TextInput,useWindowDimensions,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {StatusBar} from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
@@ -32,6 +32,8 @@ const clock=(t:number)=>new Date(t*1000).toLocaleTimeString(undefined,{hour:'2-d
 const ago=(t:number)=>{const d=Math.floor((Date.now()/1000-t)/86400);return d<=0?'Today':d===1?'Yesterday':`${d} days ago`;};
 const latest=(list:any[]|null|undefined,key:string)=>(list||[]).reduce((a:any,x:any)=>!a||x[key]>a[key]?x:a,null);
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening';};
+const PAGE=20;
+const routeOf=(t:any)=>(t?.status==='STATIONARY'||(t?.metrics?.route||[]).length<2?[]:t.metrics.route) as {latitude:number;longitude:number}[];
 const pretty=(v:unknown)=>String(v||'').replaceAll('_',' ').toLowerCase();
 /** Kilometres driven on each of the last seven days, today last. */
 function lastWeek(trips:any[]|null|undefined){
@@ -41,7 +43,7 @@ function lastWeek(trips:any[]|null|undefined){
 }
 
 export default function Home(){
- const [api,setApi]=useState(defaultApi),[token,setToken]=useState(''),[csrf,setCsrf]=useState(''),[vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[view,setView]=useState('Garage'),[snapshot,setSnapshot]=useState(empty),[peripherals,setPeripherals]=useState<Peripheral[]>([]),[peripheral,setPeripheral]=useState(''),[characteristics,setCharacteristics]=useState<Characteristic[]>([]),[write,setWrite]=useState<Characteristic|null>(null),[notify,setNotify]=useState<Characteristic|null>(null),[data,setData]=useState<any[]>([]),[message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null),[busy,setBusy]=useState(false),[name,setName]=useState(''),[tripView,setTripView]=useState<any>(null),[garageOpen,setGarageOpen]=useState(false);
+ const [api,setApi]=useState(defaultApi),[token,setToken]=useState(''),[csrf,setCsrf]=useState(''),[vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[view,setView]=useState('Garage'),[snapshot,setSnapshot]=useState(empty),[peripherals,setPeripherals]=useState<Peripheral[]>([]),[peripheral,setPeripheral]=useState(''),[characteristics,setCharacteristics]=useState<Characteristic[]>([]),[write,setWrite]=useState<Characteristic|null>(null),[notify,setNotify]=useState<Characteristic|null>(null),[data,setData]=useState<any[]>([]),[message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null),[busy,setBusy]=useState(false),[name,setName]=useState(''),[tripView,setTripView]=useState<any>(null),[garageOpen,setGarageOpen]=useState(false),[shown,setShown]=useState(PAGE);
  const [discovery,setDiscovery]=useState<AuthSession.DiscoveryDocument|null>(null),[authError,setAuthError]=useState(''),[accessPassword,setAccessPassword]=useState('');
  const [summary,setSummary]=useState<{vehicleId:string;fuel:any;trips:any[]|null;findings:any[]|null;service:any[]|null}|null>(null);
  const insets=useSafeAreaInsets(),{width}=useWindowDimensions();
@@ -74,19 +76,39 @@ export default function Home(){
  useEffect(()=>{if(response?.type==='success'&&discovery)perform(async()=>{const t=await AuthSession.exchangeCodeAsync({clientId,code:response.params.code,redirectUri:AuthSession.makeRedirectUri({scheme:'yazzy'}),extraParams:{code_verifier:request?.codeVerifier||''}},discovery);await SecureStore.setItemAsync('yazzy-access',t.accessToken);if(t.refreshToken)await SecureStore.setItemAsync('yazzy-refresh',t.refreshToken);setToken(t.accessToken);});},[response]);
  useEffect(()=>{if(token)perform(async()=>{const v=await call('/vehicles');setVehicles(v);const saved=await SecureStore.getItemAsync('yazzy-vehicle');const pick=v.find((x:any)=>x.id===saved)||v[0];if(pick)setSelected(pick.id);});},[token]);
  useEffect(()=>{if(selected&&['Trips','Health','Service'].includes(view))load(view);},[selected]);
- useEffect(()=>{if(!available)return;const timer=setInterval(()=>Recorder.snapshot().then(setSnapshot).catch(()=>{}),1500);return()=>clearInterval(timer)},[]);
- // Home tiles: one quiet, sequential refresh of the selected car's fuel, trips, findings and service records.
+ // Recorder status: re-render only when it actually changed, poll slowly when idle and not at all in the background.
+ // Polling every 1.5 s and re-rendering each time made the whole app lag on low-end phones.
+ const snapKey=useRef('');
+ const refreshSnapshot=useCallback(()=>available?Recorder.snapshot().then(next=>{const key=JSON.stringify(next);if(key!==snapKey.current){snapKey.current=key;setSnapshot(next);}}).catch(()=>{}):Promise.resolve(),[]);
+ useEffect(()=>{
+  if(!available)return;
+  let timer:ReturnType<typeof setTimeout>|undefined,stopped=false;
+  const tick=async()=>{if(AppState.currentState==='active')await refreshSnapshot();if(!stopped)timer=setTimeout(tick,snapKey.current.includes('"recording":true')?1500:4000);};
+  void tick();
+  const sub=AppState.addEventListener('change',state=>{if(state==='active')void refreshSnapshot();});
+  return()=>{stopped=true;clearTimeout(timer);sub.remove();};
+ },[]);
+ // Home tiles: one quiet, sequential refresh of the selected car's fuel, trips, findings and service records,
+ // skipped when the same car was refreshed in the last 30 seconds (switching tabs no longer refetches everything).
+ const summaryAt=useRef({vehicleId:'',at:0});
  useEffect(()=>{
   if(!token||!selected||view!=='Garage')return;
+  if(summaryAt.current.vehicleId===selected&&Date.now()-summaryAt.current.at<30000)return;
   let active=true;
   (async()=>{
    const get=(path:string)=>call(`/vehicles/${selected}/${path}`).catch(()=>null);
    const fuel=await get('fuel-report'),trips=await get('trips'),findings=await get('findings'),service=await get('maintenance-records');
-   if(active)setSummary({vehicleId:selected,fuel,trips,findings,service});
+   if(active){summaryAt.current={vehicleId:selected,at:Date.now()};setSummary({vehicleId:selected,fuel,trips,findings,service});}
   })();
   return()=>{active=false;};
  },[token,selected,view]);
- async function load(tab:string){if(tab!==view&&['Trips','Health','Service'].includes(tab))setData([]);setView(tab);if(!selected)return;if(['Trips','Health','Service'].includes(tab))await perform(async()=>setData(await call(`/vehicles/${selected}/${tab==='Trips'?'trips':tab==='Health'?'findings':'maintenance-records'}`)));}
+ async function load(tab:string){
+  // Show the trips Home already has straight away, then refresh them.
+  if(tab!==view&&['Trips','Health','Service'].includes(tab))setData(tab==='Trips'&&summary?.vehicleId===selected&&summary.trips?summary.trips:[]);
+  if(tab==='Trips')setShown(PAGE);
+  setView(tab);if(!selected)return;
+  if(['Trips','Health','Service'].includes(tab))await perform(async()=>setData(await call(`/vehicles/${selected}/${tab==='Trips'?'trips':tab==='Health'?'findings':'maintenance-records'}`)));
+ }
  async function permissions(){if(Platform.OS==='android'){await PermissionsAndroid.requestMultiple([PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,...(Number(Platform.Version)>=33?[PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS]:[])]);}}
  async function start(){const key=JSON.stringify([selected,peripheral,write?.service,write?.uuid,notify?.service,notify?.uuid]);if(snapshot.configured&&(!(write&&notify&&peripheral)||await SecureStore.getItemAsync('yazzy-configured')===key)){await permissions();await Recorder.start();return;}if(!token)throw new Error('Not signed in. On the Home tab, open the personal sandbox (or sign in) first.');if(!selected)throw new Error('No vehicle selected. On Home, tap the switch button and pick or add a vehicle.');if(!peripheral)throw new Error('No adapter selected. On Drive › Adapter, scan and tap your adapter.');if(!write||!notify)throw new Error('Pick one write and one notify characteristic from the same service on Drive › Adapter.');if(write.service!==notify.service)throw new Error('Write and notify must come from the same service. Re-pick them on Drive › Adapter.');const saved=await SecureStore.getItemAsync('collector-'+selected);const enrol=saved?JSON.parse(saved):await call('/devices/enrolments',{vehicleId:selected});await SecureStore.setItemAsync('collector-'+selected,JSON.stringify(enrol));await Recorder.configure({apiUrl:api,deviceId:enrol.deviceId,assignmentId:enrol.assignmentId,deviceToken:enrol.deviceToken,peripheralId:peripheral,serviceUuid:write.service,writeUuid:write.uuid,notifyUuid:notify.uuid});await SecureStore.setItemAsync('yazzy-configured',key);await permissions();await Recorder.start();}
 
@@ -94,14 +116,13 @@ export default function Home(){
  const tab=TABS.find(t=>t.views.includes(view))||TABS[0];
  const sum=summary&&summary.vehicleId===selected?summary:null;
  const lastTrip=latest(sum?.trips,'startAt'),lastService=latest(sum?.service,'observedAt'),findingCount=sum?.findings?.length??0;
- const week=lastWeek(sum?.trips),weekKm=week.reduce((a,b)=>a+b,0);
+ const week=useMemo(()=>lastWeek(sum?.trips),[sum?.trips]),weekKm=week.reduce((a,b)=>a+b,0);
  const live=snapshot.recording&&snapshot.connected;
  const recorderLabel=live?`Recording${snapshot.signals.VEHICLE_SPEED!=null?` · ${snapshot.signals.VEHICLE_SPEED} km/h`:''}`:snapshot.recording?'Waiting for your car':'Not recording';
  const recommended=pickChannels(characteristics);
  const ready={signedIn:!!token,vehicle:!!selected,adapter:!!peripheral,channels:!!(write&&notify)};
  const dark=view==='Garage';
  const carWidth=Math.min(width-24,380);
- const routeOf=(t:any)=>(t?.status==='STATIONARY'||(t?.metrics?.route||[]).length<2?[]:t.metrics.route) as {latitude:number;longitude:number}[];
  const pickVehicle=(id:string)=>{setSelected(id);SecureStore.setItemAsync('yazzy-vehicle',id).catch(()=>{});setGarageOpen(false);};
 
  const signIn=<View style={ui.card}>
@@ -136,7 +157,7 @@ export default function Home(){
    <View style={s.pad}>{signIn}</View>
   </>}
 
-  {view==='Garage'&&token&&<>
+  {view==='Garage'&&!!token&&<>
    <View style={[s.top,{paddingTop:insets.top+16,paddingBottom:vehicle?92:28}]}>
     <View style={[ui.row,{alignItems:'flex-start',gap:12}]}>
      <View style={{flex:1}}>
@@ -194,20 +215,8 @@ export default function Home(){
 
    {['Trips','Health','Service'].includes(view)&&!data.length&&!busy&&<Empty icon={view==='Trips'?'map-outline':view==='Health'?'pulse-outline':'construct-outline'} title={view==='Health'?'No findings':'Nothing here yet'} text={view==='Trips'?'Recorded drives appear here with their route.':view==='Health'?'No persistent change in the readings your car supports.':'Maintenance records you add appear here.'}/>}
 
-   {view==='Trips'&&data.map(d=>{const trip=d.metrics&&d.startAt!=null,route=routeOf(d);
-    return <Pressable key={d.id} accessibilityRole="button" disabled={!trip} onPress={()=>setTripView(d)} style={({pressed})=>[ui.card,s.rowCard,{padding:12},pressed&&{opacity:0.9}]}>
-     {route.length?<RouteArt route={route} style={s.listThumb} stroke={2.5} grid={false}/>:<View style={[s.listThumb,{alignItems:'center',justifyContent:'center'}]}><Icon name={d.status==='STATIONARY'?'pause':'navigate'} size={20} color={c.blue}/></View>}
-     <View style={{flex:1}}>
-      <Text style={s.rowTitle}>{d.startAt!=null?weekday(d.startAt):d.summary||d.description}</Text>
-      <Text style={ui.caption}>{d.startAt!=null?clock(d.startAt):''}{d.status==='STATIONARY'?' · stationary':''}</Text>
-      {d.metrics?<View style={[ui.row,{gap:14,marginTop:8}]}>
-       <Text style={s.metric}>{distance(d.metrics.distanceKm)}</Text>
-       <Text style={s.metricMuted}>{minutes(d.metrics.durationSeconds||0)}</Text>
-       {d.metrics.fuelLitres!=null?<Text style={s.metricMuted}>{fmt(d.metrics.fuelLitres,2)} L</Text>:null}
-      </View>:null}
-     </View>
-     {trip?<Icon name="chevron-forward" size={16} color={c.ink}/>:null}
-    </Pressable>;})}
+   {view==='Trips'&&data.slice(0,shown).map(d=><TripRow key={d.id} trip={d} onOpen={setTripView}/>)}
+   {view==='Trips'&&data.length>shown&&<Button kind="light" title={`Show ${Math.min(PAGE,data.length-shown)} more`} icon="chevron-down" onPress={()=>setShown(n=>n+PAGE)}/>}
 
    {view==='Health'&&data.map(d=><View key={d.id} style={ui.card}>
     <View style={[ui.row,{gap:12,alignItems:'flex-start'}]}>
@@ -244,8 +253,8 @@ export default function Home(){
     </View>
     {snapshot.error?<Notice tone="error">{snapshot.error}</Notice>:null}
     {snapshot.recording&&!snapshot.connected&&<Notice icon="time">Waiting for your adapter. Turn the car on and it connects by itself, even with the app closed. Each start of the car begins a new trip.</Notice>}
-    {snapshot.recording?<Button kind="dark" title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" onPress={()=>perform(()=>Recorder.stop())}/>
-     :<Button title={snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording'} icon="play" onPress={()=>perform(start)}/>}
+    {snapshot.recording?<Button kind="dark" title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" onPress={()=>perform(async()=>{await Recorder.stop();await refreshSnapshot();})}/>
+     :<Button title={snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording'} icon="play" onPress={()=>perform(async()=>{await start();await refreshSnapshot();})}/>}
     <Button kind="light" title="Upload now" icon="cloud-upload-outline" onPress={()=>perform(()=>Recorder.sync())}/>
     <View style={[ui.card,{marginTop:12}]}>
      <Text style={[ui.title,{marginBottom:4}]}>Before you drive</Text>
@@ -268,7 +277,7 @@ export default function Home(){
      <View style={{flex:1}}><Text style={s.rowTitle}>{p.name}</Text><Text style={ui.caption}>{p.rssi?`Signal ${p.rssi} dBm`:'Saved adapter'}{p.likelyObd?' · OBD adapter':''}</Text></View>
      {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
     </Pressable>;})}</View>}
-    {busy&&peripheral&&!characteristics.length&&<Notice icon="sync">Connecting to the adapter and reading its services…</Notice>}
+    {busy&&!!peripheral&&!characteristics.length&&<Notice icon="sync">Connecting to the adapter and reading its services…</Notice>}
     {characteristics.length>0&&<Notice tone={write&&notify?'ok':'info'}>{write&&notify?`Ready: data channel ${short(write.uuid)} / ${short(notify.uuid)}`:'Pick one write and one notify channel from the same service.'}</Notice>}
     {[...new Set(characteristics.map(x=>x.service))].map(svc=><View key={svc} style={ui.card}>
      <View style={[ui.row,{justifyContent:'space-between',gap:8}]}>
@@ -345,6 +354,24 @@ export default function Home(){
 }
 
 const short=(uuid:string)=>uuid.slice(4,8);
+
+/** One trip in the list. Memoised so typing, polling or loading elsewhere never redraws every route thumbnail. */
+const TripRow=memo(function TripRow({trip:d,onOpen}:{trip:any;onOpen:(t:any)=>void}){
+ const open=d.metrics&&d.startAt!=null,route=routeOf(d);
+ return <Pressable accessibilityRole="button" disabled={!open} onPress={()=>onOpen(d)} style={({pressed})=>[ui.card,s.rowCard,{padding:12},pressed&&{opacity:0.9}]}>
+  {route.length?<RouteArt route={route} style={s.listThumb} stroke={2.5} grid={false}/>:<View style={[s.listThumb,{alignItems:'center',justifyContent:'center'}]}><Icon name={d.status==='STATIONARY'?'pause':'navigate'} size={20} color={c.blue}/></View>}
+  <View style={{flex:1}}>
+   <Text style={s.rowTitle}>{d.startAt!=null?weekday(d.startAt):d.summary||d.description}</Text>
+   <Text style={ui.caption}>{d.startAt!=null?clock(d.startAt):''}{d.status==='STATIONARY'?' · stationary':''}</Text>
+   {d.metrics?<View style={[ui.row,{gap:14,marginTop:8}]}>
+    <Text style={s.metric}>{distance(d.metrics.distanceKm)}</Text>
+    <Text style={s.metricMuted}>{minutes(d.metrics.durationSeconds||0)}</Text>
+    {d.metrics.fuelLitres!=null?<Text style={s.metricMuted}>{fmt(d.metrics.fuelLitres,2)} L</Text>:null}
+   </View>:null}
+  </View>
+  {open?<Icon name="chevron-forward" size={16} color={c.ink}/>:null}
+ </Pressable>;
+});
 
 const s=StyleSheet.create({
  screen:{flex:1,backgroundColor:c.bg},
