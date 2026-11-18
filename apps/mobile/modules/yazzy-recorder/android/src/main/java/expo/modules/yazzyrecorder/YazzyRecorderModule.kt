@@ -40,6 +40,7 @@ class YazzyRecorderModule:Module(){
    check(sameAssignment||r.store.count()==0){"Stop and upload queued samples before changing assignment"};RecorderSecret.save(c,json);if(!sameAssignment)r.resetProfile()}
   // startService returns a ComponentName, which cannot cross to JS; return nothing so the call resolves.
   AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent);Unit}
+  AsyncFunction("reconnect") Coroutine { -> RecorderManager.get(appContext.reactContext!!).reconnect()}
   AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
   AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync(true)}
   AsyncFunction("snapshot"){RecorderManager.get(appContext.reactContext!!).snapshot()}
@@ -115,12 +116,13 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private val scanCallback=object:ScanCallback(){override fun onScanResult(type:Int,result:ScanResult){synchronized(seen){seen[result.device.address]=result;
   // The advertised name needs no BLUETOOTH_CONNECT permission and often arrives only in the scan response, so remember it.
   val advertised=result.scanRecord?.deviceName?.trim();if(!advertised.isNullOrEmpty())names[result.device.address]=advertised}}}
- fun scan(){check(!recording);check(adapter?.isEnabled==true){"Enable Bluetooth"};synchronized(seen){seen.clear();names.clear()};adapter.bluetoothLeScanner.startScan(scanCallback)}
+ // Scanning is fine while the recorder only waits for the adapter; it is refused only while connected to it.
+ fun scan(){check(!(recording&&connected)){"Already connected to your adapter. Stop recording on the Record tab to look for another one"};check(adapter?.isEnabled==true){"Bluetooth is off. Turn it on and try again"};synchronized(seen){seen.clear();names.clear()};adapter.bluetoothLeScanner.startScan(scanCallback)}
  fun stopScan(){adapter?.bluetoothLeScanner?.stopScan(scanCallback)}
  fun devices():List<Map<String,Any>> = synchronized(seen){seen.values.map{mapOf("id" to it.device.address,"name" to (names[it.device.address]?:runCatching{it.device.name}.getOrNull()?.trim()?:""),"rssi" to it.rssi)}}
  /** Connects, lists the adapter's characteristics and disconnects. Fails with a reason instead of returning an empty list. */
  suspend fun inspect(id:String):List<Map<String,Any>>{
-  check(!recording){"Stop recording before inspecting an adapter"}
+  check(!recording){"Auto-connect is on with your saved adapter. Turn it off on the Record tab before setting up another adapter"}
   check(adapter?.isEnabled==true){"Bluetooth is off or unavailable"}
   inspecting?.completeExceptionally(IllegalStateException("Superseded by a new inspection"))
   val result=CompletableDeferred<List<Map<String,Any>>>();inspecting=result;discovered=emptyList()
@@ -131,14 +133,34 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  }
  fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to listOfNotNull(error,uploadError).joinToString("\n").ifEmpty{null},"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0),"profile" to profileJson,"parked" to parkedJson)
  /** Arms the recorder: it connects to the saved adapter now, or whenever the adapter next powers on, until stopped. */
- fun start(){if(recording)return;config=RecorderSecret.read(context)?:error("Configure the recorder first");recording=true;error=null;armedPrefs.edit().putBoolean("armed",true).apply();handler.post{try{connect()}catch(e:SecurityException){error="Bluetooth permission needed: open the app and allow nearby devices";recording=false;return@post};handler.removeCallbacks(ticker);handler.post(ticker)}}
+ fun start(){if(recording)return;config=RecorderSecret.read(context)?:error("Configure the recorder first");recording=true;error=null;armedPrefs.edit().putBoolean("armed",true).apply();handler.post{try{connect(true)}catch(e:SecurityException){error="Bluetooth permission needed: open the app and allow nearby devices";recording=false;return@post};handler.removeCallbacks(ticker);handler.post(ticker)}}
  // autoConnect keeps one passive connection request open, so the phone links up when the adapter powers on without scanning or draining the battery.
- private fun connect(){val c=config?:return;gatt?.close();gatt=adapter.getRemoteDevice(c.getString("peripheralId")).connectGatt(context,true,this,BluetoothDevice.TRANSPORT_LE)}
+ // autoConnect=false links up within seconds when the adapter is advertising but gives up after ~30 s; then the
+ // disconnect handler falls back to autoConnect, which waits indefinitely but which some phones run only now and then.
+ private fun connect(direct:Boolean=false){val c=config?:return;gatt?.close();gatt=adapter.getRemoteDevice(c.getString("peripheralId")).connectGatt(context,!direct,this,BluetoothDevice.TRANSPORT_LE)}
+ @Volatile private var finding:CompletableDeferred<Boolean>?=null
+ private val findCallback=object:ScanCallback(){override fun onScanResult(type:Int,result:ScanResult){if(result.device.address.equals(config?.optString("peripheralId"),true))finding?.complete(true)}}
+ /**
+  * "Connect now": looks for the saved adapter for up to 10 s and connects straight away when it advertises, instead of
+  * waiting for Android's background auto-connect. A scan also refreshes Android's device cache, which auto-connect needs
+  * after a phone restart. Returns whether the adapter was found (or already connected).
+  */
+ suspend fun reconnect():Boolean{
+  if(!recording||connected)return connected
+  check(adapter?.isEnabled==true){"Bluetooth is off. Turn it on and try again"}
+  val id=config?.optString("peripheralId")?.takeIf{it.isNotEmpty()}?:return false
+  val found=CompletableDeferred<Boolean>();finding?.complete(false);finding=found
+  val scanner=adapter.bluetoothLeScanner
+  scanner.startScan(listOf(ScanFilter.Builder().setDeviceAddress(id).build()),ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),findCallback)
+  val seen=try{withTimeout(10000){found.await()}}catch(e:TimeoutCancellationException){false}finally{if(finding===found)finding=null;runCatching{scanner.stopScan(findCallback)}}
+  if(seen)handler.post{if(recording&&!connected)try{connect(true)}catch(_:SecurityException){error="Bluetooth permission needed: open the app and allow nearby devices"}}
+  return seen
+ }
  // GPS only runs while the adapter answers, so waiting for the car costs no battery and never records the phone wandering around.
  private fun startLocation(){if(locating)return;try{location.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000,3f,this,Looper.getMainLooper());locating=true}catch(e:SecurityException){error="Location permission needed: GPS not recorded"}catch(e:Exception){error="GPS unavailable; OBD capture continues"}}
  private fun stopLocation(){if(!locating)return;location.removeUpdates(this);locating=false}
  fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
- override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));connected=false;inFlight=null;stopLocation();error="Bluetooth disconnected; observations unavailable";if(recording)handler.postDelayed({if(recording)connect()},5000)}}}
+ override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{
   if(status!=BluetoothGatt.GATT_SUCCESS){error="Service discovery failed";inspecting?.completeExceptionally(IllegalStateException("Service discovery failed (Bluetooth status $status)"));return@post}
   discovered=g.services.flatMap{s->s.characteristics.map{c->mapOf("service" to s.uuid.toString(),"uuid" to c.uuid.toString(),"write" to (c.properties and (BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)!=0),"notify" to (c.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE)!=0))}}

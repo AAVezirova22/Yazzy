@@ -1,5 +1,5 @@
 import {memo,useEffect,useState} from 'react';
-import {ActivityIndicator,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {ActivityIndicator,Alert,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import {c,mono,ui} from '../theme';
@@ -35,7 +35,21 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
   await SecureStore.setItemAsync('yazzy-configured',key);await permissions();await Recorder.start();
  }
 
- const live=snapshot.recording&&snapshot.connected,recommended=pickChannels(characteristics);
+ const live=snapshot.recording&&snapshot.connected,recommended=pickChannels(characteristics),waiting=snapshot.recording&&!snapshot.connected,canNudge=Platform.OS==='android';
+ const adapterName=peripherals.find(p=>p.id===peripheral)?.name||'your adapter';
+ /** Finds the saved adapter and links up now rather than when Android's background auto-connect gets round to it. */
+ const connectNow=()=>run(async()=>{
+  await permissions();const found=await Recorder.reconnect();await refreshSnapshot();
+  if(!found)Alert.alert('Adapter not found nearby',`Yazzy looked for ${adapterName} for 10 seconds. Check that the ignition is on, the adapter's light is on, and no other app or phone is connected to it. Auto-connect keeps waiting in the background.`);
+ });
+ // Setting up an adapter needs the recorder off; ask instead of failing.
+ const recorderOff=(then:()=>Promise<void>,action:string)=>{
+  const go=()=>run(async()=>{if(snapshot.recording){await Recorder.stop();await refreshSnapshot();}await then();});
+  if(!snapshot.recording)return go();
+  Alert.alert('Turn off auto-connect?',`To ${action}, the recorder stops waiting for ${adapterName}. Recordings not yet uploaded stay on the phone.`,[{text:'Cancel',style:'cancel'},{text:'Turn off and continue',onPress:go}]);
+ };
+ const scan=()=>run(async()=>{await permissions();setPeripherals(await Recorder.discover());});
+ const choose=(p:Peripheral)=>recorderOff(async()=>{setPeripheral(p.id);setWrite(null);setNotify(null);setCharacteristics([]);const list=await Recorder.inspect(p.id);setCharacteristics(list);const pick=pickChannels(list);if(pick){setWrite(pick.write);setNotify(pick.notify);}},'set up this adapter');
  return <ScrollView contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}} keyboardShouldPersistTaps="handled">
   <ScreenHeader title="Drive" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy?<ActivityIndicator color={c.blue}/>:null}/>
   <Segment items={[['Record','Record'],['Connect','Adapter']]} value={view} onChange={onView}/>
@@ -57,7 +71,8 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
     </View>
    </View>
    {snapshot.error?<Notice tone="error">{snapshot.error}</Notice>:null}
-   {snapshot.recording&&!snapshot.connected&&<Notice icon="time">Waiting for your adapter. Turn the car on and it connects by itself, even with the app closed. Each start of the car begins a new trip.</Notice>}
+   {waiting&&<Notice icon="time">Waiting for your adapter. Turn the car on and it connects by itself, even with the app closed. Each start of the car begins a new trip.</Notice>}
+   {waiting&&canNudge?<Button title={busy?'Looking for the adapter…':'Connect now'} icon="bluetooth" disabled={busy} onPress={connectNow}/>:null}
    {snapshot.recording?<Button kind="dark" title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" disabled={busy} onPress={()=>run(async()=>{await Recorder.stop();await refreshSnapshot();})}/>
     :<Button title={snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording'} icon="play" disabled={busy} onPress={()=>run(async()=>{await start();await refreshSnapshot();})}/>}
    <Button kind="light" title="Upload now" icon="cloud-upload-outline" disabled={busy} onPress={()=>run(async()=>{await Recorder.sync();await refreshSnapshot();})}/>
@@ -72,12 +87,19 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
   </>}
 
   {view==='Connect'&&<>
+   {snapshot.recording?<View style={ui.card}>
+    <View style={[ui.row,{gap:12}]}>
+     <View style={[s.circle,{backgroundColor:live?c.green50:c.blue50}]}><Icon name={live?'checkmark-circle':'time'} size={20} color={live?c.green:c.blue}/></View>
+     <View style={{flex:1}}><Text style={s.rowTitle}>{live?`Connected to ${adapterName}`:`Waiting for ${adapterName}`}</Text><Text style={ui.caption}>{live?'Recording. Stop on the Record tab to change adapters.':'Auto-connect is on: it links up when the car is switched on.'}</Text></View>
+    </View>
+    {waiting&&canNudge?<Button title={busy?'Looking for the adapter…':'Connect now'} icon="bluetooth" disabled={busy} onPress={connectNow} style={{marginTop:12}}/>:null}
+   </View>:null}
    <View style={ui.card}>
-    <Text style={ui.title}>Find your adapter</Text>
+    <Text style={ui.title}>{snapshot.recording?'Use a different adapter':'Find your adapter'}</Text>
     <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Plug the adapter in, close other OBD apps and scan while parked.</Text>
-    <Button title="Scan for adapters" icon="bluetooth" disabled={busy} onPress={()=>run(async()=>{await permissions();setPeripherals(await Recorder.discover());})}/>
+    <Button kind={snapshot.recording?'light':'primary'} title="Scan for adapters" icon="bluetooth" disabled={busy||live} onPress={scan}/>
    </View>
-   {peripherals.length>0&&<View style={[ui.card,{paddingVertical:6}]}>{peripherals.map((p,i)=>{const on=peripheral===p.id;return <Pressable key={p.id} accessibilityRole="button" accessibilityState={{disabled:busy,selected:on}} disabled={busy} style={[s.listRow,i>0&&s.listRowBorder,busy&&{opacity:0.5}]} onPress={()=>run(async()=>{setPeripheral(p.id);setWrite(null);setNotify(null);setCharacteristics([]);const list=await Recorder.inspect(p.id);setCharacteristics(list);const pick=pickChannels(list);if(pick){setWrite(pick.write);setNotify(pick.notify);}})}>
+   {peripherals.length>0&&<View style={[ui.card,{paddingVertical:6}]}>{peripherals.map((p,i)=>{const on=peripheral===p.id;return <Pressable key={p.id} accessibilityRole="button" accessibilityState={{disabled:busy,selected:on}} disabled={busy} style={[s.listRow,i>0&&s.listRowBorder,busy&&{opacity:0.5}]} onPress={()=>choose(p)}>
     <View style={[s.circle,on?{backgroundColor:c.blue}:{backgroundColor:c.blue50}]}><Icon name={p.likelyObd?'radio':'bluetooth'} size={18} color={on?'#fff':c.blue}/></View>
     <View style={{flex:1}}><Text style={s.rowTitle}>{p.name}</Text><Text style={ui.caption}>{p.rssi?`Signal ${p.rssi} dBm`:'Saved adapter'}{p.likelyObd?' · OBD adapter':''}</Text></View>
     {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}

@@ -108,7 +108,10 @@ export default function App(){
   const tick=async()=>{if(AppState.currentState==='active')await refreshSnapshot();if(!stopped)timer=setTimeout(tick,snapKey.current.includes('"recording":true')?1500:4000);};
   if(available)void tick();
   // Coming back to the app (after a drive, say) refreshes stale data as well.
-  const sub=AppState.addEventListener('change',state=>{if(state==='active'){void refreshSnapshot();void refresh(false);}});
+  // Coming back to the app while the recorder waits for the car also looks for the adapter, so it links up at once.
+  const nudge=()=>refreshSnapshot().then(()=>{try{const s=JSON.parse(snapKey.current||'{}');if(s.recording&&!s.connected)Recorder.reconnect().catch(()=>{});}catch{}});
+  if(available)void nudge();
+  const sub=AppState.addEventListener('change',state=>{if(state==='active'){void nudge();void refresh(false);}});
   return()=>{stopped=true;clearTimeout(timer);sub.remove();};
  },[]);
 
