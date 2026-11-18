@@ -92,15 +92,13 @@ def test_batch_and_sequence_idempotency(client, enrolled):
 
 @pytest.mark.parametrize(
     "mutation",
-    ["unit", "future", "assignment", "origin", "infinite", "oversize", "duplicate-sequence"],
+    ["unit", "assignment", "origin", "infinite", "oversize", "duplicate-sequence"],
 )
 def test_telemetry_validation(client, enrolled, mutation):
     _, e = enrolled
     data = payload(e)
     if mutation == "unit":
         data["samples"][0]["unit"] = "mph"
-    if mutation == "future":
-        data["samples"][0]["observedAt"] = "2090-01-01T00:00:00Z"
     if mutation == "assignment":
         data["assignmentId"] = "wrong"
     if mutation == "origin":
@@ -112,6 +110,33 @@ def test_telemetry_validation(client, enrolled, mutation):
     if mutation == "duplicate-sequence":
         data["samples"][1]["sequence"] = 0
     assert upload(client, e, data).status_code in {403, 422}
+
+
+def stamp(timestamp):
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
+
+def test_readings_outside_the_window_are_dropped_not_the_batch(client, enrolled):
+    # One bad timestamp must not block the readings queued behind it on the phone.
+    _, e = enrolled
+    data = payload(e)
+    data["samples"][0]["observedAt"] = "2090-01-01T00:00:00Z"
+    data["samples"][1]["observedAt"] = stamp(e["validFrom"] - 3600)
+    r = upload(client, e, data)
+    assert r.status_code == 202, r.text
+    body = r.json()
+    assert body["acceptedSamples"] == len(data["samples"]) - 2
+    assert body["rejected"] == {"CLOCK_SKEW_OR_RETENTION_WINDOW": 1, "OUTSIDE_ASSIGNMENT": 1}
+    assert upload(client, e, data).json()["duplicate"] is True
+
+
+def test_phone_clock_slightly_behind_server_is_tolerated(client, enrolled):
+    # The first readings after pairing come from a phone whose clock may lag the server.
+    _, e = enrolled
+    data = payload(e, start=e["validFrom"] - 30)
+    r = upload(client, e, data)
+    assert r.status_code == 202, r.text
+    assert r.json()["acceptedSamples"] == len(data["samples"])
 
 
 def test_revoked_device(client, enrolled):
@@ -262,7 +287,13 @@ def test_reassignment_ends_old_interval(client, enrolled):
         json={"vehicleId": v["id"], "validFrom": timestamp},
     )
     assert r.status_code == 200, r.text
-    assert upload(client, e, payload(e, start=timestamp + 1)).status_code == 403
+    # Readings after the old interval ended never reach the old vehicle. They are dropped,
+    # not refused, so a phone still holding them can move past them.
+    data = payload(e, start=timestamp + 1)
+    r = upload(client, e, data)
+    assert r.status_code == 202, r.text
+    assert r.json()["acceptedSamples"] == 0
+    assert r.json()["rejected"] == {"OUTSIDE_ASSIGNMENT": len(data["samples"])}
 
 
 def test_broker_loss_and_worker_lease_recovery(client, enrolled):

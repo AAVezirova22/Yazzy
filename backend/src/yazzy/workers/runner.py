@@ -149,17 +149,17 @@ def enumerate_due(tenant_id=None):
     else:
         with transaction() as db:
             tenants = list(db.scalars(select(Organisation.id)))
-    result: list[tuple[str, str, float]] = []
+    result: list[tuple[str, str, float, str]] = []
     for tenant in tenants:
         with transaction(tenant) as db:
-            result.extend((j.id, j.tenant_id, j.published_at) for j in due_jobs(db))
+            result.extend((j.id, j.tenant_id, j.published_at, j.kind) for j in due_jobs(db))
     return result
 
 
 def drain(tenant_id=None, limit=1000):
     count = 0
     while count < limit:
-        jobs = [(j, t) for j, t, _ in enumerate_due(tenant_id)]
+        jobs = [(j, t) for j, t, _, _ in enumerate_due(tenant_id)]
         if not jobs:
             break
         for job_id, tenant in jobs:
@@ -176,28 +176,34 @@ def wake_embedded():
     _wake.set()
 
 
-def start_embedded(idle_seconds: float = 600):
+def start_embedded(idle_seconds: float = 600, reconcile_pause: float = 15):
     """Run the --local polling loop on a thread inside the API process.
 
     Free hosts have no separate worker, and constant polling would keep a serverless
     database awake, so the thread sleeps until a write request wakes it (or idle_seconds
     pass, which also recovers jobs whose lease expired). Returns a stop function.
+
+    A recording phone uploads every few seconds and each batch queues a trip rebuild that
+    re-reads the vehicle's samples. After a pass that only rebuilt trips the thread pauses
+    for reconcile_pause, so the uploads arriving meanwhile share one rebuild and the API
+    keeps answering on a 0.1-CPU host.
     """
     stop = threading.Event()
 
     def loop():
         while not stop.is_set():
-            busy = False
+            kinds = set()
             try:
-                for job_id, tenant, _ in enumerate_due():
-                    busy = True
+                for job_id, tenant, _, kind in enumerate_due():
+                    kinds.add(kind)
                     run_job(job_id, tenant)
             except Exception:
                 logger.exception("embedded_worker_pass_failed")
                 stop.wait(5)
                 continue
-            if busy:
-                stop.wait(1)  # retries and chained jobs may be due immediately
+            if kinds:
+                # Retries and chained jobs may be due immediately; trip rebuilds can wait.
+                stop.wait(reconcile_pause if kinds == {"RECONCILE"} else 1)
                 continue
             _wake.wait(timeout=idle_seconds)
             _wake.clear()
@@ -221,7 +227,7 @@ def main():
     args = parser.parse_args()
     while True:
         jobs = enumerate_due()
-        for job_id, tenant, published in jobs:
+        for job_id, tenant, published, _ in jobs:
             if args.local:
                 run_job(job_id, tenant)
             elif time.time() - published > 30:

@@ -17,6 +17,9 @@ from yazzy.infrastructure.models import (
 from yazzy.modules.identity.policy import fail
 from yazzy.modules.telemetry.contracts import Position, TelemetryBatch
 
+# Seconds a device clock may run ahead of the server, or behind it at the start of a pairing.
+CLOCK_TOLERANCE = 120
+
 
 def hash_payload(payload):
     return hashlib.sha256(
@@ -84,16 +87,33 @@ def ingest(db, device: Device, batch: TelemetryBatch):
             "jobId": prior.job_id,
             "receivedAt": prior.received_at,
         }
-    hashes = {}
+    # A phone clock a little behind the server's must not strand the first readings of a new
+    # pairing. Before its first assignment nothing else can own this device's readings.
+    earliest = assignment.valid_from
+    if device.origin != "SIMULATED" and not db.scalar(
+        select(Assignment.id)
+        .where(
+            Assignment.device_id == device.id,
+            Assignment.valid_from < assignment.valid_from,
+        )
+        .limit(1)
+    ):
+        earliest -= CLOCK_TOLERANCE
+    # Readings outside the assignment or clock window are dropped one by one. Refusing the
+    # whole batch would block every later reading queued behind it on the phone.
+    hashes, rejected = {}, {}
     for sample in batch.samples:
         timestamp = sample.observed_at.timestamp()
-        if not assignment.valid_from <= timestamp or (
+        if timestamp < earliest or (
             assignment.valid_until is not None and timestamp >= assignment.valid_until
         ):
-            fail("DEVICE_ASSIGNMENT_MISMATCH", 403)
-        if timestamp > clock + 120 or timestamp < oldest:
-            fail("CLOCK_SKEW_OR_RETENTION_WINDOW", 422)
-        hashes[sample.sequence] = hash_payload(sample.model_dump(mode="json", by_alias=True))
+            reason = "OUTSIDE_ASSIGNMENT"
+        elif timestamp > clock + CLOCK_TOLERANCE or timestamp < oldest:
+            reason = "CLOCK_SKEW_OR_RETENTION_WINDOW"
+        else:
+            hashes[sample.sequence] = hash_payload(sample.model_dump(mode="json", by_alias=True))
+            continue
+        rejected[reason] = rejected.get(reason, 0) + 1
     existing = {
         s.sequence: s
         for s in db.scalars(
@@ -132,7 +152,7 @@ def ingest(db, device: Device, batch: TelemetryBatch):
         )
     )
     for sample in batch.samples:
-        if sample.sequence in existing:
+        if sample.sequence not in hashes or sample.sequence in existing:
             continue
         value = (
             sample.value.model_dump(by_alias=True)
@@ -165,7 +185,9 @@ def ingest(db, device: Device, batch: TelemetryBatch):
     return {
         "accepted": True,
         "duplicate": False,
-        "acceptedSamples": len(batch.samples) - len(existing),
+        "acceptedSamples": len(hashes) - len(existing),
+        "rejectedSamples": sum(rejected.values()),
+        "rejected": rejected,
         "jobId": job_id,
         "receivedAt": now,
         "dataOrigin": device.origin,

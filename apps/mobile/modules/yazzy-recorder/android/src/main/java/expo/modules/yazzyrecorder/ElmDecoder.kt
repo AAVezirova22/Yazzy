@@ -13,6 +13,9 @@ object ElmDecoder {
    val hex=line.drop(4);if(hex.length%2!=0||!hex.matches(Regex("[0-9A-F]+")))return@mapNotNull null;val bytes=hex.chunked(2).mapNotNull{it.toIntOrNull(16)};if(bytes.isEmpty())return@mapNotNull null
    val a=bytes[0].toDouble();val combined=if(bytes.size>1)a*256+bytes[1] else null
    when(pid){"0C"->combined?.let{Triple("ENGINE_RPM",it/4,"rpm")};"0D"->Triple("VEHICLE_SPEED",a,"km/h");"05"->Triple("COOLANT_TEMP",a-40,"degC");"06"->Triple("SHORT_FUEL_TRIM",(a-128)*100/128,"%");"07"->Triple("LONG_FUEL_TRIM",(a-128)*100/128,"%");"0B"->Triple("INTAKE_PRESSURE",a,"kPa");"0F"->Triple("INTAKE_TEMP",a-40,"degC");"10"->combined?.let{Triple("MAF",it/100,"g/s")};"11"->Triple("THROTTLE",a*100/255,"%");"04"->Triple("ENGINE_LOAD",a*100/255,"%");"2F"->Triple("FUEL_LEVEL",a*100/255,"%");"42"->combined?.let{Triple("MODULE_VOLTAGE",it/1000,"V")};"46"->Triple("AMBIENT_TEMP",a-40,"degC");"5E"->combined?.let{Triple("FUEL_RATE",it/20,"L/h")};else->null}
-  }
+  }.filter{(signal,value,_)->value<=(ceiling[signal]?:Double.MAX_VALUE)}
  }
+ // The server's plausibility ceilings (backend telemetry contracts) for PIDs whose raw range goes beyond them,
+ // for example 0xFF meaning "not available" decoding to 215 degC outside. Such readings are dropped, not uploaded.
+ private val ceiling=mapOf("ENGINE_RPM" to 16000.0,"MAF" to 655.0,"MODULE_VOLTAGE" to 60.0,"AMBIENT_TEMP" to 80.0,"FUEL_RATE" to 200.0)
 }

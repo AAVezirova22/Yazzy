@@ -53,27 +53,32 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
     if run_id and (run is None or run.status == "RESET"):
         return {"skipped": "OLD_RUN"}
     now = run.virtual_now if run else time.time()
-    rows = list(
-        db.scalars(
-            select(Sample)
-            .where(
-                Sample.tenant_id == tenant_id,
-                Sample.vehicle_id == vehicle_id,
-                Sample.run_id == run_id,
-            )
-            .order_by(Sample.observed_at, Sample.sequence)
-            .limit(100001)
+    # Plain column tuples, not ORM objects: this runs after uploads on a 0.1-CPU host and
+    # building tens of thousands of tracked objects starved the API of CPU.
+    rows = db.execute(
+        select(
+            Sample.device_id,
+            Sample.session_id,
+            Sample.observed_at,
+            Sample.signal,
+            Sample.value,
+            Sample.quality,
         )
-    )
+        .where(
+            Sample.tenant_id == tenant_id,
+            Sample.vehicle_id == vehicle_id,
+            Sample.run_id == run_id,
+        )
+        .order_by(Sample.observed_at, Sample.sequence)
+        .limit(100001)
+    ).all()
     if len(rows) > 100000:
         raise ValueError(
             "RECONCILIATION_WINDOW_TOO_LARGE: partition sessions before expanding retention"
         )
     sessions = defaultdict(list)
-    for row in rows:
-        sessions[(row.device_id, row.session_id)].append(
-            Observation(row.observed_at, row.signal, row.value, row.quality)
-        )
+    for device_id, session_id, observed_at, signal, value, quality in rows:
+        sessions[(device_id, session_id)].append(Observation(observed_at, signal, value, quality))
     revisions = list(
         db.scalars(
             select(Revision)

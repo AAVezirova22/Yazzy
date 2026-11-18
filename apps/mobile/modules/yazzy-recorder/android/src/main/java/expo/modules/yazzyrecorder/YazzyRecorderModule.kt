@@ -30,7 +30,8 @@ class YazzyRecorderModule:Module(){
  override fun definition()=ModuleDefinition {
   Name("YazzyRecorder")
   // Re-arm after the app is opened again: the recorder keeps waiting for the adapter until it is stopped on purpose.
-  OnCreate{appContext.reactContext?.let{c->if(RecorderManager.isArmed(c)&&RecorderSecret.read(c)!=null){try{val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent)}catch(_:Exception){}}}}
+  // Otherwise finish uploading whatever an earlier recording left on the phone.
+  OnCreate{appContext.reactContext?.let{c->if(RecorderManager.isArmed(c)&&RecorderSecret.read(c)!=null){try{val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent)}catch(_:Exception){}}else try{val r=RecorderManager.get(c);if(r.store.count()>0)r.sync(true)}catch(_:Exception){}}}
   AsyncFunction("discover") Coroutine { -> val r=RecorderManager.get(appContext.reactContext!!);r.scan();delay(5000);r.stopScan();r.devices()}
   AsyncFunction("inspect") Coroutine {id:String->RecorderManager.get(appContext.reactContext!!).inspect(id)}
   AsyncFunction("configure"){json:String->val c=appContext.reactContext!!;val config=JSONObject(json);for(key in listOf("apiUrl","deviceId","assignmentId","deviceToken","peripheralId","serviceUuid","writeUuid","notifyUuid"))require(config.getString(key).isNotEmpty());val r=RecorderManager.get(c);check(!r.recording){"Stop recording before changing the adapter"}
@@ -40,7 +41,7 @@ class YazzyRecorderModule:Module(){
   // startService returns a ComponentName, which cannot cross to JS; return nothing so the call resolves.
   AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent);Unit}
   AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
-  AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync()}
+  AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync(true)}
   AsyncFunction("snapshot"){RecorderManager.get(appContext.reactContext!!).snapshot()}
  }
 }
@@ -94,8 +95,12 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  @Volatile private var answered=false
  @Volatile private var lastObdAt=0L
  @Volatile private var syncing=false
- private var syncFailures=0
- private var nextSync=0L
+ @Volatile private var syncFailures=0
+ @Volatile private var nextSync=0L
+ @Volatile private var lastSyncAt=0L
+ // Upload problems are kept apart from adapter errors so a successful upload can clear its own message.
+ @Volatile var uploadError:String?=null
+ private val retry=Runnable{sync()}
  private val scanCallback=object:ScanCallback(){override fun onScanResult(type:Int,result:ScanResult){synchronized(seen){seen[result.device.address]=result;
   // The advertised name needs no BLUETOOTH_CONNECT permission and often arrives only in the scan response, so remember it.
   val advertised=result.scanRecord?.deviceName?.trim();if(!advertised.isNullOrEmpty())names[result.device.address]=advertised}}}
@@ -113,7 +118,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   catch(e:TimeoutCancellationException){throw IllegalStateException("Timed out connecting to the adapter. Close other apps that may hold it (for example VgateFwUpdater), then retry")}
   finally{if(inspecting===result)inspecting=null;handler.post{if(!recording){gatt?.disconnect();gatt?.close();gatt=null}}}
  }
- fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to error,"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0))
+ fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to listOfNotNull(error,uploadError).joinToString("\n").ifEmpty{null},"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0))
  /** Arms the recorder: it connects to the saved adapter now, or whenever the adapter next powers on, until stopped. */
  fun start(){if(recording)return;config=RecorderSecret.read(context)?:error("Configure the recorder first");recording=true;error=null;armedPrefs.edit().putBoolean("armed",true).apply();handler.post{try{connect()}catch(e:SecurityException){error="Bluetooth permission needed: open the app and allow nearby devices";recording=false;return@post};handler.removeCallbacks(ticker);handler.post(ticker)}}
  // autoConnect keeps one passive connection request open, so the phone links up when the adapter powers on without scanning or draining the battery.
@@ -121,7 +126,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  // GPS only runs while the adapter answers, so waiting for the car costs no battery and never records the phone wandering around.
  private fun startLocation(){if(locating)return;try{location.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000,3f,this,Looper.getMainLooper());locating=true}catch(e:SecurityException){error="Location permission needed: GPS not recorded"}catch(e:Exception){error="GPS unavailable; OBD capture continues"}}
  private fun stopLocation(){if(!locating)return;location.removeUpdates(this);locating=false}
- fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync()}
+ fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
  override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));connected=false;inFlight=null;stopLocation();error="Bluetooth disconnected; observations unavailable";if(recording)handler.postDelayed({if(recording)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{
   if(status!=BluetoothGatt.GATT_SUCCESS){error="Service discovery failed";inspecting?.completeExceptionally(IllegalStateException("Service discovery failed (Bluetooth status $status)"));return@post}
@@ -144,7 +149,8 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
   handler.postDelayed({poll()},20)
  }
- private val ticker=object:Runnable {override fun run(){if(!recording)return;sync();poll();handler.postDelayed(this,500)}}
+ // Uploads go out every 5 s while recording: each one empties the queue, and fewer, larger batches keep a small server responsive.
+ private val ticker=object:Runnable {override fun run(){if(!recording)return;if(SystemClock.elapsedRealtime()-lastSyncAt>=5000)sync();poll();handler.postDelayed(this,500)}}
  /** Sends the next command only when none is in flight. Called by the 0.5 s watchdog and straight after each reply. */
  private fun poll(){if(!recording||!connected)return
   val ch=writing?:run{error="Write characteristic not found on the adapter; re-select it on the Connect tab";return}
@@ -159,5 +165,50 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  }
  override fun onLocationChanged(fix:Location){if(!recording||(!connected&&SystemClock.elapsedRealtime()-lastObdAt>20000))return;val age=(SystemClock.elapsedRealtimeNanos()-fix.elapsedRealtimeNanos)/1e9;val position=JSONObject().put("latitude",fix.latitude).put("longitude",fix.longitude).put("accuracy",fix.accuracy.toDouble()).put("fixAge",age.coerceAtLeast(0.0)).put("validFix",age<=10).put("provider","PHONE");try{store.enqueue("GPS",position,"deg")}catch(_:Exception){error="Queue full; recording stopped";stop()}}
  override fun onProviderDisabled(provider:String){error="GPS unavailable; OBD capture continues"}
- fun sync(){if(syncing||SystemClock.elapsedRealtime()<nextSync)return;val c=RecorderSecret.read(context)?:return;syncing=true;network.execute{try{val batch=store.batch(c);if(batch!=null){val url=URL(c.getString("apiUrl")+"/api/v1/telemetry/batches");require(url.protocol=="https"||url.host in listOf("localhost","10.0.2.2","127.0.0.1")||url.host.startsWith("192.168.")){"Use HTTPS for remote recording"};val connection=url.openConnection() as HttpURLConnection;try{connection.requestMethod="POST";connection.connectTimeout=10000;connection.readTimeout=20000;connection.doOutput=true;connection.setRequestProperty("Authorization","Device "+c.getString("deviceToken"));connection.setRequestProperty("Content-Type","application/json");connection.outputStream.use{it.write(batch.second.toByteArray())};check(connection.responseCode==202);val response=JSONObject(connection.inputStream.bufferedReader().use{it.readText()});check(response.optBoolean("accepted"));store.ack(batch.first);syncFailures=0;nextSync=0}catch(e:Exception){throw e}finally{connection.disconnect()}}}catch(_:Exception){syncFailures++;nextSync=SystemClock.elapsedRealtime()+min(300000.0,2.0.pow(min(syncFailures,8))*1000).toLong();error="Upload pending; queue retained"}finally{syncing=false}}}
+ /**
+  * Uploads queued readings batch after batch until the queue is empty. Runs every 5 s while recording, straight
+  * after a stop and when the app opens; after a failure it retries with backoff, also when nothing is recording,
+  * so a finished drive always reaches the server. force skips the backoff (Upload now, stop, app start).
+  */
+ fun sync(force:Boolean=false){
+  if(syncing||(!force&&SystemClock.elapsedRealtime()<nextSync))return
+  val c=RecorderSecret.read(context)?:return
+  syncing=true;lastSyncAt=SystemClock.elapsedRealtime();handler.removeCallbacks(retry)
+  network.execute{
+   try{
+    while(true){
+     val (id,body)=store.batch(c,500)?:break
+     val (code,answer)=post(c,body)
+     if(code==202&&runCatching{JSONObject(answer).optBoolean("accepted")}.getOrDefault(false)){store.ack(id);syncFailures=0;nextSync=0;uploadError=null}
+     // 409 and 422 are final for this exact batch: resending it can never succeed and would block every reading queued behind it.
+     else if(code==409||code==422){val n=runCatching{JSONObject(body).getJSONArray("samples").length()}.getOrDefault(0);store.ack(id);uploadError="Skipped $n readings the server cannot accept (${reason(code,answer)})"}
+     else throw IllegalStateException("Server refused the upload (${reason(code,answer)})")
+     // While recording, new readings keep arriving: leave a part-batch for the next round instead of a stream of tiny uploads.
+     if(recording&&store.count()<500)break
+    }
+   }catch(e:Exception){
+    syncFailures++;val wait=min(300000.0,2.0.pow(min(syncFailures,8))*1000).toLong();nextSync=SystemClock.elapsedRealtime()+wait
+    uploadError=when(e){is java.net.SocketTimeoutException->"Upload timed out: the server is busy or waking up";is java.io.IOException->"Upload waiting for an internet connection";else->e.message?:"Upload failed"}+". Readings stay on the phone and are retried automatically."
+    if(!recording)handler.postDelayed(retry,wait)
+   }finally{syncing=false}
+  }
+ }
+ private fun post(c:JSONObject,body:String):Pair<Int,String>{
+  val url=URL(c.getString("apiUrl")+"/api/v1/telemetry/batches");require(url.protocol=="https"||url.host in listOf("localhost","10.0.2.2","127.0.0.1")||url.host.startsWith("192.168.")){"Use HTTPS for remote recording"}
+  val connection=url.openConnection() as HttpURLConnection
+  try{
+   // A free host can take most of a minute to wake up, so wait for its answer rather than retrying into the same delay.
+   connection.requestMethod="POST";connection.connectTimeout=15000;connection.readTimeout=60000;connection.doOutput=true
+   connection.setRequestProperty("Authorization","Device "+c.getString("deviceToken"));connection.setRequestProperty("Content-Type","application/json")
+   connection.outputStream.use{it.write(body.toByteArray())}
+   val code=connection.responseCode
+   return code to ((if(code<400)connection.inputStream else connection.errorStream)?.bufferedReader()?.use{it.readText()}?:"")
+  }finally{connection.disconnect()}
+ }
+ /** The server's error code (for example DEVICE_REVOKED_OR_UNKNOWN) and HTTP status, so an upload problem can be diagnosed from a screenshot. */
+ private fun reason(code:Int,answer:String):String{
+  val detail=runCatching{JSONObject(answer).opt("detail")}.getOrNull()
+  val name=(detail as? JSONObject)?.optString("code").orEmpty().ifEmpty{if(detail is org.json.JSONArray)"INVALID_READINGS" else ""}
+  return if(name.isEmpty())"HTTP $code" else "$name, HTTP $code"
+ }
 }

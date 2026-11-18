@@ -35,11 +35,12 @@ class RecorderStore(context: Context): SQLiteOpenHelper(context,"yazzy.sqlite",n
    db.insertOrThrow("samples",null,cv);putMeta("sequence",seq.toString());db.setTransactionSuccessful()
   }finally{db.endTransaction()}
  }
- @Synchronized fun batch(config:JSONObject):Pair<String,String>? {
+ /** The batch waiting for an answer, or a new one of up to limit readings from the oldest session. The server takes up to 1000. */
+ @Synchronized fun batch(config:JSONObject,limit:Int=100):Pair<String,String>? {
   readableDatabase.rawQuery("SELECT id,payload FROM pending LIMIT 1",null).use{if(it.moveToFirst())return it.getString(0) to it.getString(1)}
   val sid=readableDatabase.rawQuery("SELECT session FROM samples ORDER BY id LIMIT 1",null).use{if(it.moveToFirst())it.getString(0) else return null}
   val samples=JSONArray();var min=0L;var max=0L
-  readableDatabase.rawQuery("SELECT sequence,json FROM samples WHERE session=? ORDER BY id LIMIT 100",arrayOf(sid)).use{while(it.moveToNext()){val seq=it.getLong(0);if(samples.length()==0)min=seq;max=seq;samples.put(JSONObject(it.getString(1)))}}
+  readableDatabase.rawQuery("SELECT sequence,json FROM samples WHERE session=? ORDER BY id LIMIT ${limit.coerceIn(1,1000)}",arrayOf(sid)).use{while(it.moveToNext()){val seq=it.getLong(0);if(samples.length()==0)min=seq;max=seq;samples.put(JSONObject(it.getString(1)))}}
   val id=UUID.randomUUID().toString();val body=JSONObject().put("schemaVersion",1).put("batchId",id).put("deviceId",config.getString("deviceId")).put("assignmentId",config.getString("assignmentId")).put("sessionId",sid).put("sequenceStart",min).put("source","MOBILE_OBD").put("platform","ANDROID").put("decoderVersion","elm-v1").put("samples",samples).toString()
   writableDatabase.execSQL("INSERT INTO pending VALUES(?,?,?,?)",arrayOf(id,sid,max,body));return id to body
  }
