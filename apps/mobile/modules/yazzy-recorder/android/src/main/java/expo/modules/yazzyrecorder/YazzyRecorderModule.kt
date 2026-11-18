@@ -41,6 +41,7 @@ class YazzyRecorderModule:Module(){
   // startService returns a ComponentName, which cannot cross to JS; return nothing so the call resolves.
   AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent);Unit}
   AsyncFunction("reconnect") Coroutine { -> RecorderManager.get(appContext.reactContext!!).reconnect()}
+  AsyncFunction("lastLocation"){RecorderManager.get(appContext.reactContext!!).lastLocation()}
   AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
   AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync(true)}
   AsyncFunction("snapshot"){RecorderManager.get(appContext.reactContext!!).snapshot()}
@@ -165,6 +166,8 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  // GPS only runs while the adapter answers, so waiting for the car costs no battery and never records the phone wandering around.
  private fun startLocation(){if(locating)return;try{location.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000,3f,this,Looper.getMainLooper());locating=true}catch(e:SecurityException){error="Location permission needed: GPS not recorded"}catch(e:Exception){error="GPS unavailable; OBD capture continues"}}
  private fun stopLocation(){if(!locating)return;location.removeUpdates(this);locating=false}
+ /** The phone's newest known position from any provider, without switching GPS on; null without permission. */
+ fun lastLocation():Map<String,Any>?=try{listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER,"fused").mapNotNull{runCatching{location.getLastKnownLocation(it)}.getOrNull()}.maxByOrNull{it.time}?.let{mapOf("latitude" to it.latitude,"longitude" to it.longitude,"accuracy" to it.accuracy.toDouble(),"at" to it.time/1000.0)}}catch(_:SecurityException){null}
  fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
  override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;ignitionOff();connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{

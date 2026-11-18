@@ -39,6 +39,10 @@ class VehiclePatch(Contract):
         return value
 
 
+class RebuildInput(Contract):
+    days: int = Field(default=14, ge=1, le=30)
+
+
 class Enrollment(Contract):
     vehicle_id: Identifier
     name: str = Field(default="Vgate iCar Pro phone collector", min_length=1, max_length=100)

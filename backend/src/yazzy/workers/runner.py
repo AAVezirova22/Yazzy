@@ -13,7 +13,7 @@ from sqlalchemy import or_, select, update
 
 from yazzy.config import settings
 from yazzy.infrastructure.db import transaction
-from yazzy.infrastructure.models import Job, Organisation, SimulationRun
+from yazzy.infrastructure.models import Job, Organisation, SimulationRun, Vehicle
 from yazzy.modules.trips.service import reconcile
 
 logger = logging.getLogger("yazzy.worker")
@@ -77,18 +77,45 @@ def run_job(job_id, tenant_id):
                 job.status = "CANCELLED"
                 return False
             if kind == "RECONCILE":
-                result = reconcile(db, tenant_id, payload["vehicleId"], payload.get("runId"))
-                # Inputs accepted before the locked reconciliation are represented by this result.
-                db.execute(
-                    update(Job)
-                    .where(
-                        Job.tenant_id == tenant_id,
-                        Job.kind == "RECONCILE",
-                        Job.status == "PENDING",
-                        Job.payload["vehicleId"].as_string() == payload["vehicleId"],
-                    )
-                    .values(status="COMPLETED", result={"coalescedInto": job_id})
+                # Lock the vehicle first: uploads take the same lock, so the jobs queued now are
+                # all there will be until this commits, and their readings are all visible.
+                db.scalar(
+                    select(Vehicle)
+                    .where(Vehicle.id == payload["vehicleId"], Vehicle.tenant_id == tenant_id)
+                    .with_for_update()
                 )
+                queued = list(
+                    db.scalars(
+                        select(Job).where(
+                            Job.tenant_id == tenant_id,
+                            Job.kind == "RECONCILE",
+                            Job.status == "PENDING",
+                            Job.id != job_id,
+                            Job.payload["vehicleId"].as_string() == payload["vehicleId"],
+                        )
+                    )
+                )
+                payloads = [payload, *[q.payload for q in queued]]
+                # Jobs queued before ranges existed rebuild the last three days instead.
+                ranges = (
+                    None
+                    if any("ranges" not in p for p in payloads)
+                    else [r for p in payloads for r in p["ranges"]]
+                )
+                result = reconcile(
+                    db, tenant_id, payload["vehicleId"], payload.get("runId"), ranges=ranges
+                )
+                for q in queued:
+                    q.status, q.result = "COMPLETED", {"coalescedInto": job_id}
+                if result.get("remaining"):
+                    db.add(
+                        Job(
+                            tenant_id=tenant_id,
+                            kind="RECONCILE",
+                            key=f"continue:{job_id}:{generation}",
+                            payload={**payload, "ranges": result["remaining"]},
+                        )
+                    )
             elif kind == "SIMULATE":
                 from yazzy.modules.fleet.simulation import advance
 

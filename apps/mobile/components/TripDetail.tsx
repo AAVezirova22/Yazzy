@@ -1,16 +1,16 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {Alert,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {Alert,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {StatusBar} from 'expo-status-bar';
-import Constants from 'expo-constants';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import MapView,{Marker,Polyline,type LatLng} from 'react-native-maps';
+import MapView,{Polyline,type LatLng} from 'react-native-maps';
+import {Dot,FullMap,MapPreview,nativeMaps,Pin,regionFor} from './maps';
 import {exportTripPdf,REPORT_SIGNALS,type SeriesPoint} from './tripPdf';
 import {c,shadow,ui} from './theme';
-import {Button,Icon,RoundButton} from './kit';
+import {Button,Icon} from './kit';
 import {CarArt,RouteArt} from './art';
 
 // Android maps need a Google Maps key baked in at build time (see app.config.js); iOS uses Apple Maps.
-export const nativeMaps=Platform.OS==='ios'||(Platform.OS==='android'&&Constants.expoConfig?.extra?.googleMapsKey===true);
+export {nativeMaps};
 type Point={observedAt:number;value:number};
 type Series={points:Point[]};
 type DrivingEvent={type:'HARD_ACCELERATION'|'HARD_BRAKING';time:number;peakMetresPerSecond2:number;fromKmh:number;toKmh:number;durationSeconds:number;latitude:number|null;longitude:number|null};
@@ -37,17 +37,15 @@ function Bars({points,from,to,unit,color}:{points:Point[];from:number;to:number;
  </View>;
 }
 
-function TripMap({route,events,style,onMap}:{route:LatLng[];events:DrivingEvent[];style:any;onMap?:(m:MapView|null)=>void}){
- const map=useRef<MapView|null>(null);
+/** The route, its start and end, and where hard braking or acceleration happened. */
+function RouteLayers({route,events}:{route:LatLng[];events:DrivingEvent[]}){
  const pins=events.filter(e=>e.latitude!=null&&e.longitude!=null);
- if(!nativeMaps)return <RouteArt route={route} style={style} stroke={5} markers={pins.map(e=>({latitude:e.latitude as number,longitude:e.longitude as number,color:eventColor(e)}))}/>;
- const fit=()=>{if(route.length)map.current?.fitToCoordinates(route,{edgePadding:{top:90,right:60,bottom:80,left:60},animated:false});};
- return <MapView ref={r=>{map.current=r;onMap?.(r);}} style={style} onMapReady={fit} onLayout={fit} initialRegion={{latitude:route[0].latitude,longitude:route[0].longitude,latitudeDelta:0.003,longitudeDelta:0.003}}>
-  {route.length>1&&<Polyline coordinates={route} strokeColor={c.blue} strokeWidth={5}/>}
-  <Marker coordinate={route[0]} title="Start" description="Where the trip began" pinColor="green"/>
-  {route.length>1&&<Marker coordinate={route[route.length-1]} title="Last position" pinColor="blue"/>}
-  {pins.map(e=><Marker key={e.type+e.time} coordinate={{latitude:e.latitude as number,longitude:e.longitude as number}} title={eventLabel(e)} description={eventText(e)} pinColor={e.type==='HARD_BRAKING'?'red':'orange'}/>)}
- </MapView>;
+ return <>
+  {route.length>1?<Polyline coordinates={route} strokeColor={c.blue} strokeWidth={5}/>:null}
+  <Pin coordinate={route[0]} icon="flag" color={c.green} title="Start"/>
+  {route.length>1?<Pin coordinate={route[route.length-1]} icon="car-sport" title="End"/>:null}
+  {pins.map(e=><Dot key={e.type+e.time} coordinate={{latitude:e.latitude as number,longitude:e.longitude as number}} color={eventColor(e)} size={12} title={eventLabel(e)}/>)}
+ </>;
 }
 
 function Tile({icon,value,label}:{icon:string;value:string;label:string}){
@@ -64,9 +62,6 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  const [speed,setSpeed]=useState<Series|null>(()=>seen.get(trip.id)?.[0]??null),[rpm,setRpm]=useState<Series|null>(()=>seen.get(trip.id)?.[1]??null),[failed,setFailed]=useState('');
  const [expanded,setExpanded]=useState(false),[exporting,setExporting]=useState(false),insets=useSafeAreaInsets(),inlineMap=useRef<MapView|null>(null);
  const route:LatLng[]=useMemo(()=>(m.route||[]).map((p:any)=>({latitude:p.latitude,longitude:p.longitude})),[trip.id]);
- // Creating a Google map is the heaviest step on a low-end phone: let the page slide in first, then add the map.
- const [mapReady,setMapReady]=useState(false);
- useEffect(()=>{const t=setTimeout(()=>setMapReady(true),350);return()=>clearTimeout(t);},[]);
  useEffect(()=>{
   if(seen.has(trip.id))return;
   let active=true;
@@ -90,17 +85,12 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  const started=new Date(from*1000);
  return <View style={s.page}>
   <StatusBar style="dark"/>
-  <View style={s.mapBox}>
-   {route.length?(mapReady?<TripMap route={route} events={events} style={StyleSheet.absoluteFill} onMap={r=>{inlineMap.current=r;}}/>:null)
-    :<View style={[StyleSheet.absoluteFill,s.noMap]}><Icon name="location-outline" size={26} color={c.faint}/><Text style={[ui.caption,{marginTop:6}]}>No GPS position was recorded for this trip</Text></View>}
-   <View style={[s.mapBar,{top:insets.top+10}]}>
+  <ScrollView contentContainerStyle={{padding:16,paddingTop:insets.top+10,paddingBottom:120+insets.bottom}}>
+   <View style={[ui.row,{marginBottom:14}]}>
     <Pressable accessibilityRole="button" accessibilityLabel="Back to trips" onPress={onClose} style={({pressed})=>[s.back,pressed&&{opacity:0.85}]}>
-     <Icon name="arrow-back" size={18} color={c.ink}/><Text style={s.backText}>Trip details</Text>
+     <Icon name="arrow-back" size={18} color={c.ink}/><Text style={s.backText}>Trips</Text>
     </Pressable>
-    {route.length?<RoundButton icon="expand-outline" label="Full-screen map" onPress={()=>setExpanded(true)}/>:null}
    </View>
-  </View>
-  <ScrollView style={s.sheet} contentContainerStyle={{padding:16,paddingBottom:120+insets.bottom}}>
    <View style={s.summary}>
     <View style={[ui.row,{gap:8}]}>
      <Icon name="navigate" size={15} color={c.blue300}/>
@@ -116,6 +106,20 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
     </View>
     <View style={s.summaryCar} pointerEvents="none"><CarArt width={170}/></View>
    </View>
+
+   {route.length?<View style={[ui.card,{padding:0,overflow:'hidden'}]}>
+    <MapPreview region={regionFor(route)} height={210} onPress={()=>setExpanded(true)} onReady={map=>{inlineMap.current=map;}} label="Open the route on a map"
+     fallback={<RouteArt route={route} style={StyleSheet.absoluteFill} stroke={5} markers={events.filter(e=>e.latitude!=null).map(e=>({latitude:e.latitude as number,longitude:e.longitude as number,color:eventColor(e)}))}/>}>
+     <RouteLayers route={route} events={events}/>
+    </MapPreview>
+    <View style={s.routeInfo}>
+     <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.green}]}/><Text style={s.legText}>Start {clock(from)}</Text></View>
+     <View style={s.legLine}/>
+     <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.blue}]}/><Text style={s.legText}>End {clock(to)}</Text></View>
+     <View style={{flex:1}}/>
+     <Pressable accessibilityRole="button" onPress={()=>setExpanded(true)} hitSlop={8}><Text style={s.link}>Full map</Text></Pressable>
+    </View>
+   </View>:<View style={[ui.card,s.noRoute]}><Icon name="location-outline" size={20} color={c.faint}/><Text style={ui.caption}>No GPS position was recorded for this trip.</Text></View>}
 
    <Text style={s.heading}>Overview</Text>
    <View style={s.grid}>
@@ -149,16 +153,13 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
    <Button title={exporting?'Preparing…':'Export PDF'} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:16}}/>
   </View>
 
-  <Modal visible={expanded} animationType="slide" onRequestClose={()=>setExpanded(false)}>
-   <View style={{flex:1,backgroundColor:c.bg}}>
-    <TripMap route={route} events={events} style={StyleSheet.absoluteFill}/>
-    <View style={[s.mapBar,{top:insets.top+10}]}><RoundButton icon="close" label="Close map" onPress={()=>setExpanded(false)}/></View>
-    <View style={[s.legend,{bottom:insets.bottom+16}]}>
-     <View style={[ui.row,{gap:6}]}><View style={[s.eventDot,{backgroundColor:c.red}]}/><Text style={ui.caption}>Hard braking ({braking})</Text></View>
-     <View style={[ui.row,{gap:6}]}><View style={[s.eventDot,{backgroundColor:c.amber}]}/><Text style={ui.caption}>Hard acceleration ({accelerating})</Text></View>
-    </View>
-   </View>
-  </Modal>
+  {route.length?<FullMap visible={expanded} onClose={()=>setExpanded(false)} region={regionFor(route)} title={`${clock(from)} – ${clock(to)}`}
+   bottom={<View style={s.legend}>
+    <View style={[ui.row,{gap:6}]}><View style={[s.eventDot,{backgroundColor:c.red}]}/><Text style={ui.caption}>Hard braking ({braking})</Text></View>
+    <View style={[ui.row,{gap:6}]}><View style={[s.eventDot,{backgroundColor:c.amber}]}/><Text style={ui.caption}>Hard acceleration ({accelerating})</Text></View>
+   </View>}>
+   <RouteLayers route={route} events={events}/>
+  </FullMap>:null}
  </View>;
 }
 
@@ -190,5 +191,12 @@ const s=StyleSheet.create({
  bar:{flex:1,borderRadius:3},
  footer:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:14,backgroundColor:c.surface,borderTopLeftRadius:26,borderTopRightRadius:26,paddingHorizontal:20,paddingTop:14,...shadow,shadowOffset:{width:0,height:-4},elevation:12},
  footValue:{fontSize:24,fontWeight:'800',color:c.ink,letterSpacing:-0.5},
- legend:{position:'absolute',left:16,right:16,backgroundColor:c.surface,borderRadius:18,padding:14,gap:6,...shadow},
+ legend:{backgroundColor:c.surface,borderRadius:18,padding:14,gap:6,...shadow},
+ routeInfo:{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:16,paddingVertical:13},
+ leg:{flexDirection:'row',alignItems:'center',gap:6},
+ legDot:{width:9,height:9,borderRadius:5},
+ legLine:{width:14,height:2,borderRadius:1,backgroundColor:c.track},
+ legText:{fontSize:13,fontWeight:'600',color:c.ink2},
+ link:{fontSize:13.5,fontWeight:'700',color:c.blue},
+ noRoute:{flexDirection:'row',alignItems:'center',gap:10},
 });

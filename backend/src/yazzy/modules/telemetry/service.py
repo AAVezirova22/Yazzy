@@ -132,6 +132,11 @@ def ingest(db, device: Device, batch: TelemetryBatch):
         if stored.payload_hash != hashes[seq] or stored.assignment_id != assignment.id:
             fail("SEQUENCE_CONFLICT", 409)
     job_id = uid()
+    accepted = [
+        s.observed_at.timestamp()
+        for s in batch.samples
+        if s.sequence in hashes and s.sequence not in existing
+    ]
     db.add(
         Job(
             id=job_id,
@@ -142,6 +147,16 @@ def ingest(db, device: Device, batch: TelemetryBatch):
                 "vehicleId": owner.id,
                 "runId": device.run_id,
                 "runGeneration": run.generation if run else None,
+                "ranges": [
+                    {
+                        "deviceId": device.id,
+                        "sessionId": batch.session_id,
+                        "from": min(accepted),
+                        "to": max(accepted),
+                    }
+                ]
+                if accepted
+                else [],
             },
         )
     )

@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {AppState,BackHandler,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {Alert,AppState,BackHandler,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ScreenContainer} from 'react-native-screens';
 import {StatusBar} from 'expo-status-bar';
@@ -86,6 +86,21 @@ export default function App(){
   inflight.current={id,done};
   return done;
  },[]);
+ /** Asks the server to rebuild the last 14 days of trips from the stored readings (drives missed while trip building failed). */
+ const rebuild=useCallback(async(quiet:boolean)=>{
+  const id=selectedRef.current;if(!id)return false;
+  try{
+   await server.call(`/vehicles/${id}/trips/rebuild`,{days:14});
+   if(!quiet)Alert.alert('Rebuilding trips','Trips from the last 14 days are being rebuilt from the readings your car recorded. Pull down on Trips in a minute to see them.');
+   setTimeout(()=>{void refresh(true);},45000);return true;
+  }catch(e){if(!quiet)Alert.alert('Yazzy',(e as Error).message);return false;}
+ },[]);
+ // Once per car after this update: recover the drives whose trips were never built.
+ useEffect(()=>{
+  if(!mode||!selected)return;
+  SecureStore.getItemAsync('yazzy-rebuilt-v1').then(async v=>{const done:string[]=JSON.parse(v||'[]');if(done.includes(selected))return;if(await rebuild(true))await SecureStore.setItemAsync('yazzy-rebuilt-v1',JSON.stringify([...done,selected]));}).catch(()=>{});
+ },[mode,session,selected]);
+ const rebuildNow=useCallback(()=>{void rebuild(false);},[rebuild]);
  const pullToRefresh=useCallback(()=>{setPulling(true);refresh(true).finally(()=>setPulling(false));},[refresh]);
 
  useEffect(()=>{
@@ -203,7 +218,7 @@ export default function App(){
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
   case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar}/>;
-  case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView}/>;
+  case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
   case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected}/>;

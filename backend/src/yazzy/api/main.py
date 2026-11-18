@@ -2,6 +2,7 @@ import json
 import logging
 import secrets
 import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -22,6 +23,7 @@ from yazzy.api.schemas import (
     MaintenanceInput,
     PrivacyInput,
     QuoteInput,
+    RebuildInput,
     VehicleInput,
     VehiclePatch,
     WorkOrderInput,
@@ -69,6 +71,7 @@ from yazzy.modules.identity.policy import (
 from yazzy.modules.telemetry.contracts import SIGNALS, TelemetryBatch
 from yazzy.modules.telemetry.service import ingest
 from yazzy.modules.trips.domain import aggregate
+from yazzy.modules.trips.service import recent_ranges
 
 logger = logging.getLogger("yazzy.api")
 
@@ -613,12 +616,43 @@ def corrections(
             "vehicleId": t.vehicle_id,
             "runId": t.run_id,
             "runGeneration": run.generation if run else None,
+            "ranges": [
+                {
+                    "deviceId": t.device_id,
+                    "sessionId": t.session_id,
+                    "from": payload.get("start", t.start_at),
+                    "to": payload.get("end", t.end_at),
+                }
+            ],
         },
     )
     db.add(job)
     db.flush()
     audit(db, ctx, "TRIP_CORRECTED", t.id)
     return {"jobId": job.id, "revisionId": revision.id}
+
+
+@app.post("/api/v1/vehicles/{vehicle_id}/trips/rebuild", status_code=202)
+def rebuild_trips(
+    vehicle_id: str,
+    data: RebuildInput,
+    ctx=Depends(authenticate),
+    db=Depends(get_db, scope="function"),
+):
+    """Rebuilds the trips of every recording in the last `days` from the stored readings, for
+    drives whose trips were never made (for example while trip building was failing)."""
+    v = vehicle(db, ctx, vehicle_id, write=True)
+    ranges = recent_ranges(db, ctx.tenant_id, v.id, None, time.time() - data.days * 86400)
+    job = Job(
+        tenant_id=ctx.tenant_id,
+        kind="RECONCILE",
+        key=f"rebuild:{v.id}:{uuid.uuid4()}",
+        payload={"vehicleId": v.id, "runId": None, "runGeneration": None, "ranges": ranges},
+    )
+    db.add(job)
+    db.flush()
+    audit(db, ctx, "TRIPS_REBUILT", v.id)
+    return {"jobId": job.id, "sessions": len(ranges)}
 
 
 @app.get("/api/v1/vehicles/{vehicle_id}/fuel-entries")

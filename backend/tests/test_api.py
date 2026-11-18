@@ -408,3 +408,74 @@ def test_long_phone_uptime_does_not_fail_upload(client, enrolled):
             select(Sample.monotonic_ms).where(Sample.session_id == data["sessionId"])
         )
         assert set(stored) == {None}
+
+
+def drive(enrol, start, batch, seq0, session="day", seconds=20):
+    """A short drive: standing, then 40 km/h, then standing, one reading pair per second."""
+    samples = []
+    for i in range(seconds):
+        speed = 0 if i in (0, seconds - 1) else 40
+        for signal, value, unit in [("VEHICLE_SPEED", speed, "km/h"), ("ENGINE_RPM", 1500, "rpm")]:
+            samples.append(
+                {
+                    "sequence": seq0 + len(samples),
+                    "observedAt": stamp(start + i),
+                    "signal": signal,
+                    "value": value,
+                    "unit": unit,
+                }
+            )
+    base = payload(enrol, session=session, batch=batch)
+    return {**base, "sequenceStart": seq0, "samples": samples}
+
+
+def moving_trips(client, vehicle):
+    trips = client.get(f"/api/v1/vehicles/{vehicle['id']}/trips").json()
+    return sorted([t for t in trips if t["status"] != "STATIONARY"], key=lambda t: t["startAt"])
+
+
+def test_each_upload_rebuilds_only_its_own_journey(client, enrolled):
+    from yazzy.infrastructure.models import Job
+
+    v, e = enrolled
+    t0 = e["validFrom"]
+    assert upload(client, e, drive(e, t0 - 115, "j1", 0)).status_code == 202
+    drain()
+    second = upload(client, e, drive(e, t0 + 35, "j2", 1000))
+    assert second.status_code == 202, second.text
+    drain()
+    trips = moving_trips(client, v)
+    assert len(trips) == 2
+    assert trips[0]["status"] == "CLOSED"
+    with transaction() as db:
+        assert db.get(Job, second.json()["jobId"]).result["sampleCount"] == 40
+
+
+def test_large_backlogs_continue_in_a_follow_up_job(client, enrolled, monkeypatch):
+    from yazzy.modules.trips import service
+
+    monkeypatch.setattr(service, "ROW_BUDGET", 10)
+    v, e = enrolled
+    t0 = e["validFrom"]
+    assert upload(client, e, drive(e, t0 - 115, "a1", 0, session="a")).status_code == 202
+    assert upload(client, e, drive(e, t0 + 35, "b1", 0, session="b")).status_code == 202
+    drain()
+    assert len(moving_trips(client, v)) == 2
+
+
+def test_trips_can_be_rebuilt_from_stored_readings(client, enrolled):
+    from sqlalchemy import delete
+
+    from yazzy.infrastructure.models import Trip
+
+    v, e = enrolled
+    assert upload(client, e, drive(e, e["validFrom"] - 115, "j1", 0)).status_code == 202
+    drain()
+    with transaction() as db:
+        db.execute(delete(Trip))
+    assert moving_trips(client, v) == []
+    r = client.post(f"/api/v1/vehicles/{v['id']}/trips/rebuild", json={"days": 2})
+    assert r.status_code == 202, r.text
+    assert r.json()["sessions"] == 1
+    drain()
+    assert len(moving_trips(client, v)) == 1

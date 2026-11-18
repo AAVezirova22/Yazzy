@@ -1,65 +1,73 @@
-import {useEffect,useRef,useState} from 'react';
-import {Linking,PermissionsAndroid,Platform,Pressable,StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
-import MapView,{Marker,type LatLng} from 'react-native-maps';
+import {useEffect,useState} from 'react';
+import {Linking,PermissionsAndroid,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import type MapView from 'react-native-maps';
+import type {LatLng} from 'react-native-maps';
 import {c,shadow,ui} from './theme';
-import {Icon,RoundButton} from './kit';
-import {nativeMaps} from './TripDetail';
+import {Icon} from './kit';
+import {Dot,FullMap,MapPreview,Pin,regionFor} from './maps';
 import {away,metres,since,type Spot} from './car';
+import {Recorder} from '../modules/yazzy-recorder/src';
+
+const NEAR=20000;
 
 /**
- * The car's last known spot on a map, with you (the phone) as the blue dot, how far away it is and walking directions.
- * Without a Google Maps key on Android it shows the coordinates and the directions button only.
+ * Where the car is, as in the car makers' apps: a still map card with the car's pin and you, the street address,
+ * how long ago and how far, Directions, and a full-screen map on tap.
  */
-export function CarMap({spot,live,style}:{spot:Spot&{source:'recorder'|'trip'};live:boolean;style?:StyleProp<ViewStyle>}){
- const map=useRef<MapView|null>(null),fitted=useRef(false);
- const [me,setMe]=useState<LatLng|null>(null),[locate,setLocate]=useState(Platform.OS==='ios'),[ready,setReady]=useState(false),[pinDrawing,setPinDrawing]=useState(true);
+export function CarLocation({spot,live}:{spot:Spot&{source:'recorder'|'trip'};live:boolean}){
  const car={latitude:spot.latitude,longitude:spot.longitude};
- // Creating the map is the heaviest step: let the page slide in first. The custom pin is drawn once, then frozen.
- useEffect(()=>{const a=setTimeout(()=>setReady(true),300),b=setTimeout(()=>setPinDrawing(false),1800);return()=>{clearTimeout(a);clearTimeout(b);};},[]);
+ const [me,setMe]=useState<LatLng|null>(null),[address,setAddress]=useState<string|null>(null),[open,setOpen]=useState(false);
  useEffect(()=>{
-  if(Platform.OS!=='android')return;
-  const fine=PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
-  PermissionsAndroid.check(fine).then(ok=>ok||PermissionsAndroid.request(fine).then(r=>r===PermissionsAndroid.RESULTS.GRANTED)).then(setLocate).catch(()=>{});
+  let active=true;
+  (async()=>{
+   if(Platform.OS==='android'){const fine=PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;if(!(await PermissionsAndroid.check(fine))&&(await PermissionsAndroid.request(fine))!==PermissionsAndroid.RESULTS.GRANTED)return;}
+   const p=await Recorder.lastLocation();
+   if(active&&p&&Date.now()/1000-p.at<1800)setMe({latitude:p.latitude,longitude:p.longitude});
+  })().catch(()=>{});
+  return()=>{active=false;};
  },[]);
- const both=(animated:boolean)=>{
-  if(me&&metres(me,car)<30000)map.current?.fitToCoordinates([car,me],{edgePadding:{top:120,right:70,bottom:110,left:70},animated});
-  else map.current?.animateToRegion({...car,latitudeDelta:0.004,longitudeDelta:0.004},animated?300:0);
- };
- // Frame you and the car together the first time your position is known.
- useEffect(()=>{if(me&&!fitted.current){fitted.current=true;both(true);}},[me]);
- const distance=me?metres(me,car):null;
+ const distance=me?metres(me,car):null,both=me&&distance!=null&&distance<NEAR?[car,me]:[car];
+ const title=live?'With you now':spot.source==='trip'?'Where your last trip ended':'Parked';
+ const detail=[live?'Updating while you drive':since(spot.at),distance!=null?`${away(distance)} from you`:null,spot.accuracy?`±${Math.round(spot.accuracy)} m`:null].filter(Boolean).join(' · ');
+ const lookUp=(map:MapView)=>{map.addressForCoordinate(car).then(a=>{const street=[a.thoroughfare,a.subThoroughfare].filter(Boolean).join(' ')||a.name;setAddress([street,a.locality].filter(Boolean).join(', ')||null);}).catch(()=>{});};
  const directions=()=>{const q=`${car.latitude},${car.longitude}`;Linking.openURL(Platform.OS==='ios'?`http://maps.apple.com/?daddr=${q}&dirflg=w`:`https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=walking`).catch(()=>{});};
- const title=live?'Your car, with you now':spot.source==='trip'?'Where your last trip ended':'Where you parked';
- return <View style={[s.box,style]}>
-  {nativeMaps?(ready?<MapView ref={map} style={StyleSheet.absoluteFill} initialRegion={{...car,latitudeDelta:0.004,longitudeDelta:0.004}}
-    showsUserLocation={locate} showsMyLocationButton={false} toolbarEnabled={false} showsCompass={false}
-    onUserLocationChange={e=>{const p=e.nativeEvent.coordinate;if(p&&(!me||metres(me,p)>5))setMe({latitude:p.latitude,longitude:p.longitude});}}>
-    <Marker coordinate={car} title="Your car" description={`${since(spot.at)}${spot.accuracy?` · ±${Math.round(spot.accuracy)} m`:''}`} anchor={{x:0.5,y:1}} tracksViewChanges={pinDrawing}>
-     <View style={{alignItems:'center'}}><View style={s.pin}><Icon name="car-sport" size={17} color="#fff"/></View><View style={s.tip}/></View>
-    </Marker>
-   </MapView>:null)
-   :<View style={[StyleSheet.absoluteFill,s.noMap]}><Icon name="car-sport" size={28} color={c.blue}/><Text selectable style={[ui.caption,{marginTop:6}]}>{car.latitude.toFixed(5)}, {car.longitude.toFixed(5)}</Text></View>}
-  {nativeMaps?<View style={s.recenter}><RoundButton icon={me?'scan-outline':'car-sport-outline'} label={me?'Show you and the car':'Centre on the car'} onPress={()=>both(true)}/></View>:null}
-  <View style={s.info}>
-   <View style={{flex:1}}>
-    <Text style={s.infoTitle} numberOfLines={1}>{title}</Text>
-    <Text style={ui.caption} numberOfLines={1}>{live?'Updating while you drive':since(spot.at)}{distance!=null?` · ${away(distance)} from you`:''}</Text>
+ const where=address||`${car.latitude.toFixed(5)}, ${car.longitude.toFixed(5)}`;
+ return <View style={[ui.card,{padding:0,overflow:'hidden'}]}>
+  <MapPreview key={both.length} region={regionFor(both)} onPress={()=>setOpen(true)} onReady={lookUp} label="Open the car's location on a map"
+   fallback={<View style={[StyleSheet.absoluteFill,s.fallback]}><Icon name="car-sport" size={26} color={c.blue}/></View>}>
+   <Pin coordinate={car} icon="car-sport" title="Your car"/>
+   {me&&both.length>1?<Dot coordinate={me} title="You"/>:null}
+  </MapPreview>
+  <View style={s.body}>
+   <View style={[ui.row,{gap:12}]}>
+    <View style={{flex:1}}>
+     <Text style={s.kicker}>{title.toUpperCase()}</Text>
+     <Text style={s.address} numberOfLines={2} selectable>{where}</Text>
+     <Text style={ui.caption} numberOfLines={1}>{detail}</Text>
+    </View>
+    <Pressable accessibilityRole="button" accessibilityLabel="Walking directions to the car" onPress={directions} style={({pressed})=>[s.go,pressed&&{opacity:0.85}]}>
+     <Icon name="navigate" size={18} color="#fff"/>
+    </Pressable>
    </View>
-   <Pressable accessibilityRole="button" accessibilityLabel="Walking directions to the car" onPress={directions} style={({pressed})=>[s.go,pressed&&{opacity:0.85}]}>
-    <Icon name="navigate" size={15} color="#fff"/><Text style={s.goText}>Directions</Text>
-   </Pressable>
   </View>
+
+  <FullMap visible={open} onClose={()=>setOpen(false)} region={regionFor(both)} title={title} showsUser onUser={p=>setMe(m=>m&&metres(m,p)<5?m:p)}
+   bottom={<View style={s.sheet}>
+    <View style={{flex:1}}><Text style={s.address} numberOfLines={1}>{where}</Text><Text style={ui.caption} numberOfLines={1}>{detail}</Text></View>
+    <Pressable accessibilityRole="button" onPress={directions} style={({pressed})=>[s.goWide,pressed&&{opacity:0.85}]}><Icon name="navigate" size={15} color="#fff"/><Text style={s.goText}>Directions</Text></Pressable>
+   </View>}>
+   <Pin coordinate={car} icon="car-sport" title="Your car" description={detail}/>
+  </FullMap>
  </View>;
 }
 
 const s=StyleSheet.create({
- box:{backgroundColor:'#e6ebf1',overflow:'hidden'},
- noMap:{alignItems:'center',justifyContent:'center'},
- pin:{width:36,height:36,borderRadius:18,backgroundColor:c.blue,borderWidth:3,borderColor:'#fff',alignItems:'center',justifyContent:'center'},
- tip:{width:0,height:0,borderLeftWidth:6,borderRightWidth:6,borderTopWidth:8,borderLeftColor:'transparent',borderRightColor:'transparent',borderTopColor:'#fff',marginTop:-1},
- recenter:{position:'absolute',right:14,bottom:84},
- info:{position:'absolute',left:14,right:14,bottom:14,flexDirection:'row',alignItems:'center',gap:12,backgroundColor:c.surface,borderRadius:20,paddingVertical:10,paddingLeft:16,paddingRight:10,...shadow},
- infoTitle:{fontSize:15,fontWeight:'700',color:c.ink},
- go:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:c.blue,borderRadius:999,paddingVertical:10,paddingHorizontal:14},
- goText:{fontSize:13.5,fontWeight:'700',color:'#fff'},
+ fallback:{alignItems:'center',justifyContent:'center'},
+ body:{padding:16},
+ kicker:{fontSize:11.5,fontWeight:'800',letterSpacing:0.8,color:c.blue,marginBottom:3},
+ address:{fontSize:16,fontWeight:'700',color:c.ink,marginBottom:2},
+ go:{width:46,height:46,borderRadius:23,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
+ sheet:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:c.surface,borderRadius:22,paddingVertical:12,paddingLeft:18,paddingRight:12,...shadow},
+ goWide:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:c.blue,borderRadius:999,paddingVertical:11,paddingHorizontal:16},
+ goText:{fontSize:14,fontWeight:'700',color:'#fff'},
 });

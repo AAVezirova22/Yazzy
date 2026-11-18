@@ -1,8 +1,7 @@
 import time
 import uuid
-from collections import defaultdict
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 
 from yazzy.infrastructure.models import (
     Baseline,
@@ -40,7 +39,77 @@ def split_on_gaps(observations, gap=JOURNEY_GAP_SECONDS):
     return chunks
 
 
-def reconcile(db, tenant_id, vehicle_id, run_id=None):
+# How far either side of new readings to look for the silences that bound their journey.
+LOOKBACK_SECONDS = 2 * 86400
+# Readings one job may load. Ranges beyond it go to a follow-up job, so each job finishes well
+# inside its lease on a 0.1-CPU host however much history the vehicle has.
+ROW_BUDGET = 60000
+
+
+def recent_ranges(db, tenant_id, vehicle_id, run_id, since):
+    """Every recording session with readings after `since`, as reconciliation ranges."""
+    rows = db.execute(
+        select(
+            Sample.device_id,
+            Sample.session_id,
+            func.min(Sample.observed_at),
+            func.max(Sample.observed_at),
+        )
+        .where(
+            Sample.tenant_id == tenant_id,
+            Sample.vehicle_id == vehicle_id,
+            Sample.run_id == run_id,
+            Sample.observed_at >= since,
+        )
+        .group_by(Sample.device_id, Sample.session_id)
+    ).all()
+    return [{"deviceId": d, "sessionId": s, "from": lo, "to": hi} for d, s, lo, hi in rows]
+
+
+def merge_ranges(ranges):
+    """One range per recording session, oldest first."""
+    merged = {}
+    for r in ranges:
+        key = (r["deviceId"], r["sessionId"])
+        lo, hi = merged.get(key, (r["from"], r["to"]))
+        merged[key] = (min(lo, r["from"]), max(hi, r["to"]))
+    ordered = sorted(merged.items(), key=lambda item: item[1][0])
+    return [{"deviceId": d, "sessionId": s, "from": lo, "to": hi} for (d, s), (lo, hi) in ordered]
+
+
+def journey_bounds(db, scope, start, end):
+    """Widens [start, end] to the silences longer than JOURNEY_GAP_SECONDS around it."""
+    previous = func.lag(Sample.observed_at).over(order_by=Sample.observed_at)
+    before = (
+        select(Sample.observed_at.label("t"), previous.label("p"))
+        .where(*scope, Sample.observed_at <= start, Sample.observed_at >= start - LOOKBACK_SECONDS)
+        .subquery()
+    )
+    first = db.scalar(
+        select(func.max(before.c.t)).where(
+            or_(before.c.p.is_(None), before.c.t - before.c.p > JOURNEY_GAP_SECONDS)
+        )
+    )
+    following = func.lead(Sample.observed_at).over(order_by=Sample.observed_at)
+    after = (
+        select(Sample.observed_at.label("t"), following.label("n"))
+        .where(*scope, Sample.observed_at >= end, Sample.observed_at <= end + LOOKBACK_SECONDS)
+        .subquery()
+    )
+    last = db.scalar(
+        select(func.min(after.c.t)).where(
+            or_(after.c.n.is_(None), after.c.n - after.c.t > JOURNEY_GAP_SECONDS)
+        )
+    )
+    return (start if first is None else min(first, start)), (
+        end if last is None else max(last, end)
+    )
+
+
+def reconcile(db, tenant_id, vehicle_id, run_id=None, ranges=None):
+    """Rebuilds the trips of the journeys that `ranges` touch (every session of the last three
+    days when None). Only those journeys are loaded, never the vehicle's whole history: loading
+    all of it failed past 100 000 readings, so no trip was saved any more."""
     # Vehicle row lock prevents two jobs publishing summaries from different snapshots.
     vehicle = db.scalar(
         select(Vehicle)
@@ -53,32 +122,41 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
     if run_id and (run is None or run.status == "RESET"):
         return {"skipped": "OLD_RUN"}
     now = run.virtual_now if run else time.time()
-    # Plain column tuples, not ORM objects: this runs after uploads on a 0.1-CPU host and
-    # building tens of thousands of tracked objects starved the API of CPU.
-    rows = db.execute(
-        select(
-            Sample.device_id,
-            Sample.session_id,
-            Sample.observed_at,
-            Sample.signal,
-            Sample.value,
-            Sample.quality,
-        )
-        .where(
+    if ranges is None:
+        ranges = recent_ranges(db, tenant_id, vehicle_id, run_id, now - 3 * 86400)
+    pending = merge_ranges(ranges)
+    journeys, cleared, loaded, remaining = [], [], 0, []
+    for index, r in enumerate(pending):
+        if loaded >= ROW_BUDGET:
+            remaining = pending[index:]
+            break
+        scope = (
             Sample.tenant_id == tenant_id,
             Sample.vehicle_id == vehicle_id,
             Sample.run_id == run_id,
+            Sample.device_id == r["deviceId"],
+            Sample.session_id == r["sessionId"],
         )
-        .order_by(Sample.observed_at, Sample.sequence)
-        .limit(100001)
-    ).all()
-    if len(rows) > 100000:
-        raise ValueError(
-            "RECONCILIATION_WINDOW_TOO_LARGE: partition sessions before expanding retention"
+        first, last = journey_bounds(db, scope, r["from"], r["to"])
+        # Plain column tuples, not ORM objects: building tracked objects starved the API of CPU.
+        rows = db.execute(
+            select(Sample.observed_at, Sample.signal, Sample.value, Sample.quality)
+            .where(*scope, Sample.observed_at >= first, Sample.observed_at <= last)
+            .order_by(Sample.observed_at, Sample.sequence)
+        ).all()
+        if not rows:
+            continue
+        loaded += len(rows)
+        resumed = (
+            db.scalar(select(Sample.id).where(*scope, Sample.observed_at > last).limit(1))
+            is not None
         )
-    sessions = defaultdict(list)
-    for device_id, session_id, observed_at, signal, value, quality in rows:
-        sessions[(device_id, session_id)].append(Observation(observed_at, signal, value, quality))
+        chunks = split_on_gaps([Observation(*row) for row in rows])
+        journeys += [
+            (r["deviceId"], r["sessionId"], chunk, i == len(chunks) - 1 and not resumed)
+            for i, chunk in enumerate(chunks)
+        ]
+        cleared.append((r["sessionId"], first, last))
     revisions = list(
         db.scalars(
             select(Revision)
@@ -88,12 +166,6 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
     )
     # Retained session boundaries make replay idempotent; session handover uncertainty is explicit.
     results, windows = [], []
-    journeys = [
-        (device_id, session_id, chunk, index == len(chunks) - 1)
-        for (device_id, session_id), all_observations in sessions.items()
-        for chunks in [split_on_gaps(all_observations)]
-        for index, chunk in enumerate(chunks)
-    ]
     for device_id, session_id, observations, is_last in journeys:
         spans = segment(observations, now)
         if not is_last:
@@ -210,15 +282,35 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
                 "trim": warm_idle_trim(observations),
             }
         )
-    db.execute(
-        delete(Trip).where(
-            Trip.tenant_id == tenant_id,
-            Trip.vehicle_id == vehicle_id,
-            Trip.run_id == run_id,
-            Trip.session_id.in_([sid for _, sid in sessions]),
+    for session_id, first, last in cleared:
+        db.execute(
+            delete(Trip).where(
+                Trip.tenant_id == tenant_id,
+                Trip.vehicle_id == vehicle_id,
+                Trip.run_id == run_id,
+                Trip.session_id == session_id,
+                Trip.start_at >= first,
+                Trip.start_at <= last,
+            )
         )
-    )
     db.add_all(results)
+    # Readings arrived after these sessions' earlier journeys, so those journeys did end.
+    for session_id, first, _ in cleared:
+        for earlier in db.scalars(
+            select(Trip).where(
+                Trip.tenant_id == tenant_id,
+                Trip.vehicle_id == vehicle_id,
+                Trip.run_id == run_id,
+                Trip.session_id == session_id,
+                Trip.start_at < first,
+                Trip.status.in_(["ACTIVE", "PAUSED", "UNCERTAIN"]),
+            )
+        ):
+            earlier.status = "CLOSED"
+            earlier.metrics = {
+                **earlier.metrics,
+                "endReason": earlier.metrics.get("endReason") or "RECORDING_GAP",
+            }
     baseline = db.scalar(
         select(Baseline).where(
             Baseline.tenant_id == tenant_id,
@@ -237,11 +329,19 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
             reset_at=0,
         )
         db.add(baseline)
-    windows = sorted(
-        [w for w in windows if w["startAt"] >= baseline.reset_at], key=lambda w: w["startAt"]
+    # Journeys outside this run keep the warm-idle trim windows earlier runs saved.
+    kept = {
+        key: w
+        for key, w in (baseline.data.get("windows") or {}).items()
+        if not any(w["sessionId"] == s and a <= w["startAt"] <= b for s, a, b in cleared)
+    }
+    kept.update({f"{w['sessionId']}:{w['startAt']}": w for w in windows})
+    kept = dict(sorted(kept.items(), key=lambda item: item[1]["startAt"])[-400:])
+    eligible = sorted(
+        [w for w in kept.values() if w["startAt"] >= baseline.reset_at], key=lambda w: w["startAt"]
     )
-    data, evidence = trim_finding(windows, baseline.data.get("reference"))
-    baseline.status, baseline.data = data["status"], data
+    data, evidence = trim_finding(eligible, baseline.data.get("reference"))
+    baseline.status, baseline.data = data["status"], {**data, "windows": kept}
     finding_id = stable_id(vehicle_id, run_id, "FUEL_TRIM_DRIFT", baseline.version or 1)
     prior = db.get(Finding, finding_id)
     if evidence:
@@ -268,4 +368,9 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None):
     elif prior and baseline.status == "MONITORING":
         prior.status, prior.resolved_at = "RESOLVED", now
     db.flush()
-    return {"tripCount": len(results), "sampleCount": len(rows), "baselineStatus": baseline.status}
+    return {
+        "tripCount": len(results),
+        "sampleCount": loaded,
+        "baselineStatus": baseline.status,
+        "remaining": remaining,
+    }

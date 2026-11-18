@@ -7,10 +7,10 @@ import {RouteArt} from '../art';
 import {distance,minutes} from '../TripDetail';
 import {clock,fmt,routeOf,weekday} from '../format';
 
-type Props={vehicle:any;trips:any[]|null;refreshing:boolean;busy:boolean;offline:string;padBottom:number;onRefresh:()=>void;onOpenTrip:(t:any)=>void};
+type Props={vehicle:any;trips:any[]|null;refreshing:boolean;busy:boolean;offline:string;padBottom:number;onRefresh:()=>void;onOpenTrip:(t:any)=>void;onRebuild:()=>void};
 
 /** Every recorded drive, newest first as the server sends them. Virtualised: only rows near the screen are drawn. */
-export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offline,padBottom,onRefresh,onOpenTrip}:Props){
+export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offline,padBottom,onRefresh,onOpenTrip,onRebuild}:Props){
  const insets=useSafeAreaInsets();
  const row=useCallback(({item}:{item:any})=><TripRow trip={item} onOpen={onOpenTrip}/>,[onOpenTrip]);
  return <FlatList data={trips||[]} keyExtractor={t=>t.id} renderItem={row}
@@ -18,6 +18,7 @@ export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offl
   contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}}
   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.blue} colors={[c.blue]} progressViewOffset={insets.top}/>}
   ListHeaderComponent={<ScreenHeader title="Trips" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>}
+  ListFooterComponent={trips?<Pressable accessibilityRole="button" onPress={onRebuild} style={({pressed})=>[s.rebuild,pressed&&{opacity:0.6}]}><Icon name="construct-outline" size={15} color={c.blue}/><Text style={s.rebuildText}>Missing a drive? Rebuild trips from recordings</Text></Pressable>:null}
   ListEmptyComponent={trips?<Empty icon="map-outline" title="Nothing here yet" text="Recorded drives appear here with their route."/>:<Loading text={busy?'Loading…':offline}/>}/>;
 });
 
@@ -43,6 +44,8 @@ const TripRow=memo(function TripRow({trip:d,onOpen}:{trip:any;onOpen:(t:any)=>vo
 
 const s=StyleSheet.create({
  rowCard:{flexDirection:'row',alignItems:'center',gap:12,padding:12},
+ rebuild:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingVertical:14},
+ rebuildText:{fontSize:13.5,fontWeight:'700',color:c.blue},
  rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
  listThumb:{width:68,height:68,borderRadius:16,backgroundColor:c.blue50},
  metric:{fontSize:14,fontWeight:'700',color:c.ink,fontVariant:['tabular-nums']},
