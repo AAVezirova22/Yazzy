@@ -388,3 +388,23 @@ def test_vehicle_keeps_the_type_and_report_read_from_the_car(client):
         == 422
     )
     assert client.patch(url, json={"version": version, "powertrain": "STEAM"}).status_code == 422
+
+
+def test_long_phone_uptime_does_not_fail_upload(client, enrolled):
+    # Android counts milliseconds since boot; after ~24.9 days that no longer fits the column.
+    from sqlalchemy import select
+
+    from yazzy.infrastructure.models import Sample
+
+    _, e = enrolled
+    data = payload(e)
+    for i, sample in enumerate(data["samples"]):
+        sample["monotonicMs"] = 3_000_000_000 + i
+    r = upload(client, e, data)
+    assert r.status_code == 202, r.text
+    assert r.json()["acceptedSamples"] == len(data["samples"])
+    with transaction() as db:
+        stored = db.scalars(
+            select(Sample.monotonic_ms).where(Sample.session_id == data["sessionId"])
+        )
+        assert set(stored) == {None}

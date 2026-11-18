@@ -254,7 +254,22 @@ def segment(observations, now):
     if active is not None:
         last = speeds[-1][0]
         stop = next((t for t, v in stops if t >= active and v == 1), None)
-        if stop is not None:
+        # The phone marks ignition off once the car stops answering while standing still (switched
+        # off), so the marker comes after the last speed reading and no speed follows to confirm
+        # parking over time: it ends the trip. An ignition-off reading alongside the last speed
+        # reading, then silence, stays uncertain.
+        off = next((t for t, v in ignition if t > last and v == 0), None)
+        if stop is None and off is not None and speeds[-1][1] <= 1:
+            results.append(
+                {
+                    "start": active,
+                    "end": last,
+                    "status": "CLOSED",
+                    "detected": off,
+                    "endReason": "IGNITION_OFF",
+                }
+            )
+        elif stop is not None:
             results.append(
                 {
                     "start": active,

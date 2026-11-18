@@ -19,6 +19,10 @@ from yazzy.modules.telemetry.contracts import Position, TelemetryBatch
 
 # Seconds a device clock may run ahead of the server, or behind it at the start of a pairing.
 CLOCK_TOLERANCE = 120
+# samples.monotonic_ms is a 32-bit column. A phone's uptime passes this after ~24.9 days without a
+# restart, and PostgreSQL then refused every reading with "integer out of range" (HTTP 500).
+# Nothing reads the value, so larger ones are stored as unknown rather than failing the upload.
+INT32_MAX = 2_147_483_647
 
 
 def hash_payload(payload):
@@ -168,7 +172,9 @@ def ingest(db, device: Device, batch: TelemetryBatch):
                 session_id=batch.session_id,
                 sequence=sample.sequence,
                 observed_at=sample.observed_at.timestamp(),
-                monotonic_ms=sample.monotonic_ms,
+                monotonic_ms=sample.monotonic_ms
+                if sample.monotonic_ms is not None and sample.monotonic_ms <= INT32_MAX
+                else None,
                 signal=sample.signal,
                 value=value,
                 quality=sample.quality,

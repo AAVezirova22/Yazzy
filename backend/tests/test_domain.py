@@ -185,3 +185,15 @@ def test_simulator_chunking_preserves_exact_observations():
     first = packet(*args, steps=6)
     last = packet(*args, start_step=6, steps=6)
     assert first["samples"] + last["samples"] == full["samples"]
+
+
+def test_ignition_off_while_standing_still_ends_the_trip():
+    obs = frames([0, 20, 30, 10, 0], [800, 1500, 1600, 1000, 800]) + [O(45, "IGNITION", 0)]
+    trip = segment(obs, 60)[0]
+    assert (trip["status"], trip["endReason"], trip["end"]) == ("CLOSED", "IGNITION_OFF", 40)
+
+
+def test_ignition_off_while_moving_does_not_end_the_trip():
+    # A Bluetooth dropout mid-drive is not the car being switched off.
+    obs = frames([0, 20, 30], [800, 1500, 1600]) + [O(25, "IGNITION", 0)]
+    assert segment(obs, 30)[0]["status"] == "ACTIVE"

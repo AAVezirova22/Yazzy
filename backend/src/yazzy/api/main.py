@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
 from yazzy.api.schemas import (
@@ -152,6 +152,26 @@ async def guard(request: Request, call_next):
 @app.exception_handler(IntegrityError)
 async def conflict(_request, _exception):
     return JSONResponse(status_code=409, content={"detail": {"code": "CONCURRENT_WRITE_CONFLICT"}})
+
+
+# Unexpected failures still answer 500, but name the kind of error (never its message, which can
+# hold data), so the phone can show why an upload failed instead of a bare status code.
+@app.exception_handler(DBAPIError)
+async def database_error(_request, exception):
+    logger.exception("database error", exc_info=exception)
+    reason = type(getattr(exception, "orig", None) or exception).__name__
+    return JSONResponse(
+        status_code=500, content={"detail": {"code": "DATABASE_ERROR", "reason": reason}}
+    )
+
+
+@app.exception_handler(Exception)
+async def server_error(_request, exception):
+    logger.exception("unhandled error", exc_info=exception)
+    reason = type(exception).__name__
+    return JSONResponse(
+        status_code=500, content={"detail": {"code": "SERVER_ERROR", "reason": reason}}
+    )
 
 
 @app.get("/ping")

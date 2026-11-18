@@ -27,7 +27,7 @@ class RecorderStore(context: Context): SQLiteOpenHelper(context,"yazzy.sqlite",n
  private fun putMeta(key:String,value:String){writableDatabase.execSQL("INSERT OR REPLACE INTO meta VALUES(?,?)",arrayOf(key,value))}
  @Synchronized fun newSession(){writableDatabase.delete("meta","key=?",arrayOf("session"))}
  @Synchronized fun enqueue(signal:String,value:Any,unit:String){
-  check(count()<100000){"Durable queue full; recording paused without silent loss"}
+  check(count()<250000){"Durable queue full; recording paused without silent loss"}
   val db=writableDatabase;db.beginTransaction()
   try{val sid=meta("session")?:UUID.randomUUID().toString().also{putMeta("session",it)};val seq=(meta("sequence")?.toLong()?:0)+1
    val sample=JSONObject().put("sequence",seq).put("observedAt",Instant.now().toString()).put("monotonicMs",SystemClock.elapsedRealtime()).put("signal",signal).put("value",value).put("unit",unit).put("quality","VALID")
