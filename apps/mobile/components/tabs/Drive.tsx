@@ -76,6 +76,7 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
    {snapshot.recording?<Button kind="dark" title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" disabled={busy} onPress={()=>run(async()=>{await Recorder.stop();await refreshSnapshot();})}/>
     :<Button title={snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording'} icon="play" disabled={busy} onPress={()=>run(async()=>{await start();await refreshSnapshot();})}/>}
    <Button kind="light" title="Upload now" icon="cloud-upload-outline" disabled={busy} onPress={()=>run(async()=>{await Recorder.sync();await refreshSnapshot();})}/>
+   {Recorder.canReset?<Button kind="light" title="Reset recorder (discard queue)" icon="trash-outline" disabled={busy} onPress={()=>Alert.alert('Reset recorder?',`This permanently discards ${snapshot.queued} queued readings that have not uploaded, and forgets the server, vehicle and adapter pairing. Start again afterwards to re-pair.`,[{text:'Cancel',style:'cancel'},{text:'Discard and reset',style:'destructive',onPress:()=>{void run(async()=>{await Recorder.reset();await SecureStore.deleteItemAsync('yazzy-configured');await refreshSnapshot();});}}])}/>:null}
    <View style={[ui.card,{marginTop:12}]}>
     <Text style={[ui.title,{marginBottom:4}]}>Before you drive</Text>
     <Check ok={!!server.mode} label="Connected to your server"/>

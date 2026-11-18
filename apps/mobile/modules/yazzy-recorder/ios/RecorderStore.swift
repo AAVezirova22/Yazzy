@@ -65,6 +65,12 @@ final class RecorderStore {
     try write("INSERT INTO pending VALUES(?,?,?,?)",[id,sid,batch.last![0],String(data:bytes,encoding:.utf8)!])
     return (id,bytes)
   }
+  /// Discards every queued reading and the session/sequence counters. Used only by an explicit user reset.
+  func clear() throws {
+    try write("BEGIN IMMEDIATE")
+    do { try write("DELETE FROM samples");try write("DELETE FROM pending");try write("DELETE FROM meta");try write("COMMIT") }
+    catch { try? write("ROLLBACK");throw error }
+  }
   func acknowledge(_ id:String) throws {
     guard let batch=rows("SELECT session,maxseq FROM pending WHERE id=?",[id]).first else { return }
     try write("BEGIN IMMEDIATE")
@@ -82,6 +88,10 @@ enum RecorderSecret {
     var insert=query;insert[kSecValueData as String]=value
     insert[kSecAttrAccessible as String]=kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     guard SecItemAdd(insert as CFDictionary,nil) == errSecSuccess else { throw NSError(domain:"Keychain",code:1) }
+  }
+  static func clear() {
+    let query:[String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"YazzyRecorder",kSecAttrAccount as String:"configuration"]
+    SecItemDelete(query as CFDictionary)
   }
   static func read() -> [String:String]? {
     let query:[String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"YazzyRecorder",kSecAttrAccount as String:"configuration",kSecReturnData as String:true]

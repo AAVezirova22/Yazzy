@@ -20,6 +20,7 @@ public class YazzyRecorderModule: Module {
     } }
     AsyncFunction("start") { (promise:Promise) in DispatchQueue.main.async { do{try self.recorder.start();promise.resolve(nil)}catch{promise.reject("RECORDER_START",error.localizedDescription)} } }
     AsyncFunction("stop") { DispatchQueue.main.async { self.recorder.stop() } }
+    AsyncFunction("reset") { (promise:Promise) in DispatchQueue.main.async { do{try self.recorder.reset();promise.resolve(nil)}catch{promise.reject("RECORDER_RESET",error.localizedDescription)} } }
     AsyncFunction("sync") { DispatchQueue.main.async { self.recorder.sync() } }
     AsyncFunction("snapshot") { (promise:Promise) in DispatchQueue.main.async { promise.resolve(self.recorder.snapshot()) } }
   }
@@ -112,6 +113,15 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     recording=false;connected=false;timer?.invalidate();location.stopUpdatingLocation()
     if let p=peripheral{central.cancelPeripheralConnection(p)};trip.stop(time:Date().timeIntervalSince1970);trip.save();sync();try? store.newSession()
   }
+  /// Explicit user reset: stop, discard the queue and forget the pairing (server, device, assignment, adapter).
+  func reset() throws {
+    UserDefaults.standard.set(false,forKey:armedKey);startWhenReady=false
+    recording=false;connected=false;timer?.invalidate();location.stopUpdatingLocation()
+    if let p=peripheral{central.cancelPeripheralConnection(p)};peripheral=nil
+    trip.stop(time:Date().timeIntervalSince1970);trip.save()
+    try store.clear();RecorderSecret.clear()
+    error=nil;signals=[:];syncFailures=0;nextSync=Date()
+  }
   func centralManagerDidUpdateState(_ central:CBCentralManager){
     if central.state != .poweredOn{connected=false;error="Bluetooth unavailable";return}
     if recording{if let p=peripheral{error=nil;central.connect(p)}}  // Bluetooth came back while armed
@@ -195,7 +205,11 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
         self.syncing=false
         let accepted=data.flatMap{try? JSONSerialization.jsonObject(with:$0) as? [String:Any]}?["accepted"] as? Bool
         if err==nil,(response as? HTTPURLResponse)?.statusCode==202,accepted==true{do{try self.store.acknowledge(id);self.syncFailures=0;self.nextSync=Date();self.sync()}catch{self.error="Acknowledgement persistence failed; batch retained"}}
-        else{self.syncFailures+=1;self.nextSync=Date().addingTimeInterval(min(300,pow(2,Double(min(self.syncFailures,8)))));self.error="Upload pending; observations retained locally"}
+        else{self.syncFailures+=1;self.nextSync=Date().addingTimeInterval(min(300,pow(2,Double(min(self.syncFailures,8)))));
+          let status=(response as? HTTPURLResponse)?.statusCode
+          let code=((data.flatMap{try? JSONSerialization.jsonObject(with:$0) as? [String:Any]}?["detail"]) as? [String:Any])?["code"] as? String
+          let why=err.map{($0 as NSError).localizedDescription} ?? status.map{"HTTP \($0)"+(code.map{" "+$0} ?? "")} ?? "no response"
+          self.error="Upload to \(url.host ?? "?") pending (\(why)); observations retained locally"}
       }}.resume()
     }catch{self.error="Could not read durable upload queue"}
   }
