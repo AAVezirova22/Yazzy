@@ -1,6 +1,6 @@
 import {requireOptionalNativeModule} from 'expo-modules-core';
 export type RecorderConfig={apiUrl:string;deviceId:string;assignmentId:string;deviceToken:string;peripheralId:string;serviceUuid:string;writeUuid:string;notifyUuid:string};
-export type RecorderSnapshot={recording:boolean;connected:boolean;configured?:boolean;waitingForAdapter?:boolean;queued:number;error:string|null;signals:Record<string,number>;qualification:'PENDING_DEVICE_TEST';tripState?:string;/** The car report (JSON) the recorder last read: VIN, fuel type, codes, readiness. Android only for now. */profile?:string|null};
+export type RecorderSnapshot={recording:boolean;connected:boolean;configured?:boolean;waitingForAdapter?:boolean;queued:number;error:string|null;signals:Record<string,number>;qualification:'PENDING_DEVICE_TEST';tripState?:string;/** The car report (JSON) the recorder last read: VIN, fuel type, codes, readiness. Android only for now. */profile?:string|null;/** Where the car was last seen moving or running (JSON: latitude, longitude, accuracy, at). Android only for now. */parked?:string|null};
 export type Peripheral={id:string;name:string;rssi:number;likelyObd?:boolean};
 export type Characteristic={service:string;uuid:string;write:boolean;notify:boolean};
 type NativeRecorder={discover:()=>Promise<Peripheral[]>;inspect:(id:string)=>Promise<Characteristic[]>;configure:(json:string)=>Promise<void>;start:()=>Promise<void>;stop:()=>Promise<void>;sync:()=>Promise<void>;snapshot:()=>Promise<RecorderSnapshot>};

@@ -10,9 +10,12 @@ export type CarProfile={
  odometerKm?:number;batteryVoltage?:number;supported?:string[];
  /** Latest live values and when they were seen; added by the app. */
  signals?:Record<string,number>;signalsAt?:number;
+ /** Where the car is: the last GPS fix taken while it moved or ran. */
+ parked?:Spot|null;
  /** The type chosen by hand on the car page; wins over detection. */
  userKind?:Kind|null;
 };
+export type Spot={latitude:number;longitude:number;accuracy?:number;at:number};
 export type Kind='HYBRID'|'PETROL'|'DIESEL'|'ELECTRIC'|'LPG';
 export type Detection={kind:Kind|null;label:string;source:string};
 
@@ -105,4 +108,19 @@ export function battery12(v?:number|null){
 }
 /** Boost over the outside air, from manifold and barometric pressure (turbo cars). */
 export const boost=(s?:Record<string,number>)=>s?.INTAKE_PRESSURE!=null&&s?.BARO_PRESSURE!=null?s.INTAKE_PRESSURE-s.BARO_PRESSURE:null;
+/** The car's last known spot: the recorder's parked fix, or the end of the newest trip when that is more recent. */
+export function carSpot(p:CarProfile|null|undefined,trips:any[]|null|undefined):(Spot&{source:'recorder'|'trip'})|null{
+ const last=(trips||[]).filter(t=>(t.metrics?.route||[]).length&&t.startAt!=null).reduce((a:any,t:any)=>!a||t.startAt>a.startAt?t:a,null);
+ const end=last?last.metrics.route[last.metrics.route.length-1]:null;
+ const trip=end?{latitude:end.latitude,longitude:end.longitude,accuracy:end.accuracy,at:last.endAt??end.time??last.startAt,source:'trip' as const}:null;
+ const own=p?.parked&&Number.isFinite(p.parked.latitude)&&Number.isFinite(p.parked.longitude)?{...p.parked,source:'recorder' as const}:null;
+ return own&&(!trip||own.at>=trip.at-60)?own:trip;
+}
+/** Great-circle distance in metres. */
+export function metres(a:{latitude:number;longitude:number},b:{latitude:number;longitude:number}){
+ const r=Math.PI/180,dLat=(b.latitude-a.latitude)*r,dLon=(b.longitude-a.longitude)*r;
+ const h=Math.sin(dLat/2)**2+Math.cos(a.latitude*r)*Math.cos(b.latitude*r)*Math.sin(dLon/2)**2;
+ return 2*6371000*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+export const away=(m:number)=>m<1000?`${Math.round(m/10)*10} m`:`${(m/1000).toFixed(m<10000?1:0)} km`;
 export const since=(t?:number)=>{if(!t)return 'never';const m=Math.round((Date.now()/1000-t)/60);return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} days ago`;};

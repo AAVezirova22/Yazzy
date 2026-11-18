@@ -92,7 +92,11 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private val reportPrefs=context.getSharedPreferences("yazzy-car-profile",Context.MODE_PRIVATE)
  private var profile=runCatching{JSONObject(reportPrefs.getString("profile",null)?:"{}")}.getOrDefault(JSONObject())
  @Volatile private var profileJson:String?=reportPrefs.getString("profile",null)
- fun resetProfile(){handler.post{profile=JSONObject();profileJson=null;reportPrefs.edit().clear().apply()}}
+ // Where the car is: the last GPS fix taken while the car was moving or its engine ran, so the phone is still inside it.
+ // Fixes after that (car switched off, you walking away while Bluetooth still reaches) never move the spot.
+ @Volatile private var parkedJson:String?=reportPrefs.getString("parked",null)
+ @Volatile private var lastMovingAt=0L
+ fun resetProfile(){handler.post{profile=JSONObject();profileJson=null;parkedJson=null;reportPrefs.edit().clear().apply()}}
  private var supported=mutableSetOf<String>()
  private var pollIndex=0
  private var inFlight:String?=null
@@ -125,7 +129,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   catch(e:TimeoutCancellationException){throw IllegalStateException("Timed out connecting to the adapter. Close other apps that may hold it (for example VgateFwUpdater), then retry")}
   finally{if(inspecting===result)inspecting=null;handler.post{if(!recording){gatt?.disconnect();gatt?.close();gatt=null}}}
  }
- fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to listOfNotNull(error,uploadError).joinToString("\n").ifEmpty{null},"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0),"profile" to profileJson)
+ fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to listOfNotNull(error,uploadError).joinToString("\n").ifEmpty{null},"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0),"profile" to profileJson,"parked" to parkedJson)
  /** Arms the recorder: it connects to the saved adapter now, or whenever the adapter next powers on, until stopped. */
  fun start(){if(recording)return;config=RecorderSecret.read(context)?:error("Configure the recorder first");recording=true;error=null;armedPrefs.edit().putBoolean("armed",true).apply();handler.post{try{connect()}catch(e:SecurityException){error="Bluetooth permission needed: open the app and allow nearby devices";recording=false;return@post};handler.removeCallbacks(ticker);handler.post(ticker)}}
  // autoConnect keeps one passive connection request open, so the phone links up when the adapter powers on without scanning or draining the battery.
@@ -159,7 +163,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
    profile.put("readAt",System.currentTimeMillis()/1000.0).put("supported",org.json.JSONArray(supported.sorted()))
    profileJson=profile.toString();reportPrefs.edit().putString("profile",profileJson).apply()
   }catch(_:Exception){/* a malformed reply only leaves that line of the report empty */}
-  for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if(signal !in ElmDecoder.uploaded)continue;if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
+  for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if((signal=="VEHICLE_SPEED"||signal=="ENGINE_RPM")&&value>0)lastMovingAt=SystemClock.elapsedRealtime();if(signal !in ElmDecoder.uploaded)continue;if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
   handler.postDelayed({poll()},20)
  }
  // Uploads go out every 5 s while recording: each one empties the queue, and fewer, larger batches keep a small server responsive.
@@ -177,7 +181,9 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
    "01"+(if(fast.isNotEmpty()&&(slot<fast.size||slow.isEmpty()))fast[slot%fast.size] else slow[(n/(fast.size+1))%slow.size])}
   if(!ElmDecoder.allowed(command))return;inFlight=command;sentAt=SystemClock.elapsedRealtime();ch.writeType=if(ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE!=0)BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;ch.value=(command+"\r").toByteArray(Charsets.US_ASCII);if(gatt?.writeCharacteristic(ch)!=true){inFlight=null;error="GATT write failed"}
  }
- override fun onLocationChanged(fix:Location){if(!recording||(!connected&&SystemClock.elapsedRealtime()-lastObdAt>20000))return;val age=(SystemClock.elapsedRealtimeNanos()-fix.elapsedRealtimeNanos)/1e9;val position=JSONObject().put("latitude",fix.latitude).put("longitude",fix.longitude).put("accuracy",fix.accuracy.toDouble()).put("fixAge",age.coerceAtLeast(0.0)).put("validFix",age<=10).put("provider","PHONE");try{store.enqueue("GPS",position,"deg")}catch(_:Exception){error="Queue full; recording stopped";stop()}}
+ override fun onLocationChanged(fix:Location){if(!recording||(!connected&&SystemClock.elapsedRealtime()-lastObdAt>20000))return;val age=(SystemClock.elapsedRealtimeNanos()-fix.elapsedRealtimeNanos)/1e9
+  if(age<=10&&fix.accuracy<=100&&SystemClock.elapsedRealtime()-lastMovingAt<=15000){parkedJson=JSONObject().put("latitude",fix.latitude).put("longitude",fix.longitude).put("accuracy",fix.accuracy.toDouble()).put("at",System.currentTimeMillis()/1000.0).toString();reportPrefs.edit().putString("parked",parkedJson).apply()}
+ val position=JSONObject().put("latitude",fix.latitude).put("longitude",fix.longitude).put("accuracy",fix.accuracy.toDouble()).put("fixAge",age.coerceAtLeast(0.0)).put("validFix",age<=10).put("provider","PHONE");try{store.enqueue("GPS",position,"deg")}catch(_:Exception){error="Queue full; recording stopped";stop()}}
  override fun onProviderDisabled(provider:String){error="GPS unavailable; OBD capture continues"}
  /**
   * Uploads queued readings batch after batch until the queue is empty. Runs every 5 s while recording, straight

@@ -176,12 +176,17 @@ export default function App(){
   if(force||Date.now()-(savedAt.current[id]||0)>60000){savedAt.current[id]=Date.now();void writeCache('report-'+id,next);void pushReport(id,next,force);}
  },[pushReport]);
  const nativeProfile=useMemo(()=>{try{return snapshot.profile?JSON.parse(snapshot.profile) as CarProfile:null;}catch{return null;}},[snapshot.profile]);
+ const nativeSpot=useMemo(()=>{try{return snapshot.parked?JSON.parse(snapshot.parked) as CarProfile['parked']:null;}catch{return null;}},[snapshot.parked]);
+ const wasConnected=useRef(false);
  useEffect(()=>{
-  const id=recorderVehicle;if(!mode||!id||(!nativeProfile&&!snapshot.connected))return;
+  const id=recorderVehicle;if(!mode||!id||(!nativeProfile&&!nativeSpot&&!snapshot.connected))return;
   const prev=reports.current[id]||null,next:CarProfile={...(prev||{}),...(nativeProfile||{}),userKind:prev?.userKind??null};
   if(snapshot.connected&&Object.keys(snapshot.signals).length){next.signals={...(prev?.signals||{}),...snapshot.signals};next.signalsAt=Date.now()/1000;}
-  storeReport(id,next,(nativeProfile?.readAt||0)>(prev?.readAt||0)+170);
- },[mode,recorderVehicle,nativeProfile,snapshot.signals,snapshot.connected]);
+  if(nativeSpot&&(nativeSpot.at||0)>=(prev?.parked?.at||0))next.parked=nativeSpot;
+  // The moment the car goes quiet (switched off), save where it stands right away instead of within the next minute.
+  const parkedNow=wasConnected.current&&!snapshot.connected;wasConnected.current=snapshot.connected;
+  storeReport(id,next,parkedNow||(nativeProfile?.readAt||0)>(prev?.readAt||0)+170);
+ },[mode,recorderVehicle,nativeProfile,nativeSpot,snapshot.signals,snapshot.connected]);
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
  const carInfo=useMemo(()=>{const t=detect(report);return {label:t.label,kind:t.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report]);

@@ -1,7 +1,7 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import {battery12,boost,describeCode,detect,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,type CarProfile} from './car';
+import {battery12,boost,carSpot,describeCode,detect,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,type CarProfile} from './car';
 import {carLine,latest} from './format';
 import type {Car} from './tabs/types';
 
@@ -18,7 +18,7 @@ export function buildCarHtml({vehicle,report,car}:Input){
  const codeRows=codes(p.stored,'Stored')+codes((p.pending||[]).filter(x=>!(p.stored||[]).includes(x)),'Pending')+codes(p.permanent,'Permanent');
  const readings=READINGS.filter(r=>s[r[0]]!=null).map(r=>row(r[1],readingText(r,s[r[0]]))).join('');
  const ready=(p.readiness||[]).map(m=>row(MONITOR[m.id]||m.id,m.complete?'Ready':'Not ready',m.complete?'':'warn')).join('');
- const battery=s.HYBRID_BATTERY;
+ const battery=s.HYBRID_BATTERY,spot=carSpot(report,car?.trips);
  return `<!doctype html><html><head><meta charset="utf-8"><style>
   @page{margin:16mm 14mm}*{box-sizing:border-box}body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#161b22;font-size:11px;line-height:1.45}
   h1{font-size:22px;margin:0}h2{font-size:14px;margin:20px 0 8px;border-bottom:2px solid #e3e8ee;padding-bottom:3px;break-after:avoid}tr{break-inside:avoid}
@@ -49,6 +49,7 @@ export function buildCarHtml({vehicle,report,car}:Input){
  ${ready?`<h2>Emission readiness monitors</h2><table>${ready}</table><p class="muted">Monitors complete while driving; "not ready" shortly after a battery change or a code clear is normal.</p>`:''}
  ${readings?`<h2>Readings ${p.signalsAt?`(${esc(when(p.signalsAt))})`:''}</h2><table>${readings}</table>`:''}
 
+ ${spot?`<h2>Last known location</h2><table>${row(spot.source==='trip'?'Where the last trip ended':'Where the car was parked',`${spot.latitude.toFixed(6)}, ${spot.longitude.toFixed(6)}${spot.accuracy?` (±${Math.round(spot.accuracy)} m)`:''}`)}${row('Seen at',when(spot.at))}</table>`:''}
  <h2>Identity</h2><table>
   ${row('VIN',p.vin||'—')}${maker?row('Manufacturer (from VIN)',maker):''}${row('Make / model / year',vehicle?carLine(vehicle):'—')}
   ${p.obdStandard!=null?row('OBD standard',OBD_STANDARD[p.obdStandard]||`Code ${p.obdStandard}`):''}${p.protocol?row('Protocol',PROTOCOL[p.protocol]||p.protocol):''}

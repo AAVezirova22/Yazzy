@@ -6,7 +6,8 @@ import {c,mono,shadow,ui} from './theme';
 import {Button,Icon,Notice} from './kit';
 import {CarArt} from './art';
 import {exportCarPdf} from './carPdf';
-import {battery12,boost,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
+import {CarMap} from './CarMap';
+import {battery12,boost,carSpot,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
 import {carLine,fmt,latest} from './format';
 import type {Car} from './tabs/types';
 
@@ -20,19 +21,26 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
  const maker=makerFromVin(p.vin),codes=[...(p.stored||[])],pending=(p.pending||[]).filter(x=>!codes.includes(x)),permanent=p.permanent||[];
  const volts=s.ADAPTER_VOLTAGE??p.batteryVoltage,v12=battery12(volts),hv=s.HYBRID_BATTERY,b=boost(s);
  const shown=new Set(['HYBRID_BATTERY','ADAPTER_VOLTAGE','ODOMETER']),readings=READINGS.filter(r=>s[r[0]]!=null&&!shown.has(r[0]));
- const ready=p.readiness||[],notReady=ready.filter(m=>!m.complete).length;
+ const ready=p.readiness||[],notReady=ready.filter(m=>!m.complete).length,spot=carSpot(report,car?.trips);
  async function exportPdf(){
   setExporting(true);
   try{await exportCarPdf({vehicle,report,car});}catch(e){Alert.alert('Export failed',(e as Error).message);}
   finally{setExporting(false);}
  }
  return <View style={s_.page}>
-  <StatusBar style="light"/>
-  <ScrollView contentContainerStyle={{paddingBottom:120+insets.bottom}}>
-   <View style={[s_.hero,{paddingTop:insets.top+10}]}>
-    <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={({pressed})=>[s_.back,pressed&&{opacity:0.8}]}>
+  <StatusBar style={spot?'dark':'light'}/>
+  {/* The map stays put above the page (as on a trip), so dragging it pans the map instead of scrolling. No saved spot, no map. */}
+  {spot?<View style={s_.mapBox}>
+   <CarMap spot={spot} live={live&&spot.source==='recorder'} style={StyleSheet.absoluteFill}/>
+   <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={({pressed})=>[s_.backLight,{top:insets.top+10},pressed&&{opacity:0.85}]}>
+    <Icon name="arrow-back" size={18} color={c.ink}/><Text style={[s_.backText,{color:c.ink}]}>Car report</Text>
+   </Pressable>
+  </View>:null}
+  <ScrollView style={spot?s_.sheet:null} contentContainerStyle={{paddingBottom:120+insets.bottom}}>
+   <View style={[s_.hero,spot?{paddingTop:22,borderTopLeftRadius:28,borderTopRightRadius:28}:{paddingTop:insets.top+10}]}>
+    {spot?null:<Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={({pressed})=>[s_.back,pressed&&{opacity:0.8}]}>
      <Icon name="arrow-back" size={18} color="#fff"/><Text style={s_.backText}>Car report</Text>
-    </Pressable>
+    </Pressable>}
     <Text style={s_.name} numberOfLines={2}>{vehicle?.name||'Your car'}</Text>
     <Text style={s_.sub} numberOfLines={1}>{vehicle?[carLine(vehicle),maker&&!vehicle.make?maker:null].filter(Boolean).join(' · '):''}</Text>
     <View style={[ui.row,{gap:8,marginTop:14,flexWrap:'wrap'}]}>
@@ -145,6 +153,9 @@ const s_=StyleSheet.create({
  hero:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:24,overflow:'hidden',minHeight:250},
  back:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:'rgba(255,255,255,0.1)',borderRadius:999,paddingVertical:9,paddingHorizontal:14,marginBottom:18},
  backText:{fontSize:14,fontWeight:'700',color:'#fff'},
+ mapBox:{height:'44%'},
+ backLight:{position:'absolute',left:16,flexDirection:'row',alignItems:'center',gap:8,backgroundColor:c.surface,borderRadius:999,paddingVertical:10,paddingHorizontal:14,...shadow},
+ sheet:{flex:1,marginTop:-26,borderTopLeftRadius:28,borderTopRightRadius:28,backgroundColor:c.bg,overflow:'hidden'},
  name:{fontSize:28,fontWeight:'800',color:'#fff',letterSpacing:-0.8,maxWidth:'70%'},
  sub:{fontSize:14,color:c.nightMuted,marginTop:4,maxWidth:'70%'},
  badge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:c.blue,borderRadius:999,paddingVertical:6,paddingHorizontal:11},
