@@ -76,6 +76,11 @@ cd apps/mobile
 npx expo start --dev-client
 ```
 
+## Just for reinstalling the app on ios
+``` sh
+npx expo run:ios --device --configuration Release
+```
+
 ## Verify
 
 ```sh
