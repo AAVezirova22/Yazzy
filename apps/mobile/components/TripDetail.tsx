@@ -14,6 +14,8 @@ const nativeMaps=Platform.OS==='ios'||(Platform.OS==='android'&&Constants.expoCo
 type Point={observedAt:number;value:number};
 type Series={points:Point[]};
 type DrivingEvent={type:'HARD_ACCELERATION'|'HARD_BRAKING';time:number;peakMetresPerSecond2:number;fromKmh:number;toKmh:number;durationSeconds:number;latitude:number|null;longitude:number|null};
+// Readings of recently opened trips, so opening one again is instant. A trip's readings never change once recorded.
+const seen=new Map<string,[Series,Series]>();
 type Props={trip:any;vehicleId:string;vehicleName?:string;call:(path:string)=>Promise<any>;onClose:()=>void};
 
 export const minutes=(seconds:number)=>seconds>=3600?`${Math.floor(seconds/3600)} h ${Math.round(seconds%3600/60)} min`:seconds>=60?`${Math.round(seconds/60)} min`:`${Math.round(seconds)} s`;
@@ -59,16 +61,17 @@ function Tile({icon,value,label}:{icon:string;value:string;label:string}){
 /** Full-screen trip page: map on top, a dark summary card, overview tiles, charts and a sticky export bar. */
 export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  const m=trip.metrics,from=trip.startAt,to=trip.endAt??trip.startAt;
- const [speed,setSpeed]=useState<Series|null>(null),[rpm,setRpm]=useState<Series|null>(null),[failed,setFailed]=useState('');
+ const [speed,setSpeed]=useState<Series|null>(()=>seen.get(trip.id)?.[0]??null),[rpm,setRpm]=useState<Series|null>(()=>seen.get(trip.id)?.[1]??null),[failed,setFailed]=useState('');
  const [expanded,setExpanded]=useState(false),[exporting,setExporting]=useState(false),insets=useSafeAreaInsets(),inlineMap=useRef<MapView|null>(null);
  const route:LatLng[]=useMemo(()=>(m.route||[]).map((p:any)=>({latitude:p.latitude,longitude:p.longitude})),[trip.id]);
  // Creating a Google map is the heaviest step on a low-end phone: let the page slide in first, then add the map.
  const [mapReady,setMapReady]=useState(false);
  useEffect(()=>{const t=setTimeout(()=>setMapReady(true),350);return()=>clearTimeout(t);},[]);
  useEffect(()=>{
+  if(seen.has(trip.id))return;
   let active=true;
   const query=(signal:string)=>call(`/vehicles/${vehicleId}/telemetry?signal=${signal}&from=${from-1}&to=${to+1}&resolution=200`);
-  Promise.all([query('VEHICLE_SPEED'),query('ENGINE_RPM')]).then(([a,b])=>{if(active){setSpeed(a);setRpm(b);}}).catch(e=>{if(active)setFailed((e as Error).message)});
+  Promise.all([query('VEHICLE_SPEED'),query('ENGINE_RPM')]).then(([a,b])=>{seen.set(trip.id,[a,b]);if(seen.size>20)seen.delete(seen.keys().next().value as string);if(active){setSpeed(a);setRpm(b);}}).catch(e=>{if(active)setFailed((e as Error).message)});
   return()=>{active=false;};
  },[trip.id]);
  const speeds=(speed?.points||[]).map(p=>p.value),topSpeed=speeds.length?Math.max(...speeds):null;

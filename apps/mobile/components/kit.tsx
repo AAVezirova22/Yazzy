@@ -1,10 +1,17 @@
-import type {ComponentProps,ReactNode} from 'react';
-import {Pressable,StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
+import {useCallback,useState,type ComponentProps,type ReactNode} from 'react';
+import {Alert,Pressable,StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {c,shadow,ui} from './theme';
 
 type IconName=ComponentProps<typeof Ionicons>['name'];
 export function Icon({name,size=18,color=c.ink2}:{name:string;size?:number;color?:string}){return <Ionicons name={name as IconName} size={size} color={color}/>;}
+
+/** Runs a user action with a busy flag; a failure is shown as an alert instead of being lost. */
+export function useAction(){
+ const [busy,setBusy]=useState(false);
+ const run=useCallback(async(fn:()=>Promise<unknown>)=>{setBusy(true);try{await fn();}catch(e){Alert.alert('Yazzy',(e as Error).message);}finally{setBusy(false);}},[]);
+ return [busy,run] as const;
+}
 
 /** Pill button. "primary" is the blue call to action, "light" a white button, "dark" sits on night surfaces. */
 export function Button({title,onPress,icon,kind='primary',disabled=false,style}:{title:string;onPress:()=>void;icon?:string;kind?:'primary'|'light'|'dark'|'danger';disabled?:boolean;style?:StyleProp<ViewStyle>}){

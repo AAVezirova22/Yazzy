@@ -5,24 +5,25 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import {c,ui} from './theme';
+import {server} from './server';
 
 type Release={versionCode:number|null;version?:string;size?:number;url?:string};
 // scripts/build_apk.py stamps the build number into the app; dev builds have none and never prompt.
 const installed=Number(Constants.expoConfig?.extra?.versionCode)||0;
 
 /** Shows an "Update available" card when the server holds a newer APK, then downloads it and opens Android's installer. */
-export function Updater({api,call,token}:{api:string;call:(path:string)=>Promise<any>;token:string}){
+export function Updater(){
  const [release,setRelease]=useState<Release|null>(null),[progress,setProgress]=useState<number|null>(null);
- useEffect(()=>{if(Platform.OS!=='android'||!installed||!token)return;call('/app/release').then(setRelease).catch(()=>{});},[token]);
+ useEffect(()=>{if(Platform.OS!=='android'||!installed||!server.mode)return;server.call('/app/release').then(setRelease).catch(()=>{});},[]);
  if(!release?.versionCode||!release.url||release.versionCode<=installed)return null;
  async function update(){
   try{
    setProgress(0);
    // The link from /app/release is signed and expires; fetch a fresh one in case the card sat open.
-   const fresh:Release=await call('/app/release');
+   const fresh:Release=await server.call('/app/release');
    const target=FileSystem.cacheDirectory+'Yazzy-update.apk';
    await FileSystem.deleteAsync(target,{idempotent:true});
-   const download=FileSystem.createDownloadResumable(api+fresh.url,target,{},p=>setProgress(p.totalBytesExpectedToWrite>0?p.totalBytesWritten/p.totalBytesExpectedToWrite:0));
+   const download=FileSystem.createDownloadResumable(server.api+fresh.url,target,{},p=>setProgress(p.totalBytesExpectedToWrite>0?p.totalBytesWritten/p.totalBytesExpectedToWrite:0));
    const result=await download.downloadAsync();
    if(!result||result.status!==200)throw new Error('Download failed ('+(result?.status??'no response')+')');
    const uri=await FileSystem.getContentUriAsync(result.uri);
