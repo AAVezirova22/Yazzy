@@ -354,3 +354,37 @@ def test_export_rechecks_membership_in_worker(client):
     drain(limit=10)
     with transaction() as db:
         assert db.get(Job, job).status == "FAILED"
+
+
+def test_vehicle_keeps_the_type_and_report_read_from_the_car(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    profile = {
+        "vin": "JTDKB20U403123456",
+        "fuelType": 17,
+        "stored": ["P0A80"],
+        "readAt": 1700000000,
+    }
+    r = client.patch(
+        "/api/v1/vehicles/" + v["id"],
+        json={
+            "version": v["version"],
+            "powertrain": "HYBRID",
+            "fuelType": "PETROL",
+            "odometerKm": 123456.7,
+            "profile": profile,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body["powertrain"], body["fuelType"], body["odometerKm"]) == (
+        "HYBRID",
+        "PETROL",
+        123456.7,
+    )
+    assert client.get("/api/v1/vehicles/" + v["id"]).json()["profile"] == profile
+    url, version = "/api/v1/vehicles/" + v["id"], body["version"]
+    assert (
+        client.patch(url, json={"version": version, "profile": {"x": "y" * 70000}}).status_code
+        == 422
+    )
+    assert client.patch(url, json={"version": version, "powertrain": "STEAM"}).status_code == 422

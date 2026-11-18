@@ -8,12 +8,14 @@ import {CarArt,RouteArt,WeekBars} from '../art';
 import {distance,minutes} from '../TripDetail';
 import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,weekday} from '../format';
 import type {Car} from './types';
+import {kindIcon,type Kind} from '../car';
 
 type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:string;recorder:{label:string;live:boolean;recording:boolean};padBottom:number;
- onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void};
+ onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
+ carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean};onOpenCar:()=>void};
 
 /** Home: the selected car on a night header, with distance, fuel, health, the last trip and service at a glance. */
-export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip}:Props){
+export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar}:Props){
  const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-24,380);
  const lastTrip=latest(car?.trips,'startAt'),lastService=latest(car?.service,'observedAt'),findingCount=car?.findings?.length??0;
  const week=useMemo(()=>lastWeek(car?.trips),[car?.trips]),weekKm=week.reduce((a,b)=>a+b,0),fuel=car?.fuel;
@@ -53,6 +55,14 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
       <Stat title="Health" icon="pulse" tone={car?.findings?findingCount?'warn':'ok':undefined} value={!car?.findings?'—':findingCount?String(findingCount):'All clear'} unit={findingCount?'to review':undefined} caption={findingCount?'Evidence-backed':'No findings'} onPress={()=>onGo('Health')}/>
      </View>
     </View>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Car report: ${carInfo.label}`} onPress={onOpenCar} style={({pressed})=>[ui.card,s.rowCard,pressed&&{opacity:0.9}]}>
+     <View style={[s.circle,{backgroundColor:carInfo.mil?c.amber50:c.blue50}]}><Icon name={carInfo.mil?'warning':kindIcon(carInfo.kind)} size={18} color={carInfo.mil?c.amber:c.blue}/></View>
+     <View style={{flex:1}}>
+      <Text style={s.rowTitle}>{carInfo.kind?`${carInfo.label} car`:'Car report'}</Text>
+      <Text style={[ui.caption,carInfo.mil&&{color:c.amber}]} numberOfLines={1}>{!carInfo.read?'Type, codes and battery: read on your next drive':carInfo.mil?`Check engine light on · ${carInfo.codes} codes`:carInfo.codes?`${carInfo.codes} stored fault codes`:'Check engine off · no fault codes'}</Text>
+     </View>
+     <Icon name="chevron-forward" size={16} color={c.ink}/>
+    </Pressable>
     <View style={[ui.card,s.tripCard]}>
      <View style={{flex:1,paddingRight:12}}>
       <Text style={ui.title}>Last trip</Text>

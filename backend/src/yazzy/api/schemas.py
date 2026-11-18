@@ -1,3 +1,4 @@
+import json
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -18,9 +19,24 @@ class VehicleInput(Contract):
 class VehiclePatch(Contract):
     version: int = Field(ge=1)
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    make: str | None = Field(default=None, max_length=60)
+    model: str | None = Field(default=None, max_length=60)
+    year: int | None = Field(default=None, ge=1950, le=2100)
+    fuel_type: Literal["PETROL", "DIESEL", "ELECTRIC", "LPG"] | None = None
+    powertrain: Literal["ICE", "HYBRID", "EV"] | None = None
+    odometer_km: float | None = Field(default=None, ge=0, le=1e8)
     archived: bool | None = None
     service_due_at: float | None = None
     service_due_km: float | None = Field(default=None, ge=0)
+    profile: dict | None = None
+
+    @field_validator("profile")
+    @classmethod
+    def small_profile(cls, value):
+        # The car report is a few kilobytes; anything far larger is not one.
+        if value is not None and len(json.dumps(value)) > 65536:
+            raise ValueError("Vehicle profile too large")
+        return value
 
 
 class Enrollment(Contract):

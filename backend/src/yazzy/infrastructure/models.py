@@ -74,6 +74,8 @@ class Vehicle(Scoped, Base):
     service_due_at: Mapped[float | None]
     service_due_km: Mapped[float | None]
     capabilities: Mapped[dict] = mapped_column(JSON, default=dict)
+    # What the phone last read from the car over OBD: VIN, fuel type, fault codes, readiness, latest readings.
+    profile: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[float] = mapped_column(default=time.time)
     __table_args__ = (UniqueConstraint("tenant_id", "id"),)
 

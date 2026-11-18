@@ -6,4 +6,4 @@ android {
   namespace 'expo.modules.yazzyrecorder'
   defaultConfig { versionCode 1; versionName '0.1.0' }
 }
-dependencies { testImplementation 'junit:junit:4.13.2' }
+dependencies { testImplementation 'junit:junit:4.13.2'; testImplementation 'org.json:json:20231013' }

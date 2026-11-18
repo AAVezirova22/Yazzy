@@ -16,6 +16,8 @@ import {HealthTab} from '../components/tabs/Health';
 import {DriveTab} from '../components/tabs/Drive';
 import {MoreTab} from '../components/tabs/More';
 import type {Car} from '../components/tabs/types';
+import {CarReport} from '../components/CarReport';
+import {detect,serverType,type CarProfile,type Kind} from '../components/car';
 import {readCache,server,writeCache} from '../components/server';
 import {carLine} from '../components/format';
 import {available,Recorder,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
@@ -36,8 +38,10 @@ export default function App(){
  const [tab,setTab]=useState<TabKey>('Home'),[visited,setVisited]=useState<TabKey[]>(['Home']);
  const [healthView,setHealthView]=useState<'Health'|'Service'>('Health'),[driveView,setDriveView]=useState<'Record'|'Connect'>('Record');
  const [snapshot,setSnapshot]=useState(empty),[garageOpen,setGarageOpen]=useState(false),[tripView,setTripView]=useState<any>(null);
+ const [report,setReport]=useState<CarProfile|null>(null),[recorderVehicle,setRecorderVehicle]=useState(''),[carOpen,setCarOpen]=useState(false);
+ const vehiclesRef=useRef<any[]>([]),reports=useRef<Record<string,CarProfile>>({}),pushed=useRef<Record<string,{key:string;at:number}>>({}),savedAt=useRef<Record<string,number>>({});
  const selectedRef=useRef(''),carRef=useRef<Car|null>(null),fresh=useRef<Record<string,number>>({}),inflight=useRef<{id:string;done:Promise<void>}|null>(null);
- selectedRef.current=selected;
+ selectedRef.current=selected;vehiclesRef.current=vehicles;
 
  /** Shows the last-known garage from the phone at once; the effects below then refresh it from the server. */
  const boot=useCallback(async()=>{
@@ -133,6 +137,55 @@ export default function App(){
  const pickVehicle=useCallback((id:string)=>{setSelected(id);SecureStore.setItemAsync('yazzy-vehicle',id).catch(()=>{});setGarageOpen(false);},[]);
  const vehicleAdded=useCallback((list:any[],id?:string)=>{setVehicles(list);void writeCache('vehicles',list);if(id)pickVehicle(id);},[pickVehicle]);
 
+ // The car report: what the recorder read from the car, merged with its latest live values, kept per car on the phone
+ // and on the server. The newest of the phone's copy and the server's copy wins.
+ const newer=(a?:CarProfile|null,b?:CarProfile|null)=>((a?.readAt||0)>=(b?.readAt||0)?a:b)||null;
+ useEffect(()=>{
+  if(!mode||!selected){setReport(null);return;}
+  let active=true;
+  setReport(reports.current[selected]||null);
+  readCache<CarProfile>('report-'+selected).then(local=>{
+   if(!active)return;
+   const best=newer(newer(reports.current[selected],local),vehiclesRef.current.find(v=>v.id===selected)?.profile);
+   if(best){reports.current[selected]=best;setReport(best);}
+  });
+  return()=>{active=false;};
+ },[mode,session,selected]);
+ useEffect(()=>{const remote=vehicles.find(v=>v.id===selected)?.profile;if(remote&&(remote.readAt||0)>(reports.current[selected]?.readAt||0)){reports.current[selected]=remote;setReport(remote);}},[vehicles]);
+ // The recorder belongs to the car it was last started for.
+ useEffect(()=>{SecureStore.getItemAsync('yazzy-configured').then(k=>{try{const a=JSON.parse(k||'[]');setRecorderVehicle(String((typeof a[0]==='string'&&a[0].startsWith('http')?a[1]:a[0])||''));}catch{setRecorderVehicle('');}}).catch(()=>{});},[session,snapshot.configured,snapshot.recording]);
+
+ /** Saves the report on the server with the detected type; skipped when nothing important changed in the last 15 minutes. */
+ const pushReport=useCallback(async(id:string,next:CarProfile,force=false)=>{
+  const key=JSON.stringify([next.vin,next.fuelType,next.ignition,next.mil,next.stored,next.pending,next.permanent,next.readiness,next.ecus,next.userKind]);
+  const last=pushed.current[id];
+  if(!force&&last&&last.key===key&&Date.now()-last.at<900000)return;
+  pushed.current[id]={key,at:Date.now()};
+  const fields:Record<string,unknown>={profile:next},type=detect(next),odo=next.signals?.ODOMETER??next.odometerKm;
+  if(type.kind)Object.assign(fields,serverType(type.kind,next));
+  if(odo!=null)fields.odometerKm=Math.round(odo*10)/10;
+  const save=(version:number)=>server.call(`/vehicles/${id}`,{...fields,version},'PATCH');
+  try{
+   let v=vehiclesRef.current.find(x=>x.id===id);if(!v)return;
+   let updated;try{updated=await save(v.version);}catch(e){if((e as Error).message!=='STALE_VERSION')throw e;v=await server.call(`/vehicles/${id}`);updated=await save(v.version);}
+   const list=vehiclesRef.current.map(x=>x.id===id?updated:x);setVehicles(list);void writeCache('vehicles',list);
+  }catch{pushed.current[id]={key:'',at:Date.now()};/* an older server without car reports, or offline: the phone keeps it and tries later */}
+ },[]);
+ const storeReport=useCallback((id:string,next:CarProfile,force=false)=>{
+  reports.current[id]=next;if(id===selectedRef.current)setReport(next);
+  if(force||Date.now()-(savedAt.current[id]||0)>60000){savedAt.current[id]=Date.now();void writeCache('report-'+id,next);void pushReport(id,next,force);}
+ },[pushReport]);
+ const nativeProfile=useMemo(()=>{try{return snapshot.profile?JSON.parse(snapshot.profile) as CarProfile:null;}catch{return null;}},[snapshot.profile]);
+ useEffect(()=>{
+  const id=recorderVehicle;if(!mode||!id||(!nativeProfile&&!snapshot.connected))return;
+  const prev=reports.current[id]||null,next:CarProfile={...(prev||{}),...(nativeProfile||{}),userKind:prev?.userKind??null};
+  if(snapshot.connected&&Object.keys(snapshot.signals).length){next.signals={...(prev?.signals||{}),...snapshot.signals};next.signalsAt=Date.now()/1000;}
+  storeReport(id,next,(nativeProfile?.readAt||0)>(prev?.readAt||0)+170);
+ },[mode,recorderVehicle,nativeProfile,snapshot.signals,snapshot.connected]);
+ const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
+ const openCar=useCallback(()=>setCarOpen(true),[]);
+ const carInfo=useMemo(()=>{const t=detect(report);return {label:t.label,kind:t.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report]);
+
  const live=snapshot.recording&&snapshot.connected,speed=snapshot.signals.VEHICLE_SPEED;
  const recorder=useMemo(()=>({label:live?`Recording${speed!=null?` · ${speed} km/h`:''}`:snapshot.recording?'Waiting for your car':'Not recording',live,recording:snapshot.recording}),[live,speed,snapshot.recording]);
 
@@ -141,11 +194,11 @@ export default function App(){
 
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
-  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onConnected={boot} onDisconnected={disconnected}/>;
+  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected}/>;
  }};
 
  return <View style={s.screen}>
@@ -166,6 +219,10 @@ export default function App(){
    </ScrollView>
    <AddVehicle onAdded={vehicleAdded}/>
   </Sheet>
+
+  <Modal visible={carOpen} animationType="slide" onRequestClose={()=>setCarOpen(false)}>
+   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind}/>:null}
+  </Modal>
 
   <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>
    {tripView?<TripDetail trip={tripView} vehicleId={selected} vehicleName={vehicle?.name} call={server.call} onClose={()=>setTripView(null)}/>:null}

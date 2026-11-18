@@ -21,17 +21,18 @@ export function ServerForm({initialApi,onConnected,cta='Connect',hint,children}:
  </>;
 }
 
-type Props={vehicle:any;vehicleCount:number;selected:string;api:string;padBottom:number;onVehicles:()=>void;onConnected:()=>void;onDisconnected:()=>void};
+type Props={vehicle:any;vehicleCount:number;selected:string;api:string;padBottom:number;onVehicles:()=>void;onCar:()=>void;onConnected:()=>void;onDisconnected:()=>void};
 const build=Number(Constants.expoConfig?.extra?.versionCode)||null;
 
 /** Vehicles, the evidence-based assistant, and the server this phone is connected to. */
-export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,padBottom,onVehicles,onConnected,onDisconnected}:Props){
+export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,padBottom,onVehicles,onCar,onConnected,onDisconnected}:Props){
  const insets=useSafeAreaInsets(),[busy,run]=useAction();
  const [message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null),[serverOpen,setServerOpen]=useState(false);
  const host=api.replace(/^https?:\/\//,'');
  return <ScrollView contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}} keyboardShouldPersistTaps="handled">
   <ScreenHeader title="More"/>
   <Row icon="car-sport" tint={c.blue} bg={c.blue50} title="Vehicles" caption={`${vehicleCount} in your garage${vehicle?` · ${vehicle.name} selected`:''}`} onPress={onVehicles}/>
+  <Row icon="document-text" tint={c.blue} bg={c.blue50} title="Car report" caption="Type, battery, fault codes, readiness · export PDF" onPress={onCar}/>
   <View style={ui.card}>
    <Text style={ui.title}>Ask about your car</Text>
    <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Answers come from your car's recorded evidence, never invented readings.</Text>

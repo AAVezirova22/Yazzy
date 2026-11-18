@@ -74,8 +74,8 @@ export const server={
   await Promise.all(['yazzy-sandbox','yazzy-access','yazzy-refresh','yazzy-csrf'].map(k=>SecureStore.deleteItemAsync(k).catch(()=>{})));
   Object.assign(st,{mode:null,token:'',csrf:''});
  },
- async call(path:string,body?:unknown){
-  const send=()=>request(st.api+'/api/v1'+path,{method:body?'POST':'GET',credentials:'include',
+ async call(path:string,body?:unknown,method?:'PATCH'){
+  const send=()=>request(st.api+'/api/v1'+path,{method:method||(body?'POST':'GET'),credentials:'include',
    headers:{...(st.mode==='demo'?{'X-CSRF-Token':st.csrf}:{Authorization:'Bearer '+st.token}),'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   let r=await send(),value=await r.json().catch(()=>({}));
   // The session cookie lasts 8 hours; after that (or after a reinstall) sign back in once and repeat the request.

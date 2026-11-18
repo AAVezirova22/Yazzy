@@ -37,7 +37,7 @@ class YazzyRecorderModule:Module(){
   AsyncFunction("configure"){json:String->val c=appContext.reactContext!!;val config=JSONObject(json);for(key in listOf("apiUrl","deviceId","assignmentId","deviceToken","peripheralId","serviceUuid","writeUuid","notifyUuid"))require(config.getString(key).isNotEmpty());val r=RecorderManager.get(c);check(!r.recording){"Stop recording before changing the adapter"}
    // Queued samples belong to the saved device and assignment, so only a change of those needs an empty queue; re-picking characteristics does not.
    val previous=RecorderSecret.read(c);val sameAssignment=previous!=null&&listOf("apiUrl","deviceId","assignmentId","deviceToken").all{previous.optString(it)==config.getString(it)}
-   check(sameAssignment||r.store.count()==0){"Stop and upload queued samples before changing assignment"};RecorderSecret.save(c,json)}
+   check(sameAssignment||r.store.count()==0){"Stop and upload queued samples before changing assignment"};RecorderSecret.save(c,json);if(!sameAssignment)r.resetProfile()}
   // startService returns a ComponentName, which cannot cross to JS; return nothing so the call resolves.
   AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent);Unit}
   AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
@@ -86,6 +86,13 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private val tripPrefs=context.getSharedPreferences("yazzy-trip-state",Context.MODE_PRIVATE)
  private val trip=TripState(state=tripPrefs.getString("state","IDLE")?:"IDLE",start=tripPrefs.getString("start",null)?.toDoubleOrNull(),last=tripPrefs.getString("last",null)?.toDoubleOrNull())
  private var setup=ArrayDeque<String>()
+ // The car report: identification and diagnostics read once per connection, refreshed every 3 minutes, kept across restarts.
+ private var identify=ArrayDeque<String>()
+ private var nextReportAt=0L
+ private val reportPrefs=context.getSharedPreferences("yazzy-car-profile",Context.MODE_PRIVATE)
+ private var profile=runCatching{JSONObject(reportPrefs.getString("profile",null)?:"{}")}.getOrDefault(JSONObject())
+ @Volatile private var profileJson:String?=reportPrefs.getString("profile",null)
+ fun resetProfile(){handler.post{profile=JSONObject();profileJson=null;reportPrefs.edit().clear().apply()}}
  private var supported=mutableSetOf<String>()
  private var pollIndex=0
  private var inFlight:String?=null
@@ -118,7 +125,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   catch(e:TimeoutCancellationException){throw IllegalStateException("Timed out connecting to the adapter. Close other apps that may hold it (for example VgateFwUpdater), then retry")}
   finally{if(inspecting===result)inspecting=null;handler.post{if(!recording){gatt?.disconnect();gatt?.close();gatt=null}}}
  }
- fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to listOfNotNull(error,uploadError).joinToString("\n").ifEmpty{null},"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0))
+ fun snapshot():Map<String,Any?> = mapOf("recording" to recording,"connected" to connected,"configured" to (RecorderSecret.read(context)!=null),"waitingForAdapter" to (recording&&!connected),"queued" to store.count(),"error" to listOfNotNull(error,uploadError).joinToString("\n").ifEmpty{null},"signals" to synchronized(signals){signals.toMap()},"qualification" to "PENDING_DEVICE_TEST","tripState" to trip.snapshot(System.currentTimeMillis()/1000.0),"profile" to profileJson)
  /** Arms the recorder: it connects to the saved adapter now, or whenever the adapter next powers on, until stopped. */
  fun start(){if(recording)return;config=RecorderSecret.read(context)?:error("Configure the recorder first");recording=true;error=null;armedPrefs.edit().putBoolean("armed",true).apply();handler.post{try{connect()}catch(e:SecurityException){error="Bluetooth permission needed: open the app and allow nearby devices";recording=false;return@post};handler.removeCallbacks(ticker);handler.post(ticker)}}
  // autoConnect keeps one passive connection request open, so the phone links up when the adapter powers on without scanning or draining the battery.
@@ -142,11 +149,17 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   descriptor.value=if(notify.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY!=0)BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
   g.writeDescriptor(descriptor)
  }}
- override fun onDescriptorWrite(g:BluetoothGatt,d:BluetoothGattDescriptor,status:Int){handler.post{if(status==BluetoothGatt.GATT_SUCCESS){connected=true;lastObdAt=SystemClock.elapsedRealtime();error=null;if(recording)startLocation();setup=ArrayDeque(ElmDecoder.setup);supported.clear();buffer="";inFlight=null;failures=0;answered=false}else error="Notification subscription failed"}}
+ override fun onDescriptorWrite(g:BluetoothGatt,d:BluetoothGattDescriptor,status:Int){handler.post{if(status==BluetoothGatt.GATT_SUCCESS){connected=true;lastObdAt=SystemClock.elapsedRealtime();error=null;if(recording)startLocation();setup=ArrayDeque(ElmDecoder.setup);identify.clear();nextReportAt=0L;supported.clear();buffer="";inFlight=null;failures=0;answered=false}else error="Notification subscription failed"}}
  override fun onCharacteristicChanged(g:BluetoothGatt,c:BluetoothGattCharacteristic){val bytes=c.value?.copyOf()?:return;handler.post{receive(bytes)}}
  private fun receive(bytes:ByteArray){val command=inFlight?:return;buffer+=bytes.toString(Charsets.US_ASCII);if(buffer.length>8192){buffer="";inFlight=null;error="Malformed adapter response";return};if(!buffer.contains('>'))return;val frame=buffer.substringBefore('>');buffer="";inFlight=null;failures=0;answered=true;lastObdAt=SystemClock.elapsedRealtime()
-  if(command in listOf("0100","0120","0140"))supported.addAll(ElmDecoder.supported(frame.replace('\r','\n'),command))
-  for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
+  if(command in ElmDecoder.setup&&command.startsWith("01"))supported.addAll(ElmDecoder.supported(frame.replace('\r','\n'),command))
+  if(ElmDecoder.isReport(command))try{
+   ElmDecoder.profile(frame,command,profile)
+   if(command=="ATRV"&&profile.has("batteryVoltage"))synchronized(signals){signals["ADAPTER_VOLTAGE"]=profile.getDouble("batteryVoltage")}
+   profile.put("readAt",System.currentTimeMillis()/1000.0).put("supported",org.json.JSONArray(supported.sorted()))
+   profileJson=profile.toString();reportPrefs.edit().putString("profile",profileJson).apply()
+  }catch(_:Exception){/* a malformed reply only leaves that line of the report empty */}
+  for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if(signal !in ElmDecoder.uploaded)continue;if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
   handler.postDelayed({poll()},20)
  }
  // Uploads go out every 5 s while recording: each one empties the queue, and fewer, larger batches keep a small server responsive.
@@ -155,7 +168,8 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private fun poll(){if(!recording||!connected)return
   val ch=writing?:run{error="Write characteristic not found on the adapter; re-select it on the Connect tab";return}
   if(inFlight!=null){if(SystemClock.elapsedRealtime()-sentAt>8000){inFlight=null;buffer="";failures++;error=if(answered)"Diagnostic timeout; capture gap" else "Adapter not answering on this channel. Stop, then pick the recommended write/notify pair on Drive › Adapter";if(failures>=3)gatt?.disconnect()};return}
-  val command=if(setup.isNotEmpty())setup.removeFirst()else{
+  if(setup.isEmpty()&&identify.isEmpty()&&supported.isNotEmpty()&&SystemClock.elapsedRealtime()>=nextReportAt){identify=ArrayDeque(ElmDecoder.identify(supported,full=nextReportAt==0L));nextReportAt=SystemClock.elapsedRealtime()+180000}
+  val command=if(setup.isNotEmpty())setup.removeFirst()else if(identify.isNotEmpty())identify.removeFirst()else{
    val polls=ElmDecoder.pids.filter{it in supported};if(polls.isEmpty()){error="No supported PIDs detected";return}
    // Speed and RPM drive trip detection, so they are polled every cycle; the remaining PIDs rotate in between.
    val fast=ElmDecoder.fastPids.filter{it in supported};val slow=polls.filter{it !in fast}
