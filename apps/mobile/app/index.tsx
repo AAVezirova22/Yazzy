@@ -98,7 +98,7 @@ export default function App(){
  // Once per car after this update: recover the drives whose trips were never built.
  useEffect(()=>{
   if(!mode||!selected)return;
-  SecureStore.getItemAsync('yazzy-rebuilt-v1').then(async v=>{const done:string[]=JSON.parse(v||'[]');if(done.includes(selected))return;if(await rebuild(true))await SecureStore.setItemAsync('yazzy-rebuilt-v1',JSON.stringify([...done,selected]));}).catch(()=>{});
+  SecureStore.getItemAsync('yazzy-rebuilt-v2').then(async v=>{const done:string[]=JSON.parse(v||'[]');if(done.includes(selected))return;if(await rebuild(true))await SecureStore.setItemAsync('yazzy-rebuilt-v2',JSON.stringify([...done,selected]));}).catch(()=>{});
  },[mode,session,selected]);
  const rebuildNow=useCallback(()=>{void rebuild(false);},[rebuild]);
  const pullToRefresh=useCallback(()=>{setPulling(true);refresh(true).finally(()=>setPulling(false));},[refresh]);

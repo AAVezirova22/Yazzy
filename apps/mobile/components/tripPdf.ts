@@ -86,7 +86,7 @@ export function buildTripHtml({trip,vehicleName,series,mapImageBase64}:TripRepor
   ${tile('Moving',span(m.movingSeconds||0))}${tile('Idling, engine on',span(m.idleEngineSeconds||0))}${tile('Stopped, engine off',span(m.engineOffStopSeconds||0))}${tile('Data gaps',String(m.gaps??0))}
   ${tile('Fuel used',m.fuelLitres==null?'—':`${n(m.fuelLitres,2)} L`,words(m.fuelMethod))}${tile('Consumption',m.litresPer100Km==null?'—':`${n(m.litresPer100Km,1)} L/100 km`)}${tile('Hard braking',String(braking))}${tile('Hard acceleration',String(events.length-braking))}
  </div>
- ${m.fuelMethod==='UNAVAILABLE'?'<p class="muted">Fuel is unavailable: this car did not report a fuel-rate or air-flow signal, so nothing is estimated.</p>':''}
+ ${m.fuelMethod==='UNAVAILABLE'?'<p class="muted">Fuel is unavailable: this car reports neither its fuel rate nor, for a petrol engine, its air flow and fuel trims, so nothing is estimated.</p>':''}
  <p class="muted">${m.endReason?`Trip ended: ${esc(words(m.endReason))}. `:''}Distance coverage ${n((m.distanceCoverage||0)*100,0)}% · fuel coverage ${n((m.fuelCoverage||0)*100,0)}% · location coverage ${n((m.locationCoverage||0)*100,0)}%.</p>
  <h2>Route</h2>${route.length?map:'<p class="muted">No GPS position was recorded for this trip.</p>'}
  ${route.length?`<p class="muted">Start ${route[0].latitude.toFixed(6)}, ${route[0].longitude.toFixed(6)} · last position ${route[route.length-1].latitude.toFixed(6)}, ${route[route.length-1].longitude.toFixed(6)} · ${route.length} recorded positions. Green: start, blue: last position, red: hard braking, orange: hard acceleration.</p>`:''}

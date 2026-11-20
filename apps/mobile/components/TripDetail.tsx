@@ -101,7 +101,7 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
      <View><Text style={s.summaryValue}>{minutes(m.durationSeconds||0)}</Text><Text style={s.summaryLabel}>Duration</Text></View>
     </View>
     <View style={[ui.row,{gap:8,marginTop:16}]}>
-     <View style={s.fuelPill}><Icon name="water" size={13} color={c.blue300}/><Text style={s.fuelText}>{m.fuelLitres!=null?`${num(m.fuelLitres,2)} L`:'Fuel n/a'}</Text></View>
+     <View style={s.fuelPill}><Icon name="water" size={13} color={c.blue300}/><Text style={s.fuelText}>{m.fuelLitres!=null?`${m.fuelMethod==='MAF_ESTIMATE_PETROL'?'≈ ':''}${num(m.fuelLitres,2)} L`:'Fuel n/a'}</Text></View>
      <Text style={s.summaryLabel}>{m.litresPer100Km!=null?`${num(m.litresPer100Km)} L/100 km`:trip.status==='STATIONARY'?'Stationary':''}</Text>
     </View>
     <View style={s.summaryCar} pointerEvents="none"><CarArt width={170}/></View>
@@ -128,7 +128,8 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
     <Tile icon="hourglass-outline" value={minutes(m.idleEngineSeconds||0)} label="Idling, engine on"/>
     <Tile icon="analytics-outline" value={m.litresPer100Km!=null?`${num(m.litresPer100Km)} L`:'—'} label="Per 100 km"/>
    </View>
-   {m.fuelMethod==='UNAVAILABLE'&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel unavailable: this car did not report a fuel-rate or air-flow signal, so nothing is estimated.</Text>}
+   {m.fuelMethod==='UNAVAILABLE'&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel unavailable: this car reports neither its fuel rate nor, for a petrol engine, its air flow and fuel trims, so nothing is estimated.</Text>}
+   {m.fuelMethod==='MAF_ESTIMATE_PETROL'&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel is estimated from the engine's air flow and fuel trims, because this car does not report its fuel rate. Expect it within about 10% of the pump.</Text>}
 
    <View style={ui.card}>
     <View style={[ui.row,{justifyContent:'space-between',marginBottom:6}]}>

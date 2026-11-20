@@ -197,3 +197,37 @@ def test_ignition_off_while_moving_does_not_end_the_trip():
     # A Bluetooth dropout mid-drive is not the car being switched off.
     obs = frames([0, 20, 30], [800, 1500, 1600]) + [O(25, "IGNITION", 0)]
     assert segment(obs, 30)[0]["status"] == "ACTIVE"
+
+
+def test_petrol_fuel_is_estimated_from_air_flow_and_trims():
+    # 10 g/s of air with +5% short and +5% long trim: 10 / 14.7 * 1.1 g/s of petrol.
+    obs = [O(t, "MAF", 10) for t in (0, 10)]
+    obs += [O(t, "SHORT_FUEL_TRIM", 5) for t in (0, 10)] + [
+        O(t, "LONG_FUEL_TRIM", 5) for t in (0, 10)
+    ]
+    m = metrics(obs, 0, 10, fuel_type="PETROL")
+    assert m["fuelMethod"] == "MAF_ESTIMATE_PETROL"
+    assert m["fuelLitres"] == pytest.approx(10 * 10 / 14.7 * 1.1 / 745)
+    # Petrol hybrids, and cars whose fuel type was never set, are petrol unless told otherwise.
+    assert metrics(obs, 0, 10)["fuelMethod"] == "MAF_ESTIMATE_PETROL"
+
+
+def test_air_flow_never_estimates_diesel_fuel():
+    obs = [O(t, "MAF", 10) for t in (0, 10)] + [O(t, "SHORT_FUEL_TRIM", 0) for t in (0, 10)]
+    assert metrics(obs, 0, 10, fuel_type="DIESEL")["fuelLitres"] is None
+    # Without fuel trims there is no proof of a petrol mixture.
+    assert (
+        metrics([O(t, "MAF", 10) for t in (0, 10)], 0, 10, fuel_type="PETROL")["fuelLitres"] is None
+    )
+    # An explicit capability wins either way.
+    assert metrics(obs, 0, 10, {"qualifiedPetrolMaf": False})["fuelLitres"] is None
+
+
+def test_efficiency_allows_the_seconds_lost_at_each_end_of_a_trip():
+    # Speed and fuel rate both start 3 s into a 60 s trip: 95% covered.
+    obs = [O(t, "VEHICLE_SPEED", 60) for t in range(3, 61, 3)]
+    obs += [O(t, "FUEL_RATE", 6) for t in range(3, 61, 3)]
+    m = metrics(obs, 0, 60)
+    assert m["fuelCoverage"] == pytest.approx(57 / 60)
+    assert m["litresPer100Km"] == pytest.approx(10)
+    assert aggregate([m])["litresPer100Km"] == pytest.approx(10)

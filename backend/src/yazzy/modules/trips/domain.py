@@ -1,10 +1,19 @@
 """Deterministic, restart/replay-safe trip and measurement rules. No infrastructure imports."""
 
 import math
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Any
 
-CALCULATION_VERSION = "trip-fuel-v1"
+CALCULATION_VERSION = "trip-fuel-v2"
+# A petrol engine in closed loop burns 1 g of fuel per 14.7 g of air; petrol weighs about 745 g/L.
+PETROL_AIR_FUEL_RATIO = 14.7
+PETROL_GRAMS_PER_LITRE = 745.0
+# Combined short and long fuel trim beyond this is a fault or a bad reading, not a correction.
+MAX_FUEL_TRIM = 25.0
+# Share of a trip that fuel and distance must both cover for L/100 km. Polling every signal in
+# turn leaves a few seconds uncovered at each end of a trip, so demanding 99% hid most trips.
+EFFICIENCY_COVERAGE = 0.9
 MAX_GAP = 15.0
 END_CONFIRMATION = 180.0
 HARD_ACCELERATION = 2.5  # m/s^2, averaged over at least one second
@@ -107,7 +116,52 @@ def driving_events(speeds, route):
     return events
 
 
-def metrics(observations, start, end, capabilities=None):
+def latest(points, t, max_age=MAX_GAP):
+    """The value of the last point at or before t, if it is at most max_age old."""
+    i = bisect_right(points, (t, math.inf)) - 1
+    return points[i][1] if i >= 0 and t - points[i][0] <= max_age else None
+
+
+def petrol_rate_from_air(observations):
+    """Litres per hour from mass air flow, as the engine itself meters fuel: air / 14.7, corrected by
+    the fuel trims (the ECU's own adjustment of that mixture, in percent)."""
+    short = series(observations, "SHORT_FUEL_TRIM")
+    long = series(observations, "LONG_FUEL_TRIM")
+    rates = []
+    for t, grams_per_second in series(observations, "MAF"):
+        trim = (latest(short, t) or 0) + (latest(long, t) or 0)
+        trim = max(-MAX_FUEL_TRIM, min(MAX_FUEL_TRIM, trim))
+        litres_per_hour = (
+            3600 * grams_per_second / (PETROL_AIR_FUEL_RATIO * PETROL_GRAMS_PER_LITRE)
+        ) * (1 + trim / 100)
+        rates.append((t, litres_per_hour))
+    return rates
+
+
+def air_estimate_allowed(observations, capabilities, fuel_type):
+    """Air flow gives fuel only for petrol. Fuel trims are the proof: they exist only where an engine
+    holds the 14.7:1 petrol mixture, so a diesel left on the default fuel type is never estimated."""
+    if "qualifiedPetrolMaf" in capabilities:
+        return bool(capabilities["qualifiedPetrolMaf"])
+    if fuel_type not in (None, "PETROL"):
+        return False
+    return any(o.signal in ("SHORT_FUEL_TRIM", "LONG_FUEL_TRIM") for o in observations)
+
+
+def efficiency(fuel, fuel_time, distance, dist_time, duration):
+    """L/100 km from the stretches each value covers, once both cover nearly the whole trip."""
+    if (
+        fuel is None
+        or distance is None
+        or distance < 0.1
+        or duration <= 0
+        or min(fuel_time, dist_time) / duration < EFFICIENCY_COVERAGE
+    ):
+        return None
+    return 100 * (fuel / fuel_time) / (distance / dist_time)
+
+
+def metrics(observations, start, end, capabilities=None, fuel_type=None):
     capabilities = capabilities or {}
     duration = max(0, end - start)
     speeds, rates = series(observations, "VEHICLE_SPEED"), series(observations, "FUEL_RATE")
@@ -148,11 +202,18 @@ def metrics(observations, start, end, capabilities=None):
                 sum(t for _, t in accepted),
                 "VALIDATED_COUNTER",
             )
-    if fuel is None and capabilities.get("qualifiedPetrolMaf"):
-        maf = [(t, 3600 * v / (14.7 * 745)) for t, v in series(observations, "MAF")]
-        fuel, fuel_time = integrate(maf, start, end)
-        if fuel is not None:
-            fuel_method = "MAF_ESTIMATE_PETROL"
+    # Litres per hour behind the fuel figure, also used for fuel burnt while idling.
+    fuel_rates = rates
+    if fuel is None and air_estimate_allowed(observations, capabilities, fuel_type):
+        estimated = petrol_rate_from_air(observations)
+        amount, covered = integrate(estimated, start, end)
+        if amount is not None:
+            fuel, fuel_time, fuel_method, fuel_rates = (
+                amount,
+                covered,
+                "MAF_ESTIMATE_PETROL",
+                estimated,
+            )
     rpms = dict(series(observations, "ENGINE_RPM"))
     moving = idle = engine_off = 0.0
     idle_fuel = 0.0
@@ -169,20 +230,12 @@ def metrics(observations, start, end, capabilities=None):
             rpm = max(rpm_points, default=(0, None))[1]
             if rpm is not None and rpm > 0:
                 idle += seconds
-                amount, covered = integrate(rates, lo, hi)
+                amount, covered = integrate(fuel_rates, lo, hi)
                 idle_fuel += amount or 0
                 idle_fuel_covered += covered
             elif rpm == 0:
                 engine_off += seconds
-    ratio = (
-        100 * fuel / distance
-        if fuel is not None
-        and distance is not None
-        and distance >= 0.1
-        and duration > 0
-        and min(fuel_time, dist_time) / duration >= 0.99
-        else None
-    )
+    ratio = efficiency(fuel, fuel_time, distance, dist_time, duration)
     return {
         "distanceKm": distance,
         "distanceMethod": method,
@@ -305,7 +358,8 @@ def aggregate(trips):
         if m["distanceKm"] is not None
         and m["fuelLitres"] is not None
         and m["durationSeconds"] > 0
-        and min(m["coveredFuelSeconds"], m["coveredDistanceSeconds"]) / m["durationSeconds"] >= 0.99
+        and min(m["coveredFuelSeconds"], m["coveredDistanceSeconds"]) / m["durationSeconds"]
+        >= EFFICIENCY_COVERAGE
     ]
     distance, fuel = sum(distances) if distances else None, sum(fuels) if fuels else None
     paired_distance = sum(m["distanceKm"] for m in paired)

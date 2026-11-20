@@ -35,7 +35,7 @@ const TripRow=memo(function TripRow({trip:d,onOpen}:{trip:any;onOpen:(t:any)=>vo
    {d.metrics?<View style={[ui.row,{gap:14,marginTop:8}]}>
     <Text style={s.metric}>{distance(d.metrics.distanceKm)}</Text>
     <Text style={s.metricMuted}>{minutes(d.metrics.durationSeconds||0)}</Text>
-    {d.metrics.fuelLitres!=null?<Text style={s.metricMuted}>{fmt(d.metrics.fuelLitres,2)} L</Text>:null}
+    {d.metrics.fuelLitres!=null?<Text style={s.metricMuted}>{d.metrics.fuelMethod==='MAF_ESTIMATE_PETROL'?'≈ ':''}{fmt(d.metrics.fuelLitres,2)} L</Text>:null}
    </View>:null}
   </View>
   {open?<Icon name="chevron-forward" size={16} color={c.ink}/>:null}

@@ -250,7 +250,13 @@ def reconcile(db, tenant_id, vehicle_id, run_id=None, ranges=None):
         ):
             full = [*full[:-2], {**full[-2], "end": full[-1]["end"]}]
         for span in full:
-            calc = metrics(observations, span["start"], span["end"], vehicle.capabilities)
+            calc = metrics(
+                observations,
+                span["start"],
+                span["end"],
+                vehicle.capabilities,
+                vehicle.fuel_type,
+            )
             calc["endReason"] = span["endReason"]
             results.append(
                 Trip(
