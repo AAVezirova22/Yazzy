@@ -6,7 +6,9 @@ module.exports=({config})=>{
  const key=process.env.GOOGLE_MAPS_API_KEY||'';
  // scripts/build_apk.py sets this from the git commit count so each new APK installs as an update.
  const versionCode=Number(process.env.YAZZY_VERSION_CODE)||undefined;
+ // The GitHub release the app updates from (components/Updater.tsx), also set by build_apk.py.
+ const updatesUrl=process.env.YAZZY_UPDATES_URL||'';
  return {...config,
   android:{...config.android,...(versionCode?{versionCode}:{}),...(key?{config:{googleMaps:{apiKey:key}}}:{})},
-  extra:{...config.extra,googleMapsKey:Boolean(key),...(versionCode?{versionCode}:{})}};
+  extra:{...config.extra,googleMapsKey:Boolean(key),...(versionCode?{versionCode}:{}),...(updatesUrl?{updatesUrl}:{})}};
 };

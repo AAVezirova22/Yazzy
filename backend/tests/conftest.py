@@ -3,7 +3,6 @@ import tempfile
 
 os.environ["DATABASE_URL"] = "sqlite:///" + tempfile.mktemp(prefix="yazzy-tests-", suffix=".db")
 os.environ["YAZZY_DEMO_ENABLED"] = "true"
-os.environ["YAZZY_RELEASE_TOKEN"] = "test-release-token"
 
 import pytest
 from fastapi.testclient import TestClient

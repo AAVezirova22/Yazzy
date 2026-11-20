@@ -1,60 +1,72 @@
-import hashlib
-
+import httpx
 from fastapi.testclient import TestClient
 
+from yazzy.api import releases
 from yazzy.api.main import app
+from yazzy.config import settings
 
-PART = 4 * 1024 * 1024
-APK = b"PK\x03\x04" + bytes(range(256)) * (PART * 2 // 256 + 1000)  # three parts, last one short
-HEADERS = {"X-Release-Token": "test-release-token"}
-
-
-def publish(c, code, data=APK, token="test-release-token"):
-    meta = {
-        "versionCode": code,
-        "version": "0.1.0",
-        "size": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-    }
-    r = c.post("/api/v1/app/releases", json=meta, headers={"X-Release-Token": token})
-    if r.status_code != 201:
-        return r
-    release = r.json()["id"]
-    for i in range(0, len(data), PART):
-        put = c.put(
-            f"/api/v1/app/releases/{release}/parts/{i // PART}",
-            content=data[i : i + PART],
-            headers=HEADERS,
-        )
-        assert put.status_code == 200, put.text
-    return c.post(f"/api/v1/app/releases/{release}/complete", headers=HEADERS)
+BUILD = {
+    "versionCode": 38,
+    "version": "0.1.0",
+    "size": 1234,
+    "sha256": "a" * 64,
+    "md5": "b" * 32,
+    "apk": "Yazzy-38.apk",
+}
 
 
-def test_publish_check_and_download(client):
-    assert client.get("/api/v1/app/release").json() == {"versionCode": None}
-    with TestClient(app) as anonymous:
-        assert publish(anonymous, 30, token="wrong").status_code == 403
-        assert publish(anonymous, 30).status_code == 200
-        assert publish(anonymous, 31).status_code == 200
-        assert anonymous.get("/api/v1/app/release").status_code == 401
+def serve(monkeypatch, answer):
+    """GitHub, as the API sees it: `answer` is the manifest, or an exception to raise."""
+    calls = []
+
+    def fetch():
+        calls.append(1)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(releases, "fetch_manifest", fetch)
+    monkeypatch.setattr(releases, "_cache", {"at": 0.0, "ok": False, "manifest": None})
+    return calls
+
+
+def test_old_builds_are_sent_to_github_for_the_apk(client, monkeypatch):
+    calls = serve(monkeypatch, BUILD)
     latest = client.get("/api/v1/app/release").json()
-    assert latest["versionCode"] == 31 and latest["size"] == len(APK)
+    assert latest == {
+        "versionCode": 38,
+        "version": "0.1.0",
+        "size": 1234,
+        "sha256": "a" * 64,
+        "url": "/api/v1/app/apk",
+    }
     with TestClient(app) as anonymous:
-        apk = anonymous.get(latest["url"])
-        assert apk.status_code == 200 and apk.content == APK
-        assert anonymous.get(latest["url"].replace("sig=", "sig=0")).status_code == 403
+        assert anonymous.get("/api/v1/app/release").status_code == 401
+        apk = anonymous.get(latest["url"], follow_redirects=False)
+    assert apk.status_code == 302
+    assert apk.headers["location"] == f"{settings.updates_url}/Yazzy-38.apk"
+    # Cached: every launch does not reach GitHub.
+    assert len(calls) == 1
 
 
-def test_corrupt_upload_keeps_live_release(client):
-    with TestClient(app) as publisher:
-        assert publish(publisher, 40).status_code == 200
-        meta = {"versionCode": 41, "version": "0.1.0", "size": 10, "sha256": "0" * 64}
-        release = publisher.post("/api/v1/app/releases", json=meta, headers=HEADERS).json()["id"]
-        too_big = publisher.put(
-            f"/api/v1/app/releases/{release}/parts/0", content=b"x" * (PART + 1), headers=HEADERS
-        )
-        assert too_big.status_code in (400, 413)
-        publisher.put(f"/api/v1/app/releases/{release}/parts/0", content=b"x" * 10, headers=HEADERS)
-        done = publisher.post(f"/api/v1/app/releases/{release}/complete", headers=HEADERS)
-        assert done.status_code == 409
-    assert client.get("/api/v1/app/release").json()["versionCode"] == 40
+def test_no_published_build(client, monkeypatch):
+    serve(monkeypatch, httpx.HTTPStatusError("404", request=None, response=None))
+    assert client.get("/api/v1/app/release").json() == {"versionCode": None}
+    assert client.get("/api/v1/app/apk", follow_redirects=False).status_code == 404
+
+
+def test_last_known_build_survives_a_github_outage(client, monkeypatch):
+    serve(monkeypatch, BUILD)
+    assert client.get("/api/v1/app/release").json()["versionCode"] == 38
+
+    def down():
+        raise httpx.ConnectError("GitHub is down")
+
+    monkeypatch.setattr(releases, "fetch_manifest", down)
+    releases._cache["at"] = 0.0
+    assert client.get("/api/v1/app/release").json()["versionCode"] == 38
+
+
+def test_a_manifest_naming_another_path_is_ignored(client, monkeypatch):
+    serve(monkeypatch, {**BUILD, "apk": "../../evil/Yazzy.apk"})
+    assert client.get("/api/v1/app/release").json() == {"versionCode": None}

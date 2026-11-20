@@ -114,7 +114,7 @@ app.add_middleware(
 )
 
 
-from yazzy.infrastructure.http_limits import RELEASE_PART_BYTES, RequestLimits  # noqa: E402
+from yazzy.infrastructure.http_limits import RequestLimits  # noqa: E402
 
 app.add_middleware(RequestLimits)
 
@@ -127,8 +127,7 @@ async def guard(request: Request, call_next):
         length = int(request.headers.get("content-length", "0"))
     except ValueError:
         return JSONResponse({"detail": {"code": "INVALID_CONTENT_LENGTH"}}, status_code=400)
-    limit = RELEASE_PART_BYTES if "/api/v1/app/releases/" in request.url.path else 1_000_000
-    if length > limit:
+    if length > 1_000_000:
         return JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE"}}, status_code=413)
     response = await call_next(request)
     if settings.embedded_worker and request.method != "GET":

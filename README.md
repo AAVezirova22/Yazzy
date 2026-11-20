@@ -50,6 +50,8 @@ npm run apk
 ```
 This regenerates `apps/mobile/android`, builds a signed release APK for ARM phones and copies it to `Yazzy-<version>.apk` in the repository root. Settings come from `apps/mobile/.env.local` (copy `apps/mobile/.env.example`): `GOOGLE_MAPS_API_KEY` and `EXPO_PUBLIC_API_URL`. The `versionCode` is the git commit count, so a newer APK installs over the old one and keeps app data. If a native or config change does not show up, run `python scripts/build_apk.py --clean`.
 
+`python scripts/build_apk.py --publish` also puts the APK on GitHub, in the release tagged `android`, with a small manifest (`yazzy-android.json`). Installed apps read that manifest from GitHub and show an "Update available" card on Home; the APK never goes through the API or its database. Publishing signs in to GitHub with `GITHUB_TOKEN` (environment or `apps/mobile/.env.local`), or else with the credential git uses to push.
+
 Prerequisites: JDK 17+, and Android SDK packages `platform-tools`, `platforms;android-36`, `build-tools;36.0.0`, `ndk;27.1.12297006`, `cmake;3.22.1`. The APK is signed with the shared React Native debug key, which is fine for sideloading on your own phones but not for the Play Store.
 
 ## Start on iphone

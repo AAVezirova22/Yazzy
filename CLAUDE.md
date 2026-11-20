@@ -8,7 +8,8 @@ python scripts/build_apk.py --publish
 ```
 
 - Commit first: the build number is the git commit count, and installed apps only offer an update when it is higher than theirs.
-- `--publish` uploads the APK to the API (in 4 MB parts) so the app's Home tab shows an "Update available" card; the user no longer downloads APKs by hand. It needs `YAZZY_RELEASE_TOKEN` in `apps/mobile/.env.local` (same value is set on Render). Confirm it prints `Published: installed apps will offer build <n>`.
+- `--publish` uploads the APK to the GitHub release tagged `android` (not to the API or database) with the manifest `yazzy-android.json`; the app reads that manifest from GitHub and its Home tab shows an "Update available" card, so the user never downloads APKs by hand. It signs in with `GITHUB_TOKEN` if set, else with git's saved GitHub credential. Confirm it prints `Published: installed apps will offer build <n>`.
+- The `android` tag is only a download shelf; publishing never pushes commits.
 
 - Use `--clean` after changing `app.json`, `app.config.js`, `apps/mobile/plugins/`, native module code, or dependencies.
 - Confirm it prints `APK ready: ...Yazzy-<version>.apk` and tell the user the APK was updated.
