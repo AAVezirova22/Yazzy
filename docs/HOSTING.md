@@ -1,38 +1,46 @@
-# Hosting Yazzy for free (Vercel + Render + Neon)
+# Hosting Yazzy (Railway + Vercel + GitHub Releases)
 
-Runs without your laptop. All three have free tiers; check their current limits before relying on them.
+Runs without your laptop.
 
 | Piece | Where | Why |
 |---|---|---|
-| Web app (static React) | **Vercel** | Serverless/static only. `apps/web/vercel.json` proxies `/api/*` to Render so cookies stay same-origin. |
-| API + job worker | **Render** free web service | Long-running Python process. The worker runs inside the API (`YAZZY_EMBEDDED_WORKER=true`). |
-| Database | **Neon** free Postgres | Render's free disk is wiped on redeploy and its free Postgres expires after 30 days. |
+| API + job worker | **Railway** (Hobby plan, EU West), service `yazzy-api` | Long-running Python process that never sleeps. The worker runs inside the API (`YAZZY_EMBEDDED_WORKER=true`). |
+| Database | **Railway** Postgres, same project | Next to the API on Railway's private network, so their traffic is not metered. |
+| Web app (static React) | **Vercel** | `apps/web/vercel.json` proxies `/api/*` to Railway so cookies stay same-origin. |
+| Android updates | **GitHub Releases**, tag `android` | `scripts/build_apk.py --publish`; the app downloads updates from there. |
+
+Until November 2026 the API ran on Render's free plan with a Neon free database. Neon blocked the database once
+its monthly outgoing data ran out, so both were replaced; the old data was not carried over.
 
 Hosted mode runs with `YAZZY_ENV=staging`, **not** `production` (production forbids the demo login and requires OIDC).
 Because the demo login is then reachable from the internet, the API **refuses to start** unless
 `YAZZY_ACCESS_PASSWORD` (12+ characters) is set. The web login and the phone app both ask for it.
 
-## 1. Neon (database)
-1. Create a project at neon.tech. Copy the **direct** connection string (host without `-pooler`).
-   It looks like `postgresql://user:pass@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require`.
-   The app converts it to the `psycopg` driver URL itself.
-2. Nothing else: Render runs the migrations on every start.
+## Railway project `yazzy`
+- **Postgres:** Railway's Postgres template. The API does not use its superuser: it logs in as `yazzy`, an
+  ordinary role (no superuser, no BYPASSRLS) that owns the `yazzy` database, so the forced row-level security applies.
+  The database has no public address; open a temporary TCP proxy (`railway tcp-proxy create -s Postgres --port 5432`)
+  only when you need to reach it from outside, and delete it afterwards.
+- **yazzy-api:** built from `infrastructure/backend.Dockerfile`, started with `sh scripts/start-api.sh` (migrations,
+  demo seed, then uvicorn), health check `/ping`, one replica in EU West (the Hobby plan allows one region).
+  These settings are stored on the service itself, not in a config file.
+- **Public address:** `https://yazzy-api-production.up.railway.app`.
 
-## 2. Render (API)
-1. Push this branch to GitHub. In Render choose **New → Blueprint** and select the repo/branch; it reads `render.yaml`.
-2. Fill the three prompted values:
-   - `DATABASE_URL`: the Neon string from step 1.
-   - `YAZZY_ACCESS_PASSWORD`: pick a long random password.
-   - `WEB_ORIGIN`: your Vercel URL, e.g. `https://yazzy.vercel.app` (no trailing slash). If you do not know it yet, put a placeholder and update it after step 3.
-3. Deploy. Note the service URL (default `https://yazzy-api.onrender.com`).
+### Deploying the API
+Deploys are not tied to GitHub pushes; run them from the repository root after a backend change:
+```sh
+npx @railway/cli up -s yazzy-api --detach
+```
+`railway login` once per computer (it opens the browser to approve), and `railway link` to the `yazzy` project.
+Follow the deploy with `railway deployment list -s yazzy-api` and `railway logs -s yazzy-api`.
 
-## 3. Vercel (web)
-1. If your Render URL differs from `https://yazzy-api.onrender.com`, edit the two destinations in `apps/web/vercel.json`.
+## Vercel (web)
+1. If the API address changes, edit the two destinations in `apps/web/vercel.json`.
 2. **Add New → Project**, import the repo. Vercel lists the apps it found: choose **Import single project** on **`web`** (root directory `apps/web`).
-   Do not import `backend` or `ml`, and do not group them with *Services*: the API runs on Render.
+   Do not import `backend` or `ml`, and do not group them with *Services*: the API runs on Railway.
    `apps/web/vercel.json` supplies the install (from the repo root, for the npm workspaces), build and output settings.
    Leave "Include source files outside of the Root Directory" enabled.
-3. Deploy, then make sure Render's `WEB_ORIGIN` equals the final Vercel URL exactly (login checks the `Origin` header).
+3. Deploy, then make sure the API's `WEB_ORIGIN` equals the final Vercel URL (login checks the `Origin` header).
    Preview deployments and custom domains have different origins; set `WEB_ORIGIN` to the one you actually use.
 
 ### Deploys from any contributor
@@ -47,26 +55,24 @@ on every push to `main`. One-time setup, done by the **Vercel project owner**:
 The ✗ from Vercel's own Git check still appears on other authors' commits; the deployment that matters is the one
 the hook starts (visible in Vercel's Deployments list).
 
-## 4. Phone app
-Enter the Render URL (`https://yazzy-api.onrender.com`) in the **API address** field and your access password, then tap
-**Open local personal sandbox**. The password is kept in the device keychain. No native rebuild is needed, and Tailscale is no longer required.
-To make the Render URL the default, set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env`.
+## Phone app
+APKs built by `scripts/build_apk.py` use the Railway address by default (`EXPO_PUBLIC_API_URL` in
+`apps/mobile/.env.local`). Phones that saved the old Render address move to it on launch, keeping the access password;
+their recorder must be reset (Drive › Reset recorder) and paired again, because the old pairing lived in the old database.
 
 ## Behaviour to expect
-- **Cold starts:** after ~15 minutes without requests Render sleeps the service; the next request takes roughly 30-60 s while it boots and runs migrations.
-  The recorder buffers readings on the phone, so a slow first upload is fine. `GET /ping` is a cheap, database-free liveness endpoint if you want a pinger.
-- **Worker:** the embedded worker sleeps until a write request arrives, so an idle app does not keep Neon's compute awake.
-- **Row-level security:** the migrations enable and *force* RLS, and the app sets the tenant on every transaction, so it works whether or not your database role bypasses RLS (tested against Postgres 17 as an ordinary, non-bypass owner role).
-  Hosted Postgres does not create the separate restricted `yazzy_app` role that Docker Compose uses; add it yourself if you want that extra layer.
-- **Data:** hosted data persists in Neon. The Docker Compose / SQLite local setup is unchanged.
+- **Worker:** the embedded worker sleeps until a write request arrives. While a car drives, trip rebuilds wait up to
+  `YAZZY_REBUILD_DELAY_SECONDS` (300) and share one pass; ignition off rebuilds at once.
+- **Row-level security:** the migrations enable and *force* RLS, and the app sets the tenant on every transaction.
+- **Cost:** the Hobby plan includes $5 of usage a month; set a usage alert under Railway's billing settings.
 
-## Environment variables
+## Environment variables (yazzy-api)
 | Variable | Value |
 |---|---|
 | `YAZZY_ENV` | `staging` |
 | `YAZZY_DEMO_ENABLED` | `true` |
 | `YAZZY_EMBEDDED_WORKER` | `true` |
 | `YAZZY_ACCESS_PASSWORD` | 12+ characters, required |
-| `DATABASE_URL` | Neon connection string |
-| `WEB_ORIGIN` | the Vercel URL |
-| `SESSION_SECRET` | generated by `render.yaml` |
+| `DATABASE_URL` | `postgresql://yazzy:…@postgres.railway.internal:5432/yazzy` (private network) |
+| `WEB_ORIGIN` | the Vercel URL, e.g. `https://yazzy-navy.vercel.app` |
+| `SESSION_SECRET` | random, 48+ characters |

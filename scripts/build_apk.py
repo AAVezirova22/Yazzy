@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MOBILE = ROOT / "apps/mobile"
 ANDROID = MOBILE / "android"
-DEFAULT_API = "https://yazzy-api.onrender.com"
+DEFAULT_API = "https://yazzy-api-production.up.railway.app"
 # Phones only: skipping the x86 emulator ABIs halves native build time and APK size.
 ABIS = "armeabi-v7a,arm64-v8a"
 # The GitHub release that holds the APK. Its tag is only a fixed shelf, not a source version.

@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MOBILE = ROOT / "apps/mobile"
 IOS = MOBILE / "ios"
-DEFAULT_API = "https://yazzy-api.onrender.com"
+DEFAULT_API = "https://yazzy-api-production.up.railway.app"
 SCHEME = "Yazzy"
 # Build output must live outside ~/Documents and ~/Desktop: when those folders sync to iCloud, macOS tags the files
 # with Finder/File Provider attributes and codesign then refuses them ("resource fork, Finder information, or similar

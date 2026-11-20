@@ -7,6 +7,9 @@ import * as FileSystem from 'expo-file-system/legacy';
  * access password. Only More › Server changes or forgets it.
  */
 export const defaultApi=process.env.EXPO_PUBLIC_API_URL||'http://localhost:8000';
+// The Render server was shut down in November 2026 (its database ran out of free transfer). Phones that saved it
+// move to this build's server on launch, with the same access password.
+const RETIRED=['https://yazzy-api.onrender.com'];
 type Mode='demo'|'oidc';
 const st={api:defaultApi,mode:null as Mode|null,token:'',csrf:'',login:null as Promise<void>|null};
 
@@ -44,6 +47,11 @@ export const server={
  /** The saved connection, read once at launch. No network: the app opens at once and signs in lazily if needed. */
  async restore(){
   st.api=await SecureStore.getItemAsync('yazzy-api')||defaultApi;
+  if(RETIRED.includes(st.api)&&!RETIRED.includes(defaultApi)){
+   // A new server holds none of the old garage: start from an empty cache and pick its car again.
+   st.api=defaultApi;await SecureStore.setItemAsync('yazzy-api',st.api);await clearCache();
+   await Promise.all(['yazzy-vehicle','yazzy-configured','yazzy-csrf'].map(k=>SecureStore.deleteItemAsync(k).catch(()=>{})));
+  }
   const access=await SecureStore.getItemAsync('yazzy-access');
   if(access){st.mode='oidc';st.token=access;}
   else if(await SecureStore.getItemAsync('yazzy-sandbox')==='1'){st.mode='demo';st.token='LOCAL_DEMO';st.csrf=await SecureStore.getItemAsync('yazzy-csrf')||'';}

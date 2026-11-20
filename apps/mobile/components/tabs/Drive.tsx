@@ -31,7 +31,12 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
   if(write.service!==notify.service)throw new Error('Write and notify must come from the same service. Re-pick them on Drive › Adapter.');
   const saved=await SecureStore.getItemAsync('collector-'+selected);const enrol=saved?JSON.parse(saved):await server.call('/devices/enrolments',{vehicleId:selected});
   await SecureStore.setItemAsync('collector-'+selected,JSON.stringify(enrol));
-  await Recorder.configure({apiUrl:api,deviceId:enrol.deviceId,assignmentId:enrol.assignmentId,deviceToken:enrol.deviceToken,peripheralId:peripheral,serviceUuid:write.service,writeUuid:write.uuid,notifyUuid:notify.uuid});
+  try{await Recorder.configure({apiUrl:api,deviceId:enrol.deviceId,assignmentId:enrol.assignmentId,deviceToken:enrol.deviceToken,peripheralId:peripheral,serviceUuid:write.service,writeUuid:write.uuid,notifyUuid:notify.uuid});}
+  catch(e){
+   // Readings queued for an earlier pairing (another server, or another car) cannot be sent under this one.
+   if(!/queued samples/i.test((e as Error).message))throw e;
+   throw new Error(`This phone still holds ${snapshot.queued} readings from its previous pairing, and they cannot be sent to this server. Tap "Reset recorder (discard queue)" below to drop them, then start again.`);
+  }
   await SecureStore.setItemAsync('yazzy-configured',key);await permissions();await Recorder.start();
  }
 

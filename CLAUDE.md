@@ -15,3 +15,6 @@ python scripts/build_apk.py --publish
 - Confirm it prints `APK ready: ...Yazzy-<version>.apk` and tell the user the APK was updated.
 - Never commit `apps/mobile/.env.local` (holds the Google Maps key) or the APK; both are gitignored.
 - The build needs `EXPO_NO_METRO_WORKSPACE_ROOT=1`; the script sets it. Do not call Gradle directly without it.
+
+## Hosted API runs on Railway
+After a backend change (anything under `backend/`, `infrastructure/backend.Dockerfile` or `scripts/start-api.sh`), deploy it from the repo root once the change is committed: `npx @railway/cli up -s yazzy-api --detach`, then confirm `railway deployment list -s yazzy-api` shows SUCCESS and `https://yazzy-api-production.up.railway.app/health` answers. Pushing to GitHub does not deploy the API. See `docs/HOSTING.md`.

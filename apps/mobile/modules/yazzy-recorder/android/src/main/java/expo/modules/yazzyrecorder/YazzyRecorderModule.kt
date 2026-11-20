@@ -44,6 +44,7 @@ class YazzyRecorderModule:Module(){
   AsyncFunction("lastLocation"){RecorderManager.get(appContext.reactContext!!).lastLocation()}
   AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
   AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync(true)}
+  AsyncFunction("reset"){val c=appContext.reactContext!!;RecorderManager.get(c).reset();c.stopService(Intent(c,RecordingService::class.java));Unit}
   AsyncFunction("snapshot"){RecorderManager.get(appContext.reactContext!!).snapshot()}
  }
 }
@@ -168,6 +169,9 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private fun stopLocation(){if(!locating)return;location.removeUpdates(this);locating=false}
  /** The phone's newest known position from any provider, without switching GPS on; null without permission. */
  fun lastLocation():Map<String,Any>?=try{listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER,"fused").mapNotNull{runCatching{location.getLastKnownLocation(it)}.getOrNull()}.maxByOrNull{it.time}?.let{mapOf("latitude" to it.latitude,"longitude" to it.longitude,"accuracy" to it.accuracy.toDouble(),"at" to it.time/1000.0)}}catch(_:SecurityException){null}
+ /** Forgets the pairing and drops the readings that were never uploaded, as after a fresh install. Unlike stop(),
+  *  nothing is uploaded first: this is for readings no server can take any more, e.g. after moving to a new server. */
+ fun reset(){ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();RecorderSecret.clear(context);store.clear();resetProfile()}
  fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
  override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;ignitionOff();connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{

@@ -16,7 +16,8 @@ class Settings:
     database_url: str = _database_url(os.getenv("DATABASE_URL", "sqlite:///./yazzy.db"))
     environment: str = os.getenv("YAZZY_ENV", "development")
     demo_enabled: bool = os.getenv("YAZZY_DEMO_ENABLED", "false").lower() == "true"
-    web_origin: str = os.getenv("WEB_ORIGIN", "http://localhost:5173")
+    # Browsers send the origin without a trailing slash, so a pasted "https://x.app/" must match.
+    web_origin: str = os.getenv("WEB_ORIGIN", "http://localhost:5173").rstrip("/")
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     oidc_issuer: str = os.getenv("OIDC_ISSUER", "")
     oidc_audience: str = os.getenv("OIDC_AUDIENCE", "yazzy")

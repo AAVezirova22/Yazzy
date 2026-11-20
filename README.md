@@ -41,7 +41,7 @@ docker compose --profile demo up simulator
 Compose definitions are included; the full Docker deployment was not run in the delivery environment. Docker image/native CI jobs must pass in your environment before a release.
 
 ## Host it for free
-To use the app with your laptop closed, deploy to Vercel + Render + Neon: see [docs/HOSTING.md](docs/HOSTING.md).
+To use the app with your laptop closed, it runs on Railway (API and database) and Vercel (web): see [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Android APK
 Build a standalone APK that talks to the hosted API (no PC needed once installed):

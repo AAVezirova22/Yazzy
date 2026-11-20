@@ -26,6 +26,8 @@ class RecorderStore(context: Context): SQLiteOpenHelper(context,"yazzy.sqlite",n
  private fun meta(key:String):String?=readableDatabase.rawQuery("SELECT value FROM meta WHERE key=?",arrayOf(key)).use{if(it.moveToFirst())it.getString(0) else null}
  private fun putMeta(key:String,value:String){writableDatabase.execSQL("INSERT OR REPLACE INTO meta VALUES(?,?)",arrayOf(key,value))}
  @Synchronized fun newSession(){writableDatabase.delete("meta","key=?",arrayOf("session"))}
+ /** Drops every reading that was never uploaded, with any batch in flight and the session counters. */
+ @Synchronized fun clear(){val db=writableDatabase;db.beginTransaction();try{for(table in listOf("samples","pending","meta"))db.delete(table,null,null);db.setTransactionSuccessful()}finally{db.endTransaction()}}
  @Synchronized fun enqueue(signal:String,value:Any,unit:String){
   check(count()<250000){"Durable queue full; recording paused without silent loss"}
   val db=writableDatabase;db.beginTransaction()
@@ -48,6 +50,7 @@ class RecorderStore(context: Context): SQLiteOpenHelper(context,"yazzy.sqlite",n
 }
 
 object RecorderSecret {
+ fun clear(context:Context){check(context.getSharedPreferences("yazzy-secrets",Context.MODE_PRIVATE).edit().remove("config").commit())}
  private fun key():SecretKey {val store=KeyStore.getInstance("AndroidKeyStore").apply{load(null)};if(store.containsAlias("yazzy-recorder"))return store.getKey("yazzy-recorder",null) as SecretKey
   return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").apply{init(KeyGenParameterSpec.Builder("yazzy-recorder",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())}.generateKey()}
  fun save(context:Context,json:String){val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key());val blob=c.iv+c.doFinal(json.toByteArray());check(context.getSharedPreferences("yazzy-secrets",Context.MODE_PRIVATE).edit().putString("config",Base64.encodeToString(blob,Base64.NO_WRAP)).commit())}
