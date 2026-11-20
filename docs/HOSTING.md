@@ -14,7 +14,9 @@ its monthly outgoing data ran out, so both were replaced; the old data was not c
 
 Hosted mode runs with `YAZZY_ENV=staging`, **not** `production` (production forbids the demo login and requires OIDC).
 Because the demo login is then reachable from the internet, the API **refuses to start** unless
-`YAZZY_ACCESS_PASSWORD` (12+ characters) is set. The web login and the phone app both ask for it.
+`YAZZY_ACCESS_PASSWORD` (4+ characters) is set. The web login and the phone app both ask for it.
+Wrong passwords lock the login: 5 per address in 15 minutes, or 20 an hour from everywhere, after which every
+login, the right one included, waits until older failures expire. Use letters and digits, not only digits.
 
 ## Railway project `yazzy`
 - **Postgres:** Railway's Postgres template. The API does not use its superuser: it logs in as `yazzy`, an
@@ -72,7 +74,7 @@ their recorder must be reset (Drive › Reset recorder) and paired again, becaus
 | `YAZZY_ENV` | `staging` |
 | `YAZZY_DEMO_ENABLED` | `true` |
 | `YAZZY_EMBEDDED_WORKER` | `true` |
-| `YAZZY_ACCESS_PASSWORD` | 12+ characters, required |
+| `YAZZY_ACCESS_PASSWORD` | 4+ characters, required |
 | `DATABASE_URL` | `postgresql://yazzy:…@postgres.railway.internal:5432/yazzy` (private network) |
 | `WEB_ORIGIN` | the Vercel URL, e.g. `https://yazzy-navy.vercel.app` |
 | `SESSION_SECRET` | random, 48+ characters |

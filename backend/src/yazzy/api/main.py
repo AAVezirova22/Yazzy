@@ -1,12 +1,14 @@
 import json
 import logging
 import secrets
+import threading
 import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, select
@@ -197,6 +199,35 @@ def auth_config():
     }
 
 
+# The access password may be as short as 4 characters, so wrong guesses are capped: a few per
+# address, and a few dozen an hour from everywhere together, which keeps even a 4-digit code out of
+# reach of a bot. While locked, the right password is refused too, or guessing could go on.
+FAILURES_PER_ADDRESS, ADDRESS_WINDOW = 5, 900
+FAILURES_OVERALL, OVERALL_WINDOW = 20, 3600
+_failures: deque[tuple[float, str]] = deque()
+_failures_lock = threading.Lock()
+
+
+def login_locked(address: str) -> int:
+    """Seconds until a login from `address` may be tried again (0: now)."""
+    now = time.time()
+    with _failures_lock:
+        while _failures and _failures[0][0] < now - OVERALL_WINDOW:
+            _failures.popleft()
+        waits = []
+        mine = [t for t, a in _failures if a == address and t >= now - ADDRESS_WINDOW]
+        if len(mine) >= FAILURES_PER_ADDRESS:
+            waits.append(mine[-FAILURES_PER_ADDRESS] + ADDRESS_WINDOW - now)
+        if len(_failures) >= FAILURES_OVERALL:
+            waits.append(_failures[-FAILURES_OVERALL][0] + OVERALL_WINDOW - now)
+        return max(0, int(max(waits, default=0)) + (1 if waits else 0))
+
+
+def login_failed(address: str):
+    with _failures_lock:
+        _failures.append((time.time(), address))
+
+
 @app.post("/api/v1/auth/demo")
 def demo_login(
     request: Request, response: Response, mode: str = "fleet", db=Depends(get_db, scope="function")
@@ -206,8 +237,17 @@ def demo_login(
     if request.headers.get("origin") not in {None, *settings.allowed_web_origins}:
         fail("ORIGIN_DENIED", 403)
     if settings.access_password:
+        address = request.client.host if request.client else "unknown"
+        wait = login_locked(address)
+        if wait:
+            raise HTTPException(
+                429,
+                {"code": "TOO_MANY_ATTEMPTS", "retryAfter": wait},
+                headers={"Retry-After": str(wait)},
+            )
         supplied = request.headers.get("x-access-password", "")
         if not secrets.compare_digest(supplied.encode(), settings.access_password.encode()):
+            login_failed(address)
             time.sleep(1)  # throttle guessing; this endpoint runs in the threadpool
             fail("ACCESS_PASSWORD_REQUIRED", 401)
     if mode not in {"fleet", "personal"}:

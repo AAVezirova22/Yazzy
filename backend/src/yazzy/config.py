@@ -58,9 +58,10 @@ class Settings:
 
     def validate(self):
         if self.demo_enabled and self.environment not in {"development", "test"}:
-            if len(self.access_password) < 12:
+            # Short passwords are allowed because wrong ones lock the login (api.main.login_locked).
+            if len(self.access_password) < 4:
                 raise ValueError(
-                    "A hosted demo login requires YAZZY_ACCESS_PASSWORD of at least 12 characters"
+                    "A hosted demo login requires YAZZY_ACCESS_PASSWORD of at least 4 characters"
                 )
         if self.environment == "production":
             if self.demo_enabled:

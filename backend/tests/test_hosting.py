@@ -12,6 +12,7 @@ from yazzy.workers import runner
 
 
 def hosted(monkeypatch, password="correct horse battery"):
+    monkeypatch.setattr(main, "_failures", main.deque())
     monkeypatch.setattr(
         main,
         "settings",
@@ -28,10 +29,11 @@ def test_database_url_is_normalised_for_psycopg():
     assert _database_url("sqlite:///./x.db") == "sqlite:///./x.db"
 
 
-def test_hosted_demo_login_requires_a_strong_password():
-    with pytest.raises(ValueError, match="YAZZY_ACCESS_PASSWORD"):
-        Settings(environment="staging", demo_enabled=True, access_password="short").validate()
-    Settings(environment="staging", demo_enabled=True, access_password="x" * 12).validate()
+def test_hosted_demo_login_requires_a_password():
+    for password in ("", "abc"):
+        with pytest.raises(ValueError, match="YAZZY_ACCESS_PASSWORD"):
+            Settings(environment="staging", demo_enabled=True, access_password=password).validate()
+    Settings(environment="staging", demo_enabled=True, access_password="ab12").validate()
     Settings(environment="development", demo_enabled=True).validate()  # local stays frictionless
 
 
@@ -56,6 +58,27 @@ def test_demo_login_accepts_password_and_sets_secure_cookie(monkeypatch):
         )
         assert r.status_code == 200
         assert "secure" in r.headers["set-cookie"].lower()
+
+
+def test_wrong_passwords_lock_the_login(monkeypatch):
+    hosted(monkeypatch, password="ab12")
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    login = "/api/v1/auth/demo?mode=personal"
+    with TestClient(main.app) as c:
+        for _ in range(main.FAILURES_PER_ADDRESS):
+            assert c.post(login, headers={"X-Access-Password": "0000"}).status_code == 401
+        # Locked: even the right password waits, so guessing cannot continue.
+        r = c.post(login, headers={"X-Access-Password": "ab12"})
+        assert r.status_code == 429
+        assert r.json()["detail"]["code"] == "TOO_MANY_ATTEMPTS"
+        assert 0 < int(r.headers["retry-after"]) <= main.ADDRESS_WINDOW + 1
+    # Guesses spread over many addresses hit the overall cap.
+    main._failures.clear()
+    for i in range(main.FAILURES_OVERALL):
+        main.login_failed(f"10.0.0.{i}")
+    assert main.login_locked("192.168.1.1") > 0
+    main._failures.clear()
+    assert main.login_locked("192.168.1.1") == 0
 
 
 def test_ping_does_not_need_the_database():
