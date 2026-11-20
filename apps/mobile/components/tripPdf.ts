@@ -68,7 +68,6 @@ export function buildTripHtml({trip,vehicleName,series,mapImageBase64}:TripRepor
  const charts=REPORT_SIGNALS.filter(([id])=>(series[id]||[]).length).map(([id,label,unit],i)=>`<section class="chart"><h3>${esc(label)}</h3>${chart(series[id],from,to,['#2f7bf5','#c47a1c','#2d6cdf','#8a4fbf'][i%4],unit)}</section>`).join('');
  const metricRows=Object.entries(m).filter(([k,v])=>k!=='route'&&k!=='drivingEvents'&&(v===null||['string','number','boolean'].includes(typeof v))).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v===null?'—':typeof v==='number'?Number(v.toFixed(4)):v)}</td></tr>`).join('');
  const eventRows=events.map(e=>`<tr><td>${e.type==='HARD_BRAKING'?'Hard braking':'Hard acceleration'}</td><td>${esc(clock(e.time))}</td><td>${n(e.fromKmh,0)} → ${n(e.toKmh,0)} km/h</td><td>${n(e.durationSeconds,1)} s</td><td>${n(e.peakMetresPerSecond2,1)} m/s²</td><td>${e.latitude!=null?`${e.latitude.toFixed(5)}, ${e.longitude.toFixed(5)}`:'no GPS fix nearby'}</td></tr>`).join('');
- const routeRows=route.map((p,i)=>`<tr><td>${i+1}</td><td>${esc(clock(p.time))}</td><td>${p.latitude.toFixed(6)}</td><td>${p.longitude.toFixed(6)}</td><td>${n(p.accuracy,0)} m</td></tr>`).join('');
  const map=mapImageBase64?`<img class="map" src="data:image/png;base64,${mapImageBase64}"/>`:sketch(route,events);
  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>
   @page{margin:16mm 14mm}*{box-sizing:border-box}body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#161b22;font-size:11px;line-height:1.45}
@@ -89,13 +88,12 @@ export function buildTripHtml({trip,vehicleName,series,mapImageBase64}:TripRepor
  ${m.fuelMethod==='UNAVAILABLE'?'<p class="muted">Fuel is unavailable: this car reports neither its fuel rate nor, for a petrol engine, its air flow and fuel trims, so nothing is estimated.</p>':''}
  <p class="muted">${m.endReason?`Trip ended: ${esc(words(m.endReason))}. `:''}Distance coverage ${n((m.distanceCoverage||0)*100,0)}% · fuel coverage ${n((m.fuelCoverage||0)*100,0)}% · location coverage ${n((m.locationCoverage||0)*100,0)}%.</p>
  <h2>Route</h2>${route.length?map:'<p class="muted">No GPS position was recorded for this trip.</p>'}
- ${route.length?`<p class="muted">Start ${route[0].latitude.toFixed(6)}, ${route[0].longitude.toFixed(6)} · last position ${route[route.length-1].latitude.toFixed(6)}, ${route[route.length-1].longitude.toFixed(6)} · ${route.length} recorded positions. Green: start, blue: last position, red: hard braking, orange: hard acceleration.</p>`:''}
+ ${route.length?`<p class="muted">Green: start, blue: last position, red: hard braking, orange: hard acceleration.</p>`:''}
  <h2>Driving events</h2>${events.length?`<table><tr><th>Event</th><th>Time</th><th>Speed</th><th>Duration</th><th>Peak</th><th>Position</th></tr>${eventRows}</table><p class="muted">Hard braking is stronger than 3 m/s², hard acceleration stronger than 2.5 m/s², measured over at least one second.</p>`:'<p class="muted">No hard braking or hard acceleration detected.</p>'}
  <h2>Vehicle readings</h2>${signalRows?`<table><tr><th>Signal</th><th>Min</th><th>Average</th><th>Max</th><th>Unit</th><th>Points</th></tr>${signalRows}</table>`:'<p class="muted">No readings were stored for this trip.</p>'}
  ${charts}
  <h2 class="break">Calculation details</h2><table class="small"><tr><th>Field</th><th>Value</th></tr>${metricRows}
   <tr><td>tripId</td><td>${esc(trip.id)}</td></tr><tr><td>sessionId</td><td>${esc(trip.sessionId)}</td></tr><tr><td>deviceId</td><td>${esc(trip.deviceId)}</td></tr><tr><td>vehicleId</td><td>${esc(trip.vehicleId)}</td></tr><tr><td>detectedAt</td><td>${esc(trip.detectedAt?when(trip.detectedAt):'—')}</td></tr><tr><td>calculationVersion</td><td>${esc(trip.calculationVersion)}</td></tr></table>
- ${route.length?`<h2 class="break">Recorded positions</h2><table class="small"><tr><th>#</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th></tr>${routeRows}</table>`:''}
  </body></html>`;
 }
 
