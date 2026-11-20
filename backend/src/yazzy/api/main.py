@@ -505,41 +505,49 @@ def telemetry(
     start = from_at if from_at is not None else end - 86400
     if end <= start or end - start > 31 * 86400:
         fail("BOUNDED_RANGE_REQUIRED", 422)
-    rows = list(
-        db.scalars(
-            select(Sample)
-            .where(
-                Sample.tenant_id == ctx.tenant_id,
-                Sample.vehicle_id == vehicle_id,
-                Sample.signal == signal,
-                Sample.observed_at >= start,
-                Sample.observed_at < end,
-            )
-            .order_by(Sample.observed_at)
-            .limit(50001)
+    # Only the columns a chart point needs: whole rows (six IDs and a hash each) made every
+    # opened trip move about eight times more data out of the database, which is metered.
+    rows = db.execute(
+        select(Sample.observed_at, Sample.value, Sample.quality, Sample.origin)
+        .where(
+            Sample.tenant_id == ctx.tenant_id,
+            Sample.vehicle_id == vehicle_id,
+            Sample.signal == signal,
+            Sample.observed_at >= start,
+            Sample.observed_at < end,
         )
-    )
+        .order_by(Sample.observed_at)
+        .limit(50001)
+    ).all()
     if len(rows) > 50000:
         fail("REDUCE_QUERY_WINDOW", 422)
     stride = max(1, (len(rows) + resolution - 1) // resolution)
     points: list[dict[str, Any]] = []
     for index in range(0, len(rows), stride):
         bucket = rows[index : index + stride]
-        numeric = [s for s in bucket if isinstance(s.value, (float, int)) and s.quality == "VALID"]
+        numeric = [
+            i
+            for i, s in enumerate(bucket)
+            if isinstance(s.value, (float, int)) and s.quality == "VALID"
+        ]
         chosen = (
-            sorted({min(numeric, key=lambda s: s.value).id, max(numeric, key=lambda s: s.value).id})
+            sorted(
+                {
+                    min(numeric, key=lambda i: bucket[i].value),
+                    max(numeric, key=lambda i: bucket[i].value),
+                }
+            )
             if numeric
-            else [bucket[0].id]
+            else [0]
         )
         points.extend(
             {
-                "observedAt": s.observed_at,
-                "value": s.value,
-                "quality": s.quality,
-                "origin": s.origin,
+                "observedAt": bucket[i].observed_at,
+                "value": bucket[i].value,
+                "quality": bucket[i].quality,
+                "origin": bucket[i].origin,
             }
-            for s in bucket
-            if s.id in chosen
+            for i in chosen
         )
     return {
         "signal": signal,

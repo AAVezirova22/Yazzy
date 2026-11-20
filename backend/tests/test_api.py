@@ -479,3 +479,55 @@ def test_trips_can_be_rebuilt_from_stored_readings(client, enrolled):
     assert r.json()["sessions"] == 1
     drain()
     assert len(moving_trips(client, v)) == 1
+
+
+def test_rebuilds_wait_while_driving_and_run_when_the_engine_stops(client, enrolled, monkeypatch):
+    from dataclasses import replace
+
+    from yazzy.modules.telemetry import service
+    from yazzy.workers.runner import next_deferred
+
+    monkeypatch.setattr(service, "settings", replace(service.settings, rebuild_delay_seconds=300))
+    v, e = enrolled
+    t0 = e["validFrom"]
+    first = upload(client, e, drive(e, t0 - 115, "d1", 0))
+    second = upload(client, e, drive(e, t0 - 95, "d2", 40))
+    assert first.status_code == second.status_code == 202
+    # Still driving: no rebuild yet, the first one waits about five minutes.
+    assert drain() == 0
+    assert moving_trips(client, v) == []
+    assert 290 < next_deferred() - time.time() <= 300
+    stop = drive(e, t0 - 75, "d3", 80, seconds=3)
+    stop["samples"].append(
+        {
+            "sequence": 80 + len(stop["samples"]),
+            "observedAt": stamp(t0 - 71),
+            "signal": "IGNITION",
+            "value": 0,
+            "unit": "bool",
+        }
+    )
+    assert upload(client, e, stop).status_code == 202, stop
+    # Engine off: one rebuild runs at once and covers the waiting uploads too.
+    assert drain() == 1
+    assert len(moving_trips(client, v)) == 1
+    assert next_deferred() is None
+    with transaction() as db:
+        for r in (first, second):
+            assert db.get(Job, r.json()["jobId"]).status == "COMPLETED"
+
+
+def test_trip_chart_keeps_each_buckets_lowest_and_highest_reading(client, enrolled):
+    v, e = enrolled
+    t0 = e["validFrom"] - 115
+    assert upload(client, e, drive(e, t0, "c1", 0)).status_code == 202
+    chart = client.get(
+        f"/api/v1/vehicles/{v['id']}/telemetry",
+        params={"signal": "VEHICLE_SPEED", "from": t0 - 1, "to": t0 + 30, "resolution": 10},
+    ).json()
+    assert chart["rawCount"] == 20
+    points = chart["points"]
+    # Pairs of readings: [0, 40] and [40, 0] at the ends keep both, the eight [40, 40] keep one.
+    assert [p["value"] for p in points] == [0, 40] + [40] * 8 + [40, 0]
+    assert [p["observedAt"] for p in points] == sorted(p["observedAt"] for p in points)
+    assert set(points[0]) == {"observedAt", "value", "quality", "origin"}

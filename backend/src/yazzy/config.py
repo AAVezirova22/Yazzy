@@ -34,6 +34,8 @@ class Settings:
     updates_url: str = os.getenv(
         "YAZZY_UPDATES_URL", "https://github.com/AAVezirova22/Yazzy/releases/download/android"
     ).rstrip("/")
+    # While a car drives, trip rebuilds for its uploads wait this long and share one pass.
+    rebuild_delay_seconds: float = float(os.getenv("YAZZY_REBUILD_DELAY_SECONDS", "300"))
 
     @property
     def allowed_web_origins(self) -> tuple[str, ...]:

@@ -4,6 +4,7 @@ import time
 
 from sqlalchemy import select
 
+from yazzy.config import settings
 from yazzy.infrastructure.models import (
     Assignment,
     Batch,
@@ -132,6 +133,15 @@ def ingest(db, device: Device, batch: TelemetryBatch):
         if stored.payload_hash != hashes[seq] or stored.assignment_id != assignment.id:
             fail("SEQUENCE_CONFLICT", 409)
     job_id = uid()
+    # A phone uploads every minute or so while the car drives, and each rebuild rereads the
+    # whole drive so far from the database, whose outgoing data is metered. So while driving,
+    # the rebuild waits (a pending job's lease_until is the earliest it may run) and one pass
+    # covers every upload queued by then. When the drive ends it runs at once.
+    ended = any(
+        (s.signal == "IGNITION" and s.value in (0, False)) or s.signal == "USER_STOP"
+        for s in batch.samples
+    )
+    delay = 0 if ended or device.run_id else settings.rebuild_delay_seconds
     accepted = [
         s.observed_at.timestamp()
         for s in batch.samples
@@ -143,6 +153,7 @@ def ingest(db, device: Device, batch: TelemetryBatch):
             tenant_id=device.tenant_id,
             kind="RECONCILE",
             key=f"batch:{device.id}:{batch.batch_id}",
+            lease_until=now + delay if delay else 0,
             payload={
                 "vehicleId": owner.id,
                 "runId": device.run_id,

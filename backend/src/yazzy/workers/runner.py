@@ -9,7 +9,7 @@ import threading
 import time
 
 from celery import Celery
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 
 from yazzy.config import settings
 from yazzy.infrastructure.db import transaction
@@ -160,7 +160,8 @@ def due_jobs(db):
             .where(
                 Job.tenant_id == db.info.get("tenant_id"),
                 or_(
-                    Job.status == "PENDING",
+                    # A pending job's lease_until is the earliest it may run (0: at once).
+                    (Job.status == "PENDING") & (Job.lease_until <= time.time()),
                     (Job.status == "RUNNING") & (Job.lease_until < time.time()),
                 ),
             )
@@ -170,17 +171,36 @@ def due_jobs(db):
     )
 
 
-def enumerate_due(tenant_id=None):
+def tenants(tenant_id=None):
     if tenant_id:
-        tenants = [tenant_id]
-    else:
-        with transaction() as db:
-            tenants = list(db.scalars(select(Organisation.id)))
+        return [tenant_id]
+    with transaction() as db:
+        return list(db.scalars(select(Organisation.id)))
+
+
+def enumerate_due(tenant_id=None):
     result: list[tuple[str, str, float, str]] = []
-    for tenant in tenants:
+    for tenant in tenants(tenant_id):
         with transaction(tenant) as db:
             result.extend((j.id, j.tenant_id, j.published_at, j.kind) for j in due_jobs(db))
     return result
+
+
+def next_deferred(tenant_id=None):
+    """When the earliest waiting job falls due, or None when no job waits."""
+    times = []
+    for tenant in tenants(tenant_id):
+        with transaction(tenant) as db:
+            times.append(
+                db.scalar(
+                    select(func.min(Job.lease_until)).where(
+                        Job.tenant_id == tenant,
+                        Job.status == "PENDING",
+                        Job.lease_until > time.time(),
+                    )
+                )
+            )
+    return min((t for t in times if t), default=None)
 
 
 def drain(tenant_id=None, limit=1000):
@@ -211,19 +231,24 @@ def start_embedded(idle_seconds: float = 600, reconcile_pause: float = 15):
     pass, which also recovers jobs whose lease expired). Returns a stop function.
 
     A recording phone uploads every few seconds and each batch queues a trip rebuild that
-    re-reads the vehicle's samples. After a pass that only rebuilt trips the thread pauses
-    for reconcile_pause, so the uploads arriving meanwhile share one rebuild and the API
-    keeps answering on a 0.1-CPU host.
+    re-reads the vehicle's samples. While the car drives those jobs wait (see
+    settings.rebuild_delay_seconds) and the thread sleeps until the first falls due. After a
+    pass that only rebuilt trips the thread pauses for reconcile_pause, so the uploads
+    arriving meanwhile share one rebuild and the API keeps answering on a 0.1-CPU host.
     """
     stop = threading.Event()
 
     def loop():
         while not stop.is_set():
-            kinds = set()
+            kinds, wait = set(), idle_seconds
             try:
                 for job_id, tenant, _, kind in enumerate_due():
                     kinds.add(kind)
                     run_job(job_id, tenant)
+                if not kinds:
+                    later = next_deferred()
+                    if later:
+                        wait = min(wait, max(1.0, later - time.time()))
             except Exception:
                 logger.exception("embedded_worker_pass_failed")
                 stop.wait(5)
@@ -232,7 +257,7 @@ def start_embedded(idle_seconds: float = 600, reconcile_pause: float = 15):
                 # Retries and chained jobs may be due immediately; trip rebuilds can wait.
                 stop.wait(reconcile_pause if kinds == {"RECONCILE"} else 1)
                 continue
-            _wake.wait(timeout=idle_seconds)
+            _wake.wait(timeout=wait)
             _wake.clear()
             stop.wait(0.3)  # let the request that woke us commit
 

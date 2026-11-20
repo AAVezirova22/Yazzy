@@ -3,6 +3,8 @@ import tempfile
 
 os.environ["DATABASE_URL"] = "sqlite:///" + tempfile.mktemp(prefix="yazzy-tests-", suffix=".db")
 os.environ["YAZZY_DEMO_ENABLED"] = "true"
+# Rebuild trips at once, so tests need not wait; test_api covers the delay itself.
+os.environ["YAZZY_REBUILD_DELAY_SECONDS"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient
