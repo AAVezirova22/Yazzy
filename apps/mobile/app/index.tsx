@@ -263,10 +263,10 @@ function AddVehicle({onAdded}:{onAdded:(list:any[],id?:string)=>void}){
 
 const s=StyleSheet.create({
  screen:{flex:1,backgroundColor:c.bg},
- circle:{width:40,height:40,borderRadius:20,alignItems:'center',justifyContent:'center'},
+ circle:{width:40,height:40,borderRadius:3,alignItems:'center',justifyContent:'center'},
  rowTitle:{fontFamily:F[700],fontSize:15,color:c.ink},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12},
  listRowBorder:{borderTopWidth:1,borderTopColor:c.line2},
  radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},
- send:{width:48,height:48,borderRadius:24,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
+ send:{width:48,height:48,borderRadius:3,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
 });

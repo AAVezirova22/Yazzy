@@ -61,7 +61,7 @@ const s=StyleSheet.create({
  holder:{flex:1,justifyContent:'flex-end'},
  sheet:{backgroundColor:c.surface,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,paddingHorizontal:20},
  handleArea:{paddingTop:10},
- grabber:{alignSelf:'center',width:40,height:5,borderRadius:3,backgroundColor:c.track,marginBottom:12},
+ grabber:{alignSelf:'center',width:36,height:4,borderRadius:1,backgroundColor:c.track,marginBottom:12},
  head:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:10},
- title:{fontFamily:F[800],fontSize:20,color:c.ink,letterSpacing:-0.4},
+ title:{fontFamily:F[700],fontSize:20,color:c.ink,letterSpacing:-0.4},
 });

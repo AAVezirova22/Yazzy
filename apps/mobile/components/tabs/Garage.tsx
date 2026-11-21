@@ -6,7 +6,7 @@ import {Updater} from '../Updater';
 import {c,F,radius,type,ui} from '../theme';
 import {Button,Chip,Icon,ListRow,Notice,QuickAction,RoundButton,Section,Tile} from '../kit';
 import {PressableScale} from '../motion';
-import {CarArt,NightGlow,Ring,RouteArt,WeekBars} from '../art';
+import {CarArt,NightGlow,RouteArt,WeekBars} from '../art';
 import {distance,minutes} from '../TripDetail';
 import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,smoothDriving,weekday} from '../format';
 import type {Car} from './types';
@@ -99,15 +99,13 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
     </View>}
 
     <Section title="Driving"/>
-    <View style={[ui.card,s.smooth]}>
-     <Ring value={smooth.drives?smooth.smooth/smooth.drives:0}>
-      <Text style={s.ringValue}>{smooth.drives?`${Math.round(smooth.smooth/smooth.drives*100)}%`:'—'}</Text>
-     </Ring>
-     <View style={{flex:1}}>
-      <Text style={ui.title}>Smooth drives</Text>
-      <Text style={[ui.body,{marginTop:3}]}>{smooth.drives?`${smooth.smooth} of ${smooth.drives} drives in the last 30 days had no hard braking or acceleration.`:'No drives in the last 30 days yet.'}</Text>
-      {smooth.events?<View style={{marginTop:8}}><Chip tone="amber" label={`${smooth.events} hard ${smooth.events===1?'event':'events'}`}/></View>:null}
+    <View style={ui.card}>
+     <View style={[ui.row,{justifyContent:'space-between',alignItems:'flex-end'}]}>
+      <View><Text style={type.overline}>Smooth drives · 30 days</Text><Text style={[type.metric,{marginTop:10}]}>{smooth.drives?`${Math.round(smooth.smooth/smooth.drives*100)}`:'—'}<Text style={type.unit}>{smooth.drives?' %':''}</Text></Text></View>
+      {smooth.events?<Chip tone="amber" label={`${smooth.events} hard ${smooth.events===1?'event':'events'}`}/>:null}
      </View>
+     <View style={s.meter}><View style={[s.meterFill,{width:`${smooth.drives?Math.max(2,smooth.smooth/smooth.drives*100):0}%`}]}/></View>
+     <Text style={ui.body}>{smooth.drives?`${smooth.smooth} of ${smooth.drives} drives had no hard braking or acceleration.`:'No drives in the last 30 days yet.'}</Text>
     </View>
 
     <Section title="Reminders"/>
@@ -123,18 +121,18 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
 const s=StyleSheet.create({
  // Night above the hero too, so pulling down to refresh never shows a light gap.
  overscroll:{position:'absolute',left:0,right:0,top:-1000,height:1000,backgroundColor:c.night},
- hero:{paddingHorizontal:20,paddingBottom:52,overflow:'hidden',backgroundColor:c.night},
- greet:{fontFamily:F[700],fontSize:11,letterSpacing:1.1,textTransform:'uppercase',color:c.nightMuted},
- name:{fontFamily:F[800],fontSize:30,lineHeight:36,letterSpacing:-0.9,color:'#fff',marginTop:4},
+ hero:{paddingHorizontal:20,paddingBottom:26,overflow:'hidden',backgroundColor:c.night},
+ greet:{fontFamily:F[700],fontSize:10.5,letterSpacing:1.6,textTransform:'uppercase',color:c.nightMuted},
+ name:{fontFamily:F[600],fontSize:32,lineHeight:38,letterSpacing:-1.1,color:'#fff',marginTop:6},
  line:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:4},
  car:{alignItems:'center',marginTop:6},
  actions:{flexDirection:'row',justifyContent:'space-between',marginTop:10,paddingHorizontal:2},
- sheet:{marginTop:-28,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,backgroundColor:c.bg,paddingHorizontal:16,paddingTop:14},
+ sheet:{backgroundColor:c.bg,paddingHorizontal:16,paddingTop:10},
  tiles:{flexDirection:'row',gap:12,marginBottom:4},
  trip:{flexDirection:'row',alignItems:'center',gap:14,padding:12},
  thumb:{width:96,height:96,borderRadius:radius.md},
  thumbEmpty:{backgroundColor:c.blue50,alignItems:'center',justifyContent:'center'},
  meta:{fontFamily:F[600],fontSize:13.5,color:c.muted,fontVariant:['tabular-nums']},
- smooth:{flexDirection:'row',alignItems:'center',gap:16},
- ringValue:{fontFamily:F[800],fontSize:18,color:c.ink,fontVariant:['tabular-nums']},
+ meter:{height:4,backgroundColor:c.track,marginTop:14,marginBottom:12,overflow:'hidden'},
+ meterFill:{height:4,backgroundColor:c.green},
 });

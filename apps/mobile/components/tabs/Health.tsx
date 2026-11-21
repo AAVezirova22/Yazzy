@@ -52,7 +52,7 @@ const s=StyleSheet.create({
  next:{backgroundColor:c.amber50,borderRadius:radius.md,padding:12,marginTop:14,marginBottom:8},
  nextLabel:{fontFamily:F[700],fontSize:12.5,color:c.amber,marginBottom:4},
  timeline:{flexDirection:'row',gap:12},
- node:{width:32,height:32,borderRadius:16,backgroundColor:c.green50,alignItems:'center',justifyContent:'center',marginTop:12},
- rail:{width:2,flex:1,backgroundColor:c.track,marginVertical:4},
+ node:{width:30,height:30,borderRadius:radius.md,backgroundColor:c.green50,alignItems:'center',justifyContent:'center',marginTop:12},
+ rail:{width:StyleSheet.hairlineWidth,flex:1,backgroundColor:c.track,marginVertical:4},
  cost:{fontFamily:F[700],fontSize:14,color:c.ink2,marginTop:6,fontVariant:['tabular-nums']},
 });

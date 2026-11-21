@@ -94,7 +94,7 @@ export const WeekBars=memo(function WeekBars({values,height=58}:{values:number[]
  const top=Math.max(1,...values),today=new Date().getDay();
  return <View style={{marginTop:'auto',paddingTop:16}}>
   <View style={{flexDirection:'row',alignItems:'flex-end',gap:5,height}}>
-   {values.map((v,i)=><View key={i} style={{flex:1,height:Math.max(5,v/top*height),borderRadius:4,backgroundColor:v>0?(i===values.length-1?c.blue:c.blue300):c.track}}/>)}
+   {values.map((v,i)=><View key={i} style={{flex:1,height:Math.max(3,v/top*height),borderRadius:1,backgroundColor:v>0?(i===values.length-1?c.blue:c.blue300):c.track}}/>)}
   </View>
   <View style={{flexDirection:'row',gap:5,marginTop:6}}>
    {values.map((_,i)=><Text key={i} style={{flex:1,textAlign:'center',fontSize:10.5,fontFamily:i===values.length-1?F[700]:F[500],color:i===values.length-1?c.ink:c.faint}}>{'SMTWTFS'[(today-6+i+7)%7]}</Text>)}

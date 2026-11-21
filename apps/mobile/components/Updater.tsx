@@ -62,9 +62,9 @@ export function Updater(){
  const mb=build.size?` · ${Math.round(build.size/1048576)} MB`:'';
  const status=progress===null?`Build ${build.versionCode}${mb}`:checking?'Checking the download…':`Downloading… ${Math.round(progress*100)}%`;
  return <View style={[ui.card,{flexDirection:'row',alignItems:'center',gap:12}]}>
-  <View style={{width:42,height:42,borderRadius:21,backgroundColor:c.blue50,alignItems:'center',justifyContent:'center'}}><Ionicons name="sparkles" size={19} color={c.blue}/></View>
+  <View style={{width:42,height:42,borderRadius:3,backgroundColor:c.blue50,alignItems:'center',justifyContent:'center'}}><Ionicons name="sparkles" size={19} color={c.blue}/></View>
   <View style={{flex:1}}><Text style={ui.title}>New version</Text><Text style={ui.caption}>{status}</Text></View>
-  <Pressable accessibilityRole="button" accessibilityLabel="Update the app" disabled={progress!==null} onPress={update} style={({pressed})=>[{backgroundColor:c.blue,borderRadius:999,paddingVertical:10,paddingHorizontal:16},(pressed||progress!==null)&&{opacity:0.7}]}>
+  <Pressable accessibilityRole="button" accessibilityLabel="Update the app" disabled={progress!==null} onPress={update} style={({pressed})=>[{backgroundColor:c.blue,borderRadius:3,paddingVertical:10,paddingHorizontal:16},(pressed||progress!==null)&&{opacity:0.7}]}>
    <Text style={{color:'#fff',fontFamily:F[700],fontSize:14}}>{progress===null?'Update':checking?'…':`${Math.round(progress*100)}%`}</Text>
   </Pressable>
  </View>;

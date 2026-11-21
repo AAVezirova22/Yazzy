@@ -58,7 +58,7 @@ function SecureSignIn({onConnected}:{onConnected:()=>void}){
 
 const s=StyleSheet.create({
  top:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:96},
- wordmark:{fontFamily:F[800],fontSize:20,color:'#fff',letterSpacing:-0.5,marginBottom:28},
- title:{fontFamily:F[800],fontSize:30,color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
+ wordmark:{fontFamily:F[700],fontSize:20,color:'#fff',letterSpacing:-0.5,marginBottom:28},
+ title:{fontFamily:F[700],fontSize:30,color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
  text:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:6},
 });

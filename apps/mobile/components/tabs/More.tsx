@@ -64,7 +64,7 @@ export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,pa
 
 const s=StyleSheet.create({
  fieldLabel:{fontFamily:F[700],fontSize:13,color:c.ink2,marginBottom:6},
- send:{width:48,height:48,borderRadius:24,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
+ send:{width:48,height:48,borderRadius:radius.md,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
  answer:{backgroundColor:c.blue50,borderRadius:radius.md,padding:14,marginTop:12},
  note:{fontFamily:F[500],fontSize:12.5,lineHeight:18,color:c.muted,marginTop:6,marginBottom:10,paddingHorizontal:4,textAlign:'center'},
 });

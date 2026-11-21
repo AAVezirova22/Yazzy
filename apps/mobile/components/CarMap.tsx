@@ -81,7 +81,7 @@ const s=StyleSheet.create({
  fallback:{alignItems:'center',justifyContent:'center'},
  body:{flexDirection:'row',alignItems:'center',gap:12,padding:16},
  address:{fontFamily:F[700],fontSize:16,lineHeight:22,color:c.ink,marginTop:3,marginBottom:1},
- go:{width:48,height:48,borderRadius:24,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
+ go:{width:48,height:48,borderRadius:radius.md,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
  peek:{paddingBottom:6},
  facts:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line,paddingTop:6},
  fact:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:11,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:c.line2,borderRadius:radius.sm},

@@ -117,14 +117,14 @@ export function Dot({coordinate,color=c.blue,size=14,title}:{coordinate:LatLng;c
 
 const s=StyleSheet.create({
  preview:{borderRadius:radius.lg,overflow:'hidden',backgroundColor:'#e6ebf1'},
- expand:{position:'absolute',top:10,right:10,width:30,height:30,borderRadius:15,backgroundColor:c.frost,alignItems:'center',justifyContent:'center'},
+ expand:{position:'absolute',top:10,right:10,width:30,height:30,borderRadius:radius.md,backgroundColor:c.frost,alignItems:'center',justifyContent:'center'},
  full:{flex:1,backgroundColor:'#e6ebf1'},
  top:{position:'absolute',left:16,right:16,flexDirection:'row',alignItems:'center',gap:10},
  title:{flex:1,alignItems:'center'},
  titleText:{backgroundColor:c.frost,borderRadius:radius.pill,paddingVertical:10,paddingHorizontal:16,fontFamily:F[700],fontSize:14,color:c.ink,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:c.frostLine},
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:c.frost,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,paddingHorizontal:18,borderWidth:StyleSheet.hairlineWidth,borderColor:c.frostLine,...floatShadow,shadowOpacity:0.16},
  grabArea:{alignItems:'center',paddingTop:10,paddingBottom:12},
- grabber:{width:40,height:5,borderRadius:3,backgroundColor:'#cfd6df'},
+ grabber:{width:36,height:4,borderRadius:1,backgroundColor:'#cfd6df'},
  more:{paddingTop:6},
  pin:{width:32,height:32,borderRadius:16,borderWidth:3,borderColor:'#fff',alignItems:'center',justifyContent:'center'},
  tip:{width:0,height:0,borderLeftWidth:5,borderRightWidth:5,borderTopWidth:7,borderLeftColor:'transparent',borderRightColor:'transparent',borderTopColor:'#fff',marginTop:-1},
