@@ -5,6 +5,7 @@ import {c,F,radius,type,ui} from '../theme';
 import {Chip,Empty,Icon,IconTile,ScreenHeader,Segment} from '../kit';
 import {ago,day,fmt,pretty} from '../format';
 import {Loading} from './Trips';
+import {t} from '../i18n';
 
 type Props={vehicle:any;findings:any[]|null;service:any[]|null;view:'Health'|'Service';refreshing:boolean;busy:boolean;offline:string;padBottom:number;onView:(v:string)=>void;onRefresh:()=>void};
 
@@ -13,13 +14,13 @@ export const HealthTab=memo(function HealthTab({vehicle,findings,service,view,re
  const insets=useSafeAreaInsets(),list=view==='Health'?findings:service;
  return <ScrollView contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}}
   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.blue} colors={[c.blue]} progressViewOffset={insets.top}/>}>
-  <ScreenHeader title="Health" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>
-  <Segment items={[['Health','Findings'],['Service','Service']]} value={view} onChange={onView}/>
+  <ScreenHeader title={t('Health')} subtitle={vehicle?vehicle.name:t('No vehicle selected')} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>
+  <Segment items={[['Health',t('Findings')],['Service',t('Service')]]} value={view} onChange={onView}/>
   {view==='Health'&&findings&&!findings.length?<View style={[ui.card,s.clear]}>
    <IconTile icon="shield-checkmark" tone="green" size={48}/>
-   <View style={{flex:1}}><Text style={ui.title}>All clear</Text><Text style={[ui.body,{marginTop:2}]}>No persistent change in the readings your car supports.</Text></View>
+   <View style={{flex:1}}><Text style={ui.title}>{t('All clear')}</Text><Text style={[ui.body,{marginTop:2}]}>{t('No persistent change in the readings your car supports.')}</Text></View>
   </View>:null}
-  {!list?<Loading text={busy?'Loading…':offline}/>:!list.length&&view==='Service'?<Empty icon="construct-outline" title="Nothing here yet" text="Maintenance records you add appear here."/>:null}
+  {!list?<Loading text={busy?t('Loading…'):offline}/>:!list.length&&view==='Service'?<Empty icon="construct-outline" title={t('Nothing here yet')} text={t('Maintenance records you add appear here.')}/>:null}
 
   {view==='Health'&&(findings||[]).map(d=><View key={d.id} style={ui.card}>
    <View style={[ui.row,{gap:12,alignItems:'flex-start'}]}>
@@ -27,19 +28,19 @@ export const HealthTab=memo(function HealthTab({vehicle,findings,service,view,re
     <View style={{flex:1}}>
      <Text style={ui.title}>{d.summary||d.description}</Text>
      <View style={[ui.row,{gap:6,marginTop:6,flexWrap:'wrap'}]}>
-      <Chip tone="amber" label={pretty(d.status)||'open'}/>
-      {d.origin?<Chip label={pretty(d.origin)}/>:null}
+      <Chip tone="amber" label={t(pretty(d.status)||'open')}/>
+      {d.origin?<Chip label={t(pretty(d.origin))}/>:null}
      </View>
     </View>
    </View>
-   {d.evidence&&<View style={s.next}><Text style={s.nextLabel}>Recommended next step</Text><Text style={[ui.body,{color:c.ink2}]}>{d.evidence.recommendedNextStep}</Text></View>}
-   {d.evidence&&<Text style={ui.caption}>Exact failed part and failure date unavailable.</Text>}
+   {d.evidence&&<View style={s.next}><Text style={s.nextLabel}>{t('Recommended next step')}</Text><Text style={[ui.body,{color:c.ink2}]}>{d.evidence.recommendedNextStep}</Text></View>}
+   {d.evidence&&<Text style={ui.caption}>{t('Exact failed part and failure date unavailable.')}</Text>}
   </View>)}
 
   {view==='Service'&&(service||[]).map((d,i,all)=><View key={d.id} style={s.timeline}>
    <View style={{alignItems:'center'}}><View style={s.node}><Icon name="checkmark" size={15} color={c.green}/></View>{i<all.length-1?<View style={s.rail}/>:null}</View>
    <View style={[ui.card,{flex:1,marginBottom:12,padding:14}]}>
-    <Text style={type.overline}>{d.observedAt?`${day(d.observedAt)} · ${ago(d.observedAt)}`:'Undated'}</Text>
+    <Text style={type.overline}>{d.observedAt?`${day(d.observedAt)} · ${ago(d.observedAt)}`:t('Undated')}</Text>
     <Text style={[ui.title,{marginTop:4}]}>{d.description||d.summary}</Text>
     {d.actualCost!=null?<Text style={s.cost}>{d.currency||''} {fmt(d.actualCost,2)}</Text>:null}
    </View>

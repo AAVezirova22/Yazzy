@@ -10,6 +10,7 @@ import {c,F,floatShadow,radius} from './theme';
 import {Icon,RoundButton} from './kit';
 import {haptic,PressableScale,SPRING} from './motion';
 import {project,rubberband} from './gestures';
+import {t} from './i18n';
 
 // Android maps need a Google Maps key baked in at build time (see app.config.js); iOS uses Apple Maps.
 export const nativeMaps=Platform.OS==='ios'||(Platform.OS==='android'&&Constants.expoConfig?.extra?.googleMapsKey===true);
@@ -26,7 +27,7 @@ export function regionFor(points:LatLng[],minDelta=0.004):Region{
  * picture, so it never flickers or half-renders while a page slides in, and costs a low-end phone almost nothing.
  * Tapping it opens the interactive map.
  */
-export function MapPreview({region,height=180,onPress,onReady,fallback,children,label='Open map'}:{region:Region;height?:number;onPress?:()=>void;onReady?:(map:MapView)=>void;fallback?:ReactNode;children?:ReactNode;label?:string}){
+export function MapPreview({region,height=180,onPress,onReady,fallback,children,label}:{region:Region;height?:number;onPress?:()=>void;onReady?:(map:MapView)=>void;fallback?:ReactNode;children?:ReactNode;label?:string}){
  const [show,setShow]=useState(false),map=useRef<MapView|null>(null);
  // Let the page finish opening before the map is created.
  useEffect(()=>{const t=setTimeout(()=>setShow(true),250);return()=>clearTimeout(t);},[]);
@@ -37,7 +38,7 @@ export function MapPreview({region,height=180,onPress,onReady,fallback,children,
   </View>:null):fallback}
   {onPress?<View style={s.expand} pointerEvents="none"><Icon name="expand" size={14} color={c.ink}/></View>:null}
  </>;
- return onPress?<PressableScale accessibilityRole="button" accessibilityLabel={label} onPress={onPress} scale={0.985} style={[s.preview,{height}]}>{body}</PressableScale>
+ return onPress?<PressableScale accessibilityRole="button" accessibilityLabel={label||t('Open map')} onPress={onPress} scale={0.985} style={[s.preview,{height}]}>{body}</PressableScale>
   :<View style={[s.preview,{height}]}>{body}</View>;
 }
 
@@ -56,9 +57,9 @@ export function FullMap({visible,onClose,region,title,showsUser,onUser,peek,more
     mapPadding={{top:insets.top+60,right:0,left:0,bottom:peekHeight}}
     onUserLocationChange={e=>{const p=e.nativeEvent.coordinate;if(p)onUser?.({latitude:p.latitude,longitude:p.longitude});}}>{children}</MapView>:null}
    <View style={[s.top,{top:insets.top+10}]}>
-    <RoundButton icon="close" label="Close map" onPress={onClose}/>
+    <RoundButton icon="close" label={t('Close map')} onPress={onClose}/>
     <View style={s.title}><Text style={s.titleText} numberOfLines={1}>{title}</Text></View>
-    <RoundButton icon="scan-outline" label="Show everything" onPress={()=>map.current?.animateToRegion(region,300)}/>
+    <RoundButton icon="scan-outline" label={t('Show everything')} onPress={()=>map.current?.animateToRegion(region,300)}/>
    </View>
    {peek?<MapSheet peek={peek} more={more} bottom={insets.bottom} onPeek={setPeekHeight}/>:null}
   </GestureHandlerRootView>
@@ -91,7 +92,7 @@ function MapSheet({peek,more,bottom,onPeek}:{peek:ReactNode;more?:ReactNode;bott
  return <GestureDetector gesture={pan}>
   <Animated.View onLayout={e=>setFull(Math.round(e.nativeEvent.layout.height))} style={[s.sheet,{paddingBottom:bottom+14},style,!(full&&peekH)&&{opacity:0}]}>
    <View onLayout={e=>setPeekH(Math.round(e.nativeEvent.layout.height))}>
-    {more?<Pressable accessibilityRole="button" accessibilityLabel={open?'Hide details':'Show details'} onPress={()=>settle(open?closed:0)} hitSlop={10} style={s.grabArea}><View style={s.grabber}/></Pressable>:<View style={s.grabArea}><View style={s.grabber}/></View>}
+    {more?<Pressable accessibilityRole="button" accessibilityLabel={open?t('Hide details'):t('Show details')} onPress={()=>settle(open?closed:0)} hitSlop={10} style={s.grabArea}><View style={s.grabber}/></Pressable>:<View style={s.grabArea}><View style={s.grabber}/></View>}
     {peek}
    </View>
    {more?<View style={s.more}>{more}</View>:null}

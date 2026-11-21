@@ -5,6 +5,7 @@ import {Screen} from 'react-native-screens';
 import {c,F} from './theme';
 import {Icon} from './kit';
 import {EASE_IN_OUT,haptic} from './motion';
+import {t} from './i18n';
 
 export type TabKey='Home'|'Trips'|'Health'|'Drive'|'More';
 export const TABS:{key:TabKey;icon:string}[]=[
@@ -29,7 +30,7 @@ export function TabPane({active,children}:{active:boolean;children:ReactNode}){
  * tick fires on the press itself.
  */
 export const NavBar=memo(function NavBar({active,onChange,bottom,recording}:{active:TabKey;onChange:(t:TabKey)=>void;bottom:number;recording:null|'live'|'armed'}){
- const at=(k:TabKey)=>TABS.findIndex(t=>t.key===k);
+ const at=(k:TabKey)=>TABS.findIndex(tab=>tab.key===k);
  const [width,setWidth]=useState(0),[typing,setTyping]=useState(false),[shown,setShown]=useState(active),current=useRef(active);
  const item=width/TABS.length,x=useSharedValue(0),placed=useRef(false);
  const move=(k:TabKey,animate:boolean)=>{if(!item)return;const to=at(k)*item;x.set(animate?withTiming(to,{duration:220,easing:EASE_IN_OUT}):to);};
@@ -50,12 +51,12 @@ export const NavBar=memo(function NavBar({active,onChange,bottom,recording}:{act
  return <View style={[s.dock,{paddingBottom:Math.max(0,bottom-8)}]} onLayout={e=>setWidth(e.nativeEvent.layout.width)} accessibilityRole="tablist">
   {item>0?<Animated.View pointerEvents="none" style={[s.track,{width:item},line]}><View style={s.line}/></Animated.View>:null}
   <View style={s.bar}>
-   {TABS.map(t=>{const on=t.key===shown;return <Pressable key={t.key} accessibilityRole="tab" accessibilityState={{selected:on}} accessibilityLabel={t.key} onPress={()=>press(t.key)} style={s.item}>
+   {TABS.map(tab=>{const on=tab.key===shown;return <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{selected:on}} accessibilityLabel={t(tab.key)} onPress={()=>press(tab.key)} style={s.item}>
     <View>
-     <Icon name={on?t.icon:`${t.icon}-outline`} size={21} color={on?'#fff':c.nightMuted}/>
-     {t.key==='Drive'&&recording?<View style={[s.dot,{backgroundColor:recording==='live'?'#4ade80':c.blue300}]}/>:null}
+     <Icon name={on?tab.icon:`${tab.icon}-outline`} size={21} color={on?'#fff':c.nightMuted}/>
+     {tab.key==='Drive'&&recording?<View style={[s.dot,{backgroundColor:recording==='live'?'#4ade80':c.blue300}]}/>:null}
     </View>
-    <Text style={[s.label,on&&{color:'#fff'}]} numberOfLines={1}>{t.key}</Text>
+    <Text style={[s.label,on&&{color:'#fff'}]} numberOfLines={1}>{t(tab.key)}</Text>
    </Pressable>;})}
   </View>
  </View>;

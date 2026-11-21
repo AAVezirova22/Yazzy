@@ -8,6 +8,7 @@ import {c,F,radius} from './theme';
 import {RoundButton} from './kit';
 import {EASE_OUT,haptic,SPRING} from './motion';
 import {project,rubberband} from './gestures';
+import {t} from './i18n';
 
 const OFF=900;
 
@@ -39,14 +40,14 @@ export function Sheet({open,onClose,title,children}:{open:boolean;onClose:()=>vo
  return <Modal visible transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
   <GestureHandlerRootView style={{flex:1}}>
    <Animated.View style={[StyleSheet.absoluteFill,s.backdrop,backdrop]}>
-    <Pressable accessibilityLabel="Close" style={{flex:1}} onPress={onClose}/>
+    <Pressable accessibilityLabel={t('Close')} style={{flex:1}} onPress={onClose}/>
    </Animated.View>
    <KeyboardAvoidingView pointerEvents="box-none" behavior={Platform.OS==='ios'?'padding':undefined} style={s.holder}>
     <Animated.View onLayout={e=>{const h=Math.round(e.nativeEvent.layout.height);if(Math.abs(h-height)>1)setHeight(h);}} style={[s.sheet,{paddingBottom:insets.bottom+20},sheet]}>
      <GestureDetector gesture={pan}>
       <View style={s.handleArea}>
        <View style={s.grabber}/>
-       <View style={s.head}><Text style={s.title}>{title}</Text><RoundButton icon="close" label="Close" size={36} onPress={onClose}/></View>
+       <View style={s.head}><Text style={s.title}>{title}</Text><RoundButton icon="close" label={t('Close')} size={36} onPress={onClose}/></View>
       </View>
      </GestureDetector>
      {children}

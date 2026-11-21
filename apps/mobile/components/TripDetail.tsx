@@ -9,6 +9,7 @@ import {c,F,floatShadow,radius,shadow,type,ui} from './theme';
 import {Button,Chip,Icon,Section,Tile} from './kit';
 import {PressableScale} from './motion';
 import {CarArt,NightGlow,RouteArt} from './art';
+import {locale,t} from './i18n';
 
 // Android maps need a Google Maps key baked in at build time (see app.config.js); iOS uses Apple Maps.
 export {nativeMaps};
@@ -19,22 +20,22 @@ type DrivingEvent={type:'HARD_ACCELERATION'|'HARD_BRAKING';time:number;peakMetre
 const seen=new Map<string,[Series,Series]>();
 type Props={trip:any;vehicleId:string;vehicleName?:string;call:(path:string)=>Promise<any>;onClose:()=>void};
 
-export const minutes=(seconds:number)=>seconds>=3600?`${Math.floor(seconds/3600)} h ${Math.round(seconds%3600/60)} min`:seconds>=60?`${Math.round(seconds/60)} min`:`${Math.round(seconds)} s`;
-export const distance=(km:number|null|undefined)=>km==null?'—':km<1?`${Math.round(km*1000)} m`:`${km.toFixed(km<10?2:1)} km`;
-const clock=(t:number)=>new Date(t*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
-const eventLabel=(e:DrivingEvent)=>e.type==='HARD_BRAKING'?'Hard braking':'Hard acceleration';
-const eventText=(e:DrivingEvent)=>`${Math.round(e.fromKmh)} → ${Math.round(e.toKmh)} km/h in ${e.durationSeconds.toFixed(1)} s · ${e.peakMetresPerSecond2.toFixed(1)} m/s² · ${clock(e.time)}`;
+export const minutes=(seconds:number)=>seconds>=3600?t('{h} h {m} min',{h:Math.floor(seconds/3600),m:Math.round(seconds%3600/60)}):seconds>=60?t('{n} min',{n:Math.round(seconds/60)}):t('{n} s',{n:Math.round(seconds)});
+export const distance=(km:number|null|undefined)=>km==null?'—':km<1?t('{n} m',{n:Math.round(km*1000)}):t('{n} km',{n:km.toFixed(km<10?2:1)});
+const clock=(at:number)=>new Date(at*1000).toLocaleTimeString(locale(),{hour:'2-digit',minute:'2-digit'});
+const eventLabel=(e:DrivingEvent)=>t(e.type==='HARD_BRAKING'?'Hard braking':'Hard acceleration');
+const eventText=(e:DrivingEvent)=>t('{from} → {to} km/h in {s} s · {peak} m/s² · {time}',{from:Math.round(e.fromKmh),to:Math.round(e.toKmh),s:e.durationSeconds.toFixed(1),peak:e.peakMetresPerSecond2.toFixed(1),time:clock(e.time)});
 const num=(value:number|null|undefined,digits=1)=>value==null?'—':value.toFixed(digits);
 const eventColor=(e:DrivingEvent)=>e.type==='HARD_BRAKING'?c.red:c.amber;
 
 function Bars({points,from,to,unit,color}:{points:Point[];from:number;to:number;unit:string;color:string}){
- if(!points.length)return <Text style={ui.caption}>No readings recorded for this signal.</Text>;
+ if(!points.length)return <Text style={ui.caption}>{t('No readings recorded for this signal.')}</Text>;
  const buckets=36,span=Math.max(1,to-from),peaks=new Array<number>(buckets).fill(NaN);
  for(const p of points){const i=Math.min(buckets-1,Math.max(0,Math.floor((p.observedAt-from)/span*buckets)));peaks[i]=Number.isNaN(peaks[i])?p.value:Math.max(peaks[i],p.value);}
  const top=Math.max(1,...points.map(p=>p.value));
  return <View>
   <View style={s.bars}>{peaks.map((v,i)=><View key={i} style={[s.bar,{backgroundColor:Number.isNaN(v)?c.track:color,height:Number.isNaN(v)?4:Math.max(4,v/top*86)}]}/>)}</View>
-  <View style={[ui.row,{justifyContent:'space-between',marginTop:8}]}><Text style={[ui.caption,s.nums]}>{clock(from)}</Text><Text style={[ui.caption,s.nums]}>peak {num(top,0)} {unit}</Text><Text style={[ui.caption,s.nums]}>{clock(to)}</Text></View>
+  <View style={[ui.row,{justifyContent:'space-between',marginTop:8}]}><Text style={[ui.caption,s.nums]}>{clock(from)}</Text><Text style={[ui.caption,s.nums]}>{t('peak {n} {unit}',{n:num(top,0),unit})}</Text><Text style={[ui.caption,s.nums]}>{clock(to)}</Text></View>
  </View>;
 }
 
@@ -43,8 +44,8 @@ function RouteLayers({route,events}:{route:LatLng[];events:DrivingEvent[]}){
  const pins=events.filter(e=>e.latitude!=null&&e.longitude!=null);
  return <>
   {route.length>1?<Polyline coordinates={route} strokeColor={c.blue} strokeWidth={5}/>:null}
-  <Pin coordinate={route[0]} icon="flag" color={c.green} title="Start"/>
-  {route.length>1?<Pin coordinate={route[route.length-1]} icon="car-sport" title="End"/>:null}
+  <Pin coordinate={route[0]} icon="flag" color={c.green} title={t('Start')}/>
+  {route.length>1?<Pin coordinate={route[route.length-1]} icon="car-sport" title={t('End')}/>:null}
   {pins.map(e=><Dot key={e.type+e.time} coordinate={{latitude:e.latitude as number,longitude:e.longitude as number}} color={eventColor(e)} size={12} title={eventLabel(e)}/>)}
  </>;
 }
@@ -73,93 +74,93 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
    let mapImageBase64:string|null=null;
    try{if(nativeMaps&&inlineMap.current)mapImageBase64=await inlineMap.current.takeSnapshot({format:'png',quality:1,result:'base64'});}catch{/* the report falls back to a drawn route */}
    await exportTripPdf({trip,vehicleName,series:Object.fromEntries(entries),mapImageBase64});
-  }catch(e){Alert.alert('Export failed',(e as Error).message);}
+  }catch(e){Alert.alert(t('Export failed'),(e as Error).message);}
   finally{setExporting(false);}
  }
  const started=new Date(from*1000);
- const eventChip=[braking?`${braking} hard braking`:null,accelerating?`${accelerating} hard accel.`:null].filter(Boolean).join(' · ');
+ const eventChip=[braking?t('{n} hard braking',{n:braking}):null,accelerating?t('{n} hard accel.',{n:accelerating}):null].filter(Boolean).join(' · ');
  return <View style={s.page}>
   <StatusBar style="dark"/>
   <ScrollView contentContainerStyle={{padding:16,paddingTop:insets.top+10,paddingBottom:120+insets.bottom}}>
    <View style={[ui.row,{marginBottom:14}]}>
-    <PressableScale accessibilityRole="button" accessibilityLabel="Back to trips" onPress={onClose} style={s.back}>
-     <Icon name="arrow-back" size={18} color={c.ink}/><Text style={s.backText}>Trips</Text>
+    <PressableScale accessibilityRole="button" accessibilityLabel={t('Back to trips')} onPress={onClose} style={s.back}>
+     <Icon name="arrow-back" size={18} color={c.ink}/><Text style={s.backText}>{t('Trips')}</Text>
     </PressableScale>
    </View>
 
    <View style={s.hero}>
     <NightGlow glowX="85%" glowY="90%"/>
-    <Text style={s.heroOver} numberOfLines={1}>{started.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})} · {clock(from)} – {clock(to)}</Text>
+    <Text style={s.heroOver} numberOfLines={1}>{started.toLocaleDateString(locale(),{weekday:'short',day:'numeric',month:'short'})} · {clock(from)} – {clock(to)}</Text>
     <Text style={s.heroValue} numberOfLines={1} adjustsFontSizeToFit>{distance(m.distanceKm)}</Text>
     <View style={s.heroStats}>
-     <HeroStat label="Duration" value={minutes(m.durationSeconds||0)}/>
+     <HeroStat label={t('Duration')} value={minutes(m.durationSeconds||0)}/>
      <View style={s.heroDivider}/>
-     <HeroStat label={estimated?'Fuel (est.)':'Fuel'} value={m.fuelLitres!=null?`${estimated?'≈ ':''}${num(m.fuelLitres,2)} L`:'n/a'}/>
+     <HeroStat label={t(estimated?'Fuel (est.)':'Fuel')} value={m.fuelLitres!=null?`${estimated?'≈ ':''}${t('{n} L',{n:num(m.fuelLitres,2)})}`:t('n/a')}/>
      <View style={s.heroDivider}/>
-     <HeroStat label="Per 100 km" value={m.litresPer100Km!=null?`${num(m.litresPer100Km)} L`:'—'}/>
+     <HeroStat label={t('Per 100 km')} value={m.litresPer100Km!=null?t('{n} L',{n:num(m.litresPer100Km)}):'—'}/>
     </View>
     <View style={[ui.row,{gap:8,marginTop:16,flexWrap:'wrap'}]}>
-     {stationary?<Chip glass icon="pause" label="Stationary"/>:events.length?<Chip glass dot={braking?c.red:c.amber} label={eventChip}/>:<Chip glass dot="#4ade80" label="Smooth drive"/>}
+     {stationary?<Chip glass icon="pause" label={t('Stationary')}/>:events.length?<Chip glass dot={braking?c.red:c.amber} label={eventChip}/>:<Chip glass dot="#4ade80" label={t('Smooth drive')}/>}
     </View>
     <View style={s.heroCar} pointerEvents="none"><CarArt width={150}/></View>
    </View>
 
    {route.length?<View style={[ui.card,{padding:0,overflow:'hidden'}]}>
-    <MapPreview region={regionFor(route)} height={210} onPress={()=>setExpanded(true)} onReady={map=>{inlineMap.current=map;}} label="Open the route on a map"
+    <MapPreview region={regionFor(route)} height={210} onPress={()=>setExpanded(true)} onReady={map=>{inlineMap.current=map;}} label={t('Open the route on a map')}
      fallback={<RouteArt route={route} style={StyleSheet.absoluteFill} stroke={5} markers={events.filter(e=>e.latitude!=null).map(e=>({latitude:e.latitude as number,longitude:e.longitude as number,color:eventColor(e)}))}/>}>
      <RouteLayers route={route} events={events}/>
     </MapPreview>
     <View style={s.routeInfo}>
-     <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.green}]}/><Text style={s.legText}>Start {clock(from)}</Text></View>
+     <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.green}]}/><Text style={s.legText}>{t('Start {time}',{time:clock(from)})}</Text></View>
      <View style={s.legLine}/>
-     <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.blue}]}/><Text style={s.legText}>End {clock(to)}</Text></View>
+     <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.blue}]}/><Text style={s.legText}>{t('End {time}',{time:clock(to)})}</Text></View>
      <View style={{flex:1}}/>
-     <PressableScale accessibilityRole="button" onPress={()=>setExpanded(true)} hitSlop={8}><Text style={s.link}>Full map</Text></PressableScale>
+     <PressableScale accessibilityRole="button" onPress={()=>setExpanded(true)} hitSlop={8}><Text style={s.link}>{t('Full map')}</Text></PressableScale>
     </View>
-   </View>:<View style={[ui.card,s.noRoute]}><Icon name="location-outline" size={20} color={c.faint}/><Text style={ui.caption}>No GPS position was recorded for this trip.</Text></View>}
+   </View>:<View style={[ui.card,s.noRoute]}><Icon name="location-outline" size={20} color={c.faint}/><Text style={ui.caption}>{t('No GPS position was recorded for this trip.')}</Text></View>}
 
-   <Section title="Overview"/>
+   <Section title={t('Overview')}/>
    <View style={s.grid}>
-    <Tile style={s.half} icon="speedometer-outline" label="Top speed" value={topSpeed!=null?num(topSpeed,0):'—'} unit={topSpeed!=null?'km/h':undefined}/>
-    <Tile style={s.half} icon="time-outline" label="Moving" value={minutes(m.movingSeconds||0)}/>
-    <Tile style={s.half} icon="hourglass-outline" label="Idling" value={minutes(m.idleEngineSeconds||0)} caption="Engine on, standing"/>
-    <Tile style={s.half} icon="leaf-outline" tone="green" label="Per 100 km" value={m.litresPer100Km!=null?num(m.litresPer100Km):'—'} unit={m.litresPer100Km!=null?'L':undefined} caption={estimated?'Estimated from air flow':undefined}/>
+    <Tile style={s.half} icon="speedometer-outline" label={t('Top speed')} value={topSpeed!=null?num(topSpeed,0):'—'} unit={topSpeed!=null?t('km/h'):undefined}/>
+    <Tile style={s.half} icon="time-outline" label={t('Moving')} value={minutes(m.movingSeconds||0)}/>
+    <Tile style={s.half} icon="hourglass-outline" label={t('Idling')} value={minutes(m.idleEngineSeconds||0)} caption={t('Engine on, standing')}/>
+    <Tile style={s.half} icon="leaf-outline" tone="green" label={t('Per 100 km')} value={m.litresPer100Km!=null?num(m.litresPer100Km):'—'} unit={m.litresPer100Km!=null?t('L'):undefined} caption={estimated?t('Estimated from air flow'):undefined}/>
    </View>
-   {m.fuelMethod==='UNAVAILABLE'&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel unavailable: this car reports neither its fuel rate nor, for a petrol engine, its air flow and fuel trims, so nothing is estimated.</Text>}
-   {estimated&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel is estimated from the engine's air flow and fuel trims, because this car does not report its fuel rate. Expect it within about 10% of the pump.</Text>}
+   {m.fuelMethod==='UNAVAILABLE'&&<Text style={[ui.caption,{marginBottom:14}]}>{t('Fuel unavailable: this car reports neither its fuel rate nor, for a petrol engine, its air flow and fuel trims, so nothing is estimated.')}</Text>}
+   {estimated&&<Text style={[ui.caption,{marginBottom:14}]}>{t("Fuel is estimated from the engine's air flow and fuel trims, because this car does not report its fuel rate. Expect it within about 10% of the pump.")}</Text>}
 
    <View style={ui.card}>
     <View style={[ui.row,{justifyContent:'space-between',marginBottom:6}]}>
-     <Text style={ui.title}>Driving events</Text>
-     <View style={[ui.row,{gap:6}]}><Chip tone="red" label={`${braking} braking`}/><Chip tone="amber" label={`${accelerating} accel.`}/></View>
+     <Text style={ui.title}>{t('Driving events')}</Text>
+     <View style={[ui.row,{gap:6}]}><Chip tone="red" label={t('{n} braking',{n:braking})}/><Chip tone="amber" label={t('{n} accel.',{n:accelerating})}/></View>
     </View>
-    {events.length?events.map(e=><EventRow key={e.type+e.time} event={e}/>):<Text style={ui.body}>A smooth drive: nothing harder than 3 m/s² braking or 2.5 m/s² acceleration.</Text>}
+    {events.length?events.map(e=><EventRow key={e.type+e.time} event={e}/>):<Text style={ui.body}>{t('A smooth drive: nothing harder than 3 m/s² braking or 2.5 m/s² acceleration.')}</Text>}
    </View>
 
-   {failed?<Text style={[ui.body,{color:c.red,marginBottom:14}]}>Could not load readings: {failed}</Text>:<>
-    <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>Speed</Text>{speed?<Bars points={speed.points} from={from} to={to} unit="km/h" color={c.blue}/>:<Text style={ui.caption}>Loading…</Text>}</View>
-    <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>Engine speed</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit="rpm" color={c.night}/>:<Text style={ui.caption}>Loading…</Text>}</View>
+   {failed?<Text style={[ui.body,{color:c.red,marginBottom:14}]}>{t('Could not load readings: {reason}',{reason:failed})}</Text>:<>
+    <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>{t('Speed')}</Text>{speed?<Bars points={speed.points} from={from} to={to} unit={t('km/h')} color={c.blue}/>:<Text style={ui.caption}>{t('Loading…')}</Text>}</View>
+    <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>{t('Engine speed')}</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit={t('rpm')} color={c.night}/>:<Text style={ui.caption}>{t('Loading…')}</Text>}</View>
    </>}
-   <Text style={[ui.caption,{textAlign:'center',lineHeight:18}]}>Started {started.toLocaleString()}{m.endReason?` · ended: ${String(m.endReason).replaceAll('_',' ').toLowerCase()}`:''}{m.distanceMethod?` · distance from ${String(m.distanceMethod).replaceAll('_',' ').toLowerCase()}`:''}</Text>
+   <Text style={[ui.caption,{textAlign:'center',lineHeight:18}]}>{t('Started {when}',{when:started.toLocaleString(locale())})}{m.endReason?' · '+t('ended: {reason}',{reason:t(String(m.endReason).replaceAll('_',' ').toLowerCase())}):''}{m.distanceMethod?' · '+t('distance from {method}',{method:t(String(m.distanceMethod).replaceAll('_',' ').toLowerCase())}):''}</Text>
   </ScrollView>
 
   <View style={[s.footer,{paddingBottom:Math.max(insets.bottom,12)+4}]}>
    <View style={{flex:1}}><Text style={s.footValue}>{distance(m.distanceKm)}</Text><Text style={ui.caption} numberOfLines={1}>{minutes(m.durationSeconds||0)}{vehicleName?` · ${vehicleName}`:''}</Text></View>
-   <Button title={exporting?'Preparing…':'Export PDF'} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:18}}/>
+   <Button title={t(exporting?'Preparing…':'Export PDF')} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:18}}/>
   </View>
 
   {route.length?<FullMap visible={expanded} onClose={()=>setExpanded(false)} region={regionFor(route)} title={`${clock(from)} – ${clock(to)}`}
    peek={<View style={{paddingBottom:4}}>
     <View style={[ui.row,{justifyContent:'space-between'}]}>
-     <View><Text style={type.overline}>Distance</Text><Text style={s.peekValue}>{distance(m.distanceKm)}</Text></View>
-     <View style={{alignItems:'flex-end'}}><Text style={type.overline}>Duration</Text><Text style={s.peekValue}>{minutes(m.durationSeconds||0)}</Text></View>
+     <View><Text style={type.overline}>{t('Distance')}</Text><Text style={s.peekValue}>{distance(m.distanceKm)}</Text></View>
+     <View style={{alignItems:'flex-end'}}><Text style={type.overline}>{t('Duration')}</Text><Text style={s.peekValue}>{minutes(m.durationSeconds||0)}</Text></View>
     </View>
     <View style={[ui.row,{gap:16,marginTop:12}]}>
-     <View style={[ui.row,{gap:6}]}><View style={[s.legDot,{backgroundColor:c.red}]}/><Text style={ui.caption}>Hard braking ({braking})</Text></View>
-     <View style={[ui.row,{gap:6}]}><View style={[s.legDot,{backgroundColor:c.amber}]}/><Text style={ui.caption}>Hard acceleration ({accelerating})</Text></View>
+     <View style={[ui.row,{gap:6}]}><View style={[s.legDot,{backgroundColor:c.red}]}/><Text style={ui.caption}>{t('Hard braking ({n})',{n:braking})}</Text></View>
+     <View style={[ui.row,{gap:6}]}><View style={[s.legDot,{backgroundColor:c.amber}]}/><Text style={ui.caption}>{t('Hard acceleration ({n})',{n:accelerating})}</Text></View>
     </View>
    </View>}
-   more={events.length?<View>{events.map(e=><EventRow key={e.type+e.time} event={e}/>)}</View>:<Text style={[ui.body,{paddingVertical:8}]}>A smooth drive: no hard braking or acceleration.</Text>}>
+   more={events.length?<View>{events.map(e=><EventRow key={e.type+e.time} event={e}/>)}</View>:<Text style={[ui.body,{paddingVertical:8}]}>{t('A smooth drive: no hard braking or acceleration.')}</Text>}>
    <RouteLayers route={route} events={events}/>
   </FullMap>:null}
  </View>;
@@ -172,7 +173,7 @@ function HeroStat({label,value}:{label:string;value:string}){
 function EventRow({event:e}:{event:DrivingEvent}){
  return <View style={s.event}>
   <View style={[s.eventDot,{backgroundColor:eventColor(e)}]}/>
-  <View style={{flex:1}}><Text style={s.eventTitle}>{eventLabel(e)}</Text><Text style={[ui.caption,s.nums]}>{eventText(e)}{e.latitude==null?' · no GPS fix nearby':''}</Text></View>
+  <View style={{flex:1}}><Text style={s.eventTitle}>{eventLabel(e)}</Text><Text style={[ui.caption,s.nums]}>{eventText(e)}{e.latitude==null?' · '+t('no GPS fix nearby'):''}</Text></View>
  </View>;
 }
 

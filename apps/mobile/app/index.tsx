@@ -21,16 +21,17 @@ import {detect,serverType,type CarProfile,type Kind} from '../components/car';
 import {readCache,server,writeCache} from '../components/server';
 import {carLine} from '../components/format';
 import {available,Recorder,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
+import {loadLang,t,useLang} from '../components/i18n';
 
 const empty:RecorderSnapshot={recording:false,connected:false,queued:0,error:null,signals:{},qualification:'PENDING_DEVICE_TEST'};
 // Fetched one after another: the free server has a tenth of a CPU, and trips come first because Home and Trips show them.
 const PARTS:[Exclude<keyof Car,'vehicleId'>,string][]=[['trips','trips'],['fuel','fuel-report'],['findings','findings'],['service','maintenance-records']];
 const blank=(id:string):Car=>({vehicleId:id,fuel:null,trips:null,findings:null,service:null});
 const STALE_MS=30000;
-const quiet=(message:string)=>/[.!?]$/.test(message)?message:`Couldn't refresh (${message}).`;
+const quiet=(message:string)=>/[.!?]$/.test(message)?message:t("Couldn't refresh ({reason}).",{reason:message});
 
 export default function App(){
- const insets=useSafeAreaInsets();
+ const insets=useSafeAreaInsets(),lang=useLang();
  // undefined while the saved connection is read (a few milliseconds, no network), null when this phone never connected.
  const [mode,setMode]=useState<'demo'|'oidc'|null|undefined>(undefined),[session,setSession]=useState(0),[api,setApi]=useState(server.api);
  const [vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[car,setCar]=useState<Car|null>(null);
@@ -50,7 +51,8 @@ export default function App(){
   fresh.current={};carRef.current=null;inflight.current=null;
   setApi(server.api);setVehicles(list||[]);setCar(null);setSelected(id);setOffline('');setMode(server.mode);setSession(n=>n+1);
  },[]);
- useEffect(()=>{server.restore().catch(()=>null).then(boot);},[]);
+ // The saved language is read with the saved connection, before the first screen, so it never flashes the default.
+ useEffect(()=>{Promise.all([server.restore().catch(()=>null),loadLang()]).then(boot);},[]);
  const disconnected=useCallback(()=>{setMode(null);setTab('Home');setVisited(['Home']);setVehicles([]);setSelected('');setCar(null);carRef.current=null;},[]);
 
  useEffect(()=>{
@@ -91,7 +93,7 @@ export default function App(){
   const id=selectedRef.current;if(!id)return false;
   try{
    await server.call(`/vehicles/${id}/trips/rebuild`,{days:14});
-   if(!quiet)Alert.alert('Rebuilding trips','Trips from the last 14 days are being rebuilt from the readings your car recorded. Pull down on Trips in a minute to see them.');
+   if(!quiet)Alert.alert(t('Rebuilding trips'),t('Trips from the last 14 days are being rebuilt from the readings your car recorded. Pull down on Trips in a minute to see them.'));
    setTimeout(()=>{void refresh(true);},45000);return true;
   }catch(e){if(!quiet)Alert.alert('Yazzy',(e as Error).message);return false;}
  },[]);
@@ -131,11 +133,11 @@ export default function App(){
  },[]);
 
  const go=useCallback((view:string)=>{
-  const t:TabKey=view==='Health'||view==='Service'?'Health':view==='Record'||view==='Connect'?'Drive':view as TabKey;
+  const next:TabKey=view==='Health'||view==='Service'?'Health':view==='Record'||view==='Connect'?'Drive':view as TabKey;
   if(view==='Health'||view==='Service')setHealthView(view);
   if(view==='Record'||view==='Connect')setDriveView(view);
-  setTab(t);setVisited(v=>v.includes(t)?v:[...v,t]);
-  if(t==='Home'||t==='Trips'||t==='Health')void refresh(false);
+  setTab(next);setVisited(v=>v.includes(next)?v:[...v,next]);
+  if(next==='Home'||next==='Trips'||next==='Health')void refresh(false);
  },[refresh]);
  // Once Home is up, quietly render the other tabs one by one, so even the first visit to each opens instantly.
  useEffect(()=>{
@@ -207,13 +209,13 @@ export default function App(){
  },[mode,recorderVehicle,nativeProfile,nativeSpot,snapshot.signals,snapshot.connected]);
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
- const carInfo=useMemo(()=>{const t=detect(report);return {label:t.label,kind:t.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report]);
+ const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report,lang]);
 
  const live=snapshot.recording&&snapshot.connected,speed=snapshot.signals.VEHICLE_SPEED;
- const recorder=useMemo(()=>({label:live?`Recording${speed!=null?` · ${speed} km/h`:''}`:snapshot.recording?'Waiting for your car':'Not recording',live,recording:snapshot.recording}),[live,speed,snapshot.recording]);
+ const recorder=useMemo(()=>({label:live?t('Recording')+(speed!=null?' · '+t('{n} km/h',{n:speed}):''):t(snapshot.recording?'Waiting for your car':'Not recording'),live,recording:snapshot.recording}),[live,speed,snapshot.recording,lang]);
 
  if(mode===undefined)return <View style={{flex:1,backgroundColor:c.night}}><StatusBar style="light"/></View>;
- if(!mode)return <View style={{flex:1}}><StatusBar style="light"/><SignIn api={api} onConnected={boot}/></View>;
+ if(!mode)return <View key={lang} style={{flex:1}}><StatusBar style="light"/><SignIn api={api} onConnected={boot}/></View>;
 
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
@@ -224,21 +226,21 @@ export default function App(){
   case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected}/>;
  }};
 
- return <View style={s.screen}>
+ return <View key={lang} style={s.screen}>
   <StatusBar style={tab==='Home'?'light':'dark'}/>
   <ScreenContainer style={{flex:1}} hasTwoStates>
-   {TABS.filter(t=>visited.includes(t.key)).map(t=><TabPane key={t.key} active={tab===t.key}>{page(t.key)}</TabPane>)}
+   {TABS.filter(x=>visited.includes(x.key)).map(x=><TabPane key={x.key} active={tab===x.key}>{page(x.key)}</TabPane>)}
   </ScreenContainer>
   <NavBar active={tab} onChange={go} bottom={navBottom} recording={snapshot.recording?(snapshot.connected?'live':'armed'):null}/>
 
-  <Sheet open={garageOpen} onClose={closeGarage} title="Your vehicles">
+  <Sheet open={garageOpen} onClose={closeGarage} title={t('Your vehicles')}>
    <ScrollView style={{maxHeight:300}}>
     {vehicles.map((v,i)=>{const on=selected===v.id;return <Pressable key={v.id} accessibilityRole="button" accessibilityState={{selected:on}} style={({pressed})=>[s.listRow,i>0&&s.listRowBorder,pressed&&{opacity:0.7}]} onPress={()=>pickVehicle(v.id)}>
      <View style={[s.circle,on?{backgroundColor:c.night}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
      <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{carLine(v)}</Text></View>
      {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
     </Pressable>;})}
-    {!vehicles.length&&<Text style={[ui.body,{paddingVertical:10}]}>No vehicles yet. Add your first one below.</Text>}
+    {!vehicles.length&&<Text style={[ui.body,{paddingVertical:10}]}>{t('No vehicles yet. Add your first one below.')}</Text>}
    </ScrollView>
    <AddVehicle onAdded={vehicleAdded}/>
   </Sheet>
@@ -256,8 +258,8 @@ export default function App(){
 function AddVehicle({onAdded}:{onAdded:(list:any[],id?:string)=>void}){
  const [name,setName]=useState(''),[busy,run]=useAction(),off=busy||!name.trim();
  return <View style={[ui.row,{gap:10,marginTop:12}]}>
-  <TextInput style={[ui.input,{flex:1,marginBottom:0}]} placeholder="New vehicle name" placeholderTextColor={c.faint} value={name} onChangeText={setName}/>
-  <Pressable accessibilityRole="button" accessibilityLabel="Add vehicle" disabled={off} onPress={()=>run(async()=>{const v=await server.call('/vehicles',{name});onAdded(await server.call('/vehicles'),v?.id);setName('');})} style={[s.send,off&&{opacity:0.4}]}><Icon name="add" size={22} color="#fff"/></Pressable>
+  <TextInput style={[ui.input,{flex:1,marginBottom:0}]} placeholder={t('New vehicle name')} placeholderTextColor={c.faint} value={name} onChangeText={setName}/>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Add vehicle')} disabled={off} onPress={()=>run(async()=>{const v=await server.call('/vehicles',{name});onAdded(await server.call('/vehicles'),v?.id);setName('');})} style={[s.send,off&&{opacity:0.4}]}><Icon name="add" size={22} color="#fff"/></Pressable>
  </View>;
 }
 

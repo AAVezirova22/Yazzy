@@ -1,3 +1,5 @@
+import {t,tp} from './i18n';
+
 /**
  * What the app knows about OBD-II itself: the car report the recorder reads (SAE J1979 modes 01, 03, 07, 09, 0A),
  * how to tell petrol, diesel, hybrid and electric cars apart, and plain-language labels for codes and monitors.
@@ -33,15 +35,15 @@ const HYBRID_ECU=/^(HPCM|BECM|HCU|HVECU)\b|hybrid/i;
 
 /** The car's type, from the most direct evidence available. */
 export function detect(p:CarProfile|null|undefined):Detection{
- const name=(k:Kind)=>KINDS.find(x=>x[0]===k)![1];
- if(p?.userKind)return {kind:p.userKind,label:name(p.userKind),source:'Set by you'};
+ const name=(k:Kind)=>t(KINDS.find(x=>x[0]===k)![1]);
+ if(p?.userKind)return {kind:p.userKind,label:name(p.userKind),source:t('Set by you')};
  const fuel=p?.fuelType!=null?FUEL[p.fuelType]:undefined;
- if(fuel)return {kind:fuel[0],label:fuel[1],source:'Fuel type reported by the car'};
- if(p?.supported?.includes('5B'))return p.supported.includes('0C')?{kind:'HYBRID',label:'Hybrid',source:'The car reports a hybrid battery'}:{kind:'ELECTRIC',label:'Electric',source:'Battery reported, no engine speed'};
- if(p?.ecus?.some(e=>HYBRID_ECU.test(e)))return {kind:'HYBRID',label:'Hybrid',source:'A hybrid control unit answered'};
- if(p?.ignition==='COMPRESSION')return {kind:'DIESEL',label:'Diesel',source:'Engine type from the emission monitors'};
- if(p?.ignition==='SPARK')return {kind:'PETROL',label:'Petrol',source:'Engine type from the emission monitors (a hybrid may also show as petrol)'};
- return {kind:null,label:'Not read yet',source:'Start recording with the car on'};
+ if(fuel)return {kind:fuel[0],label:t(fuel[1]),source:t('Fuel type reported by the car')};
+ if(p?.supported?.includes('5B'))return p.supported.includes('0C')?{kind:'HYBRID',label:t('Hybrid'),source:t('The car reports a hybrid battery')}:{kind:'ELECTRIC',label:t('Electric'),source:t('Battery reported, no engine speed')};
+ if(p?.ecus?.some(e=>HYBRID_ECU.test(e)))return {kind:'HYBRID',label:t('Hybrid'),source:t('A hybrid control unit answered')};
+ if(p?.ignition==='COMPRESSION')return {kind:'DIESEL',label:t('Diesel'),source:t('Engine type from the emission monitors')};
+ if(p?.ignition==='SPARK')return {kind:'PETROL',label:t('Petrol'),source:t('Engine type from the emission monitors (a hybrid may also show as petrol)')};
+ return {kind:null,label:t('Not read yet'),source:t('Start recording with the car on')};
 }
 /** The server's vehicle fields for a type. */
 export function serverType(k:Kind,p?:CarProfile|null){
@@ -72,14 +74,16 @@ const CODES:Record<string,string>={
  P0A7F:'Hybrid battery pack deterioration',P0A80:'Replace hybrid battery pack',P2002:'Particulate filter efficiency below threshold (bank 1)',P2463:'Particulate filter soot accumulation',
  U0100:'Lost communication with engine control module',U0101:'Lost communication with transmission control module',U0121:'Lost communication with ABS control module',
 };
-for(let n=1;n<=8;n++)CODES[`P030${n}`]=`Cylinder ${n} misfire detected`;
+
 const SYSTEM:Record<string,string>={P:'Powertrain',C:'Chassis',B:'Body',U:'Network'};
 const AREA:Record<string,string>={'0':'Fuel, air and emission controls','1':'Fuel and air metering','2':'Fuel and air metering (injectors)','3':'Ignition system or misfire','4':'Auxiliary emission controls','5':'Speed, idle control and inputs','6':'Computer and output circuits','7':'Transmission','8':'Transmission','9':'Transmission','A':'Hybrid propulsion','B':'Hybrid propulsion','C':'Hybrid propulsion'};
 export function describeCode(code:string){
- if(CODES[code])return CODES[code];
- const sys=SYSTEM[code[0]]||'Unknown system',d=code[1],area=code[0]==='P'&&(d==='0'||d==='2')?AREA[code[2]]:null;
+ const cylinder=/^P030([1-8])$/.exec(code);
+ if(cylinder)return t('Cylinder {n} misfire detected',{n:cylinder[1]});
+ if(CODES[code])return t(CODES[code]);
+ const sys=t(SYSTEM[code[0]]||'Unknown system'),d=code[1],area=code[0]==='P'&&(d==='0'||d==='2')?AREA[code[2]]:null;
  const own=code[0]==='P'?d==='1'||(d==='3'&&code[2]<'4'):d==='1'||d==='2';
- return `${sys}${area?` · ${area}`:''}${own?' · manufacturer-specific code':''}`;
+ return `${sys}${area?` · ${t(area)}`:''}${own?` · ${t('manufacturer-specific code')}`:''}`;
 }
 
 const WMI:Record<string,string>={
@@ -99,12 +103,12 @@ export const READINGS:Reading[]=[
  ['FUEL_LEVEL','Fuel level','%',0],['FUEL_RATE','Fuel rate','L/h',1],['FUEL_PRESSURE','Fuel pressure','kPa',0],['FUEL_RAIL_PRESSURE','Fuel rail pressure','kPa',0],
  ['SHORT_FUEL_TRIM','Short-term fuel trim','%',1],['LONG_FUEL_TRIM','Long-term fuel trim','%',1],['RUN_TIME','Running since start','s',0],['ODOMETER','Odometer','km',0],
 ];
-export const readingText=([id,,unit,digits]:Reading,v:number)=>id==='RUN_TIME'?`${Math.floor(v/60)} min ${Math.round(v%60)} s`:`${v.toFixed(digits)} ${unit}`;
+export const readingText=([id,,unit,digits]:Reading,v:number)=>id==='RUN_TIME'?t('{m} min {s} s',{m:Math.floor(v/60),s:Math.round(v%60)}):`${v.toFixed(digits)} ${unit}`;
 
 /** Resting 12 V lead-acid guide; above 13.2 V the alternator or hybrid system is charging it. */
 export function battery12(v?:number|null){
  if(v==null)return null;
- return v>=13.2?{tone:'ok' as const,text:'Charging'}:v>=12.4?{tone:'ok' as const,text:'Good'}:v>=12?{tone:'warn' as const,text:'Low: a longer drive or a charge helps'}:{tone:'error' as const,text:'Weak: the car may not start'};
+ return v>=13.2?{tone:'ok' as const,text:t('Charging')}:v>=12.4?{tone:'ok' as const,text:t('Good')}:v>=12?{tone:'warn' as const,text:t('Low: a longer drive or a charge helps')}:{tone:'error' as const,text:t('Weak: the car may not start')};
 }
 /** Boost over the outside air, from manifold and barometric pressure (turbo cars). */
 export const boost=(s?:Record<string,number>)=>s?.INTAKE_PRESSURE!=null&&s?.BARO_PRESSURE!=null?s.INTAKE_PRESSURE-s.BARO_PRESSURE:null;
@@ -123,4 +127,4 @@ export function metres(a:{latitude:number;longitude:number},b:{latitude:number;l
  return 2*6371000*Math.asin(Math.min(1,Math.sqrt(h)));
 }
 export const away=(m:number)=>m<1000?`${Math.round(m/10)*10} m`:`${(m/1000).toFixed(m<10000?1:0)} km`;
-export const since=(t?:number)=>{if(!t)return 'never';const m=Math.round((Date.now()/1000-t)/60);return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} days ago`;};
+export const since=(at?:number)=>{if(!at)return t('never');const m=Math.round((Date.now()/1000-at)/60);return m<1?t('just now'):m<60?t('{n} min ago',{n:m}):m<1440?t('{n} h ago',{n:Math.round(m/60)}):tp(Math.round(m/1440),'{n} day ago','{n} days ago');};
