@@ -17,8 +17,9 @@ type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:str
  carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean};onOpenCar:()=>void};
 
 /**
- * Home. The car sits on a night hero with glass quick actions; the light page slides over it as you scroll, while the
- * car drifts back at a third of the speed (depth, on the UI thread, dropped with Reduce Motion). Below: live status
+ * Home. The car sits on a night hero with square glass quick actions; as you scroll, the
+ * car recedes, shrinking and dimming a little, never sliding onto the quick actions (depth, on the UI thread,
+ * dropped with Reduce Motion). Below: live status
  * tiles, the last trip, smooth driving and reminders, each one card you can read at a glance.
  */
 export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar}:Props){
@@ -30,9 +31,10 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
  const onScroll=useAnimatedScrollHandler(e=>{scrollY.set(e.contentOffset.y);});
  const carStyle=useAnimatedStyle(()=>reduced?{}:{
   transform:[
-   {translateY:interpolate(scrollY.get(),[-120,0,260],[-18,0,86],Extrapolation.CLAMP)},
-   {scale:interpolate(scrollY.get(),[-120,0,260],[1.05,1,0.94],Extrapolation.CLAMP)},
+   {translateY:interpolate(scrollY.get(),[-120,0,260],[-18,0,14],Extrapolation.CLAMP)},
+   {scale:interpolate(scrollY.get(),[-120,0,260],[1.05,1,0.92],Extrapolation.CLAMP)},
   ],
+  opacity:interpolate(scrollY.get(),[0,260],[1,0.35],Extrapolation.CLAMP),
  });
  const route=routeOf(lastTrip);
  return <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={{paddingBottom:padBottom}}
@@ -55,7 +57,7 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
    {vehicle?<Animated.View style={[s.car,carStyle]} pointerEvents="none"><CarArt width={carWidth}/></Animated.View>:<View style={{height:24}}/>}
    {vehicle?<View style={s.actions}>
     <QuickAction icon={recorder.live?'radio':'play'} label="Drive" accent={recorder.live} onPress={()=>onGo('Record')}/>
-    <QuickAction icon="document-text" label="Car report" onPress={onOpenCar}/>
+    <QuickAction icon="document-text" label="Report" onPress={onOpenCar}/>
     <QuickAction icon="map" label="Trips" onPress={()=>onGo('Trips')}/>
     <QuickAction icon="construct" label="Service" onPress={()=>onGo('Service')}/>
    </View>:null}
