@@ -1,11 +1,13 @@
 import {useState,type ReactNode} from 'react';
 import {Pressable,type PressableProps,type StyleProp,type ViewStyle} from 'react-native';
-import Animated,{Easing,ReduceMotion,useReducedMotion} from 'react-native-reanimated';
+import Animated,{cubicBezier,Easing,ReduceMotion,useReducedMotion} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {motion} from './theme';
 
-export const EASE_OUT=Easing.bezier(0.23,1,0.32,1);
-export const EASE_IN_OUT=Easing.bezier(0.77,0,0.175,1);
+export const EASE_OUT=Easing.bezier(...motion.easeOut);
+export const EASE_IN_OUT=Easing.bezier(...motion.easeInOut);
+// Reanimated CSS transitions only take a predefined name or this helper; a 'cubic-bezier(...)' string throws.
+const PRESS_CURVE=cubicBezier(...motion.easeOut);
 /** Springs for anything a finger releases. Pass the gesture's velocity in, so the hand-off has no seam. */
 export const SPRING={
  snap:{...motion.snap,reduceMotion:ReduceMotion.System},
@@ -39,7 +41,7 @@ export function PressableScale({style,children,tick,scale=motion.press.scale,onP
   onPress={e=>{if(tick)haptic.step();onPress?.(e);}}
   style={[style,{
    transform:[{scale:down&&!reduced?scale:1}],
-   transitionProperty:'transform',transitionDuration:motion.press.duration,transitionTimingFunction:motion.easeOut,
+   transitionProperty:'transform',transitionDuration:motion.press.duration,transitionTimingFunction:PRESS_CURVE,
   } as any,down&&reduced&&{opacity:0.8}]}>
   {children}
  </AnimatedPressable>;

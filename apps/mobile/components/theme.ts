@@ -58,10 +58,10 @@ export const radius={sm:12,md:16,lg:22,xl:28,pill:999};
  */
 export const motion={
  press:{duration:120,scale:0.97},
- /** Strong ease-out for UI, as a CSS timing function for Reanimated transitions. */
- easeOut:'cubic-bezier(0.23, 1, 0.32, 1)',
+ /** Strong ease-out for UI, as cubic-bezier control points (see motion.tsx). */
+ easeOut:[0.23,1,0.32,1] as const,
  /** On-screen movement (tab and segment indicators). */
- easeInOut:'cubic-bezier(0.77, 0, 0.175, 1)',
+ easeInOut:[0.77,0,0.175,1] as const,
  snap:{duration:400,dampingRatio:0.8},
  sheet:{duration:300,dampingRatio:0.8},
  settle:{duration:400,dampingRatio:1},
