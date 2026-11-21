@@ -590,6 +590,12 @@ export const BG:Record<string,string>={
  "{n} s":"{n} с",
  "{n} waiting to upload":"{n} чакат изпращане",
  "{type} car":"Кола · {type}",
+ "Remove":"Премахни",
+ "Remove {name}?":"Да се премахне ли {name}?",
+ "Rename or remove {name}":"Преименувай или премахни {name}",
+ "Save":"Запази",
+ "The car leaves your garage on every phone. Its trips and readings stay saved on the server.":"Колата изчезва от гаража ви на всички телефони. Пътуванията и показанията ѝ остават запазени на сървъра.",
+ "Vehicle name":"Име на автомобила",
 };
 
 /** Counted texts: [one, other]. */

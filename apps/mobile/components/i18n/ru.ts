@@ -590,6 +590,12 @@ export const RU:Record<string,string>={
  "{n} s":"{n} с",
  "{n} waiting to upload":"ожидают отправки: {n}",
  "{type} car":"Автомобиль · {type}",
+ "Remove":"Удалить",
+ "Remove {name}?":"Удалить {name}?",
+ "Rename or remove {name}":"Переименовать или удалить {name}",
+ "Save":"Сохранить",
+ "The car leaves your garage on every phone. Its trips and readings stay saved on the server.":"Автомобиль исчезнет из гаража на всех телефонах. Его поездки и показания останутся на сервере.",
+ "Vehicle name":"Название автомобиля",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

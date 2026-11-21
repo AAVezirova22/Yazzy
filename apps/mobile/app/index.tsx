@@ -47,9 +47,9 @@ export default function App(){
  /** Shows the last-known garage from the phone at once; the effects below then refresh it from the server. */
  const boot=useCallback(async()=>{
   const [list,saved]=await Promise.all([readCache<any[]>('vehicles'),SecureStore.getItemAsync('yazzy-vehicle').catch(()=>null)]);
-  const id=list?.find(v=>v.id===saved)?.id||saved||list?.[0]?.id||'';
+  const id=active(list).find(v=>v.id===saved)?.id||active(list)[0]?.id||saved||'';
   fresh.current={};carRef.current=null;inflight.current=null;
-  setApi(server.api);setVehicles(list||[]);setCar(null);setSelected(id);setOffline('');setMode(server.mode);setSession(n=>n+1);
+  setApi(server.api);setVehicles(active(list));setCar(null);setSelected(id);setOffline('');setMode(server.mode);setSession(n=>n+1);
  },[]);
  // The saved language is read with the saved connection, before the first screen, so it never flashes the default.
  useEffect(()=>{Promise.all([server.restore().catch(()=>null),loadLang()]).then(boot);},[]);
@@ -57,14 +57,14 @@ export default function App(){
 
  useEffect(()=>{
   if(!mode)return;
-  let active=true;
-  server.call('/vehicles').then((list:any[])=>{
-   if(!active)return;
-   setVehicles(list);void writeCache('vehicles',list);
+  let live=true;
+  server.call('/vehicles').then((all:any[])=>{
+   if(!live)return;
+   const list=active(all);setVehicles(list);void writeCache('vehicles',list);
    const cur=selectedRef.current,id=list.some(v=>v.id===cur)?cur:(list[0]?.id||'');
    if(id!==cur){setSelected(id);if(id)SecureStore.setItemAsync('yazzy-vehicle',id).catch(()=>{});}
-  }).catch(e=>{if(active)setOffline(quiet((e as Error).message));});
-  return()=>{active=false;};
+  }).catch(e=>{if(live)setOffline(quiet((e as Error).message));});
+  return()=>{live=false;};
  },[mode,session]);
 
  /** Refreshes the selected car's trips, fuel, findings and service, at most every 30 s unless forced, and saves them. */
@@ -155,7 +155,15 @@ export default function App(){
  },[mode,tab,go]);
  const openGarage=useCallback(()=>setGarageOpen(true),[]),closeGarage=useCallback(()=>setGarageOpen(false),[]);
  const pickVehicle=useCallback((id:string)=>{setSelected(id);SecureStore.setItemAsync('yazzy-vehicle',id).catch(()=>{});setGarageOpen(false);},[]);
- const vehicleAdded=useCallback((list:any[],id?:string)=>{setVehicles(list);void writeCache('vehicles',list);if(id)pickVehicle(id);},[pickVehicle]);
+ const vehicleAdded=useCallback((all:any[],id?:string)=>{const list=active(all);setVehicles(list);void writeCache('vehicles',list);if(id)pickVehicle(id);},[pickVehicle]);
+ /** Saves fields on a car, retrying once on a stale version, and puts the server's copy in the list. A removed (archived) car leaves the list. */
+ const updateVehicle=useCallback(async(id:string,fields:Record<string,unknown>)=>{
+  const save=(version:number)=>server.call(`/vehicles/${id}`,{...fields,version},'PATCH');
+  let v=vehiclesRef.current.find(x=>x.id===id),updated;
+  try{updated=await save(v?.version??1);}catch(e){if((e as Error).message!=='STALE_VERSION')throw e;v=await server.call(`/vehicles/${id}`);updated=await save(v.version);}
+  const list=active(vehiclesRef.current.map(x=>x.id===id?updated:x));setVehicles(list);void writeCache('vehicles',list);
+  if(selectedRef.current===id&&updated.archived){const next=list[0]?.id||'';setSelected(next);setCar(null);carRef.current=null;SecureStore.setItemAsync('yazzy-vehicle',next).catch(()=>{});}
+ },[]);
 
  // The car report: what the recorder read from the car, merged with its latest live values, kept per car on the phone
  // and on the server. The newest of the phone's copy and the server's copy wins.
@@ -235,11 +243,7 @@ export default function App(){
 
   <Sheet open={garageOpen} onClose={closeGarage} title={t('Your vehicles')}>
    <ScrollView style={{maxHeight:300}}>
-    {vehicles.map((v,i)=>{const on=selected===v.id;return <Pressable key={v.id} accessibilityRole="button" accessibilityState={{selected:on}} style={({pressed})=>[s.listRow,i>0&&s.listRowBorder,pressed&&{opacity:0.7}]} onPress={()=>pickVehicle(v.id)}>
-     <View style={[s.circle,on?{backgroundColor:c.night}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
-     <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{carLine(v)}</Text></View>
-     {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
-    </Pressable>;})}
+    {vehicles.map((v,i)=><VehicleRow key={v.id} vehicle={v} first={i===0} on={selected===v.id} onPick={pickVehicle} onUpdate={updateVehicle}/>)}
     {!vehicles.length&&<Text style={[ui.body,{paddingVertical:10}]}>{t('No vehicles yet. Add your first one below.')}</Text>}
    </ScrollView>
    <AddVehicle onAdded={vehicleAdded}/>
@@ -254,6 +258,34 @@ export default function App(){
   </Modal>
  </View>;
 }
+
+/** One car in the garage sheet. The pencil turns the row into a name field with Save and Remove. */
+function VehicleRow({vehicle:v,first,on,onPick,onUpdate}:{vehicle:any;first:boolean;on:boolean;onPick:(id:string)=>void;onUpdate:(id:string,fields:Record<string,unknown>)=>Promise<void>}){
+ const [editing,setEditing]=useState(false),[name,setName]=useState(v.name),[busy,run]=useAction();
+ const trimmed=name.trim(),canSave=!busy&&!!trimmed&&trimmed!==v.name;
+ const remove=()=>Alert.alert(t('Remove {name}?',{name:v.name}),t('The car leaves your garage on every phone. Its trips and readings stay saved on the server.'),[
+  {text:t('Cancel'),style:'cancel'},
+  {text:t('Remove'),style:'destructive',onPress:()=>{void run(()=>onUpdate(v.id,{archived:true}));}},
+ ]);
+ if(editing)return <View style={[s.listRow,!first&&s.listRowBorder]}>
+  <TextInput style={[ui.input,{flex:1,marginBottom:0}]} value={name} onChangeText={setName} autoFocus maxLength={100} placeholder={t('Vehicle name')} placeholderTextColor={c.faint}
+   returnKeyType="done" onSubmitEditing={()=>{if(canSave)void run(async()=>{await onUpdate(v.id,{name:trimmed});setEditing(false);});}}/>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Save')} disabled={!canSave} hitSlop={6} onPress={()=>run(async()=>{await onUpdate(v.id,{name:trimmed});setEditing(false);})} style={[s.send,!canSave&&{opacity:0.4}]}><Icon name="checkmark" size={22} color="#fff"/></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Remove')} disabled={busy} hitSlop={6} onPress={remove} style={[s.send,{backgroundColor:c.red}]}><Icon name="trash-outline" size={20} color="#fff"/></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Cancel')} hitSlop={6} onPress={()=>{setName(v.name);setEditing(false);}} style={s.iconButton}><Icon name="close" size={22} color={c.muted}/></Pressable>
+ </View>;
+ return <View style={[s.listRow,!first&&s.listRowBorder]}>
+  <Pressable accessibilityRole="button" accessibilityState={{selected:on}} style={({pressed})=>[{flex:1,flexDirection:'row',alignItems:'center',gap:12},pressed&&{opacity:0.7}]} onPress={()=>onPick(v.id)}>
+   <View style={[s.circle,on?{backgroundColor:c.night}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
+   <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{carLine(v)}</Text></View>
+   {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
+  </Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Rename or remove {name}',{name:v.name})} hitSlop={6} onPress={()=>{setName(v.name);setEditing(true);}} style={s.iconButton}><Icon name="create-outline" size={20} color={c.muted}/></Pressable>
+ </View>;
+}
+
+/** Cars the user removed are archived on the server and never shown. */
+const active=(list:any[]|null|undefined)=>(list||[]).filter(v=>!v.archived);
 
 function AddVehicle({onAdded}:{onAdded:(list:any[],id?:string)=>void}){
  const [name,setName]=useState(''),[busy,run]=useAction(),off=busy||!name.trim();
@@ -271,4 +303,5 @@ const s=StyleSheet.create({
  listRowBorder:{borderTopWidth:1,borderTopColor:c.line2},
  radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},
  send:{width:48,height:48,borderRadius:3,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
+ iconButton:{width:44,height:44,alignItems:'center',justifyContent:'center'},
 });
