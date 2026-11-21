@@ -1,9 +1,10 @@
 import {memo,useState,type ReactNode} from 'react';
-import {Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {Alert,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import {c,ui} from '../theme';
-import {Button,Icon,Notice,ScreenHeader,useAction} from '../kit';
+import {c,F,radius,ui} from '../theme';
+import {Button,Group,Icon,ListRow,Notice,ScreenHeader,Section,useAction} from '../kit';
+import {PressableScale} from '../motion';
 import {Sheet} from '../Sheet';
 import {server} from '../server';
 
@@ -30,19 +31,26 @@ export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,pa
  const [message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null),[serverOpen,setServerOpen]=useState(false);
  const host=api.replace(/^https?:\/\//,'');
  return <ScrollView contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}} keyboardShouldPersistTaps="handled">
-  <ScreenHeader title="More"/>
-  <Row icon="car-sport" tint={c.blue} bg={c.blue50} title="Vehicles" caption={`${vehicleCount} in your garage${vehicle?` · ${vehicle.name} selected`:''}`} onPress={onVehicles}/>
-  <Row icon="document-text" tint={c.blue} bg={c.blue50} title="Car report" caption="Type, battery, fault codes, readiness · export PDF" onPress={onCar}/>
+  <ScreenHeader title="More" subtitle={vehicle?vehicle.name:undefined}/>
+  <Section title="Garage"/>
+  <Group>
+   <ListRow card={false} first icon="car-sport" title="Vehicles" caption={`${vehicleCount} in your garage${vehicle?` · ${vehicle.name} selected`:''}`} onPress={onVehicles}/>
+   <ListRow card={false} icon="document-text" title="Car report" caption="Type, battery, fault codes, readiness · export PDF" onPress={onCar}/>
+  </Group>
+  <Section title="Assistant"/>
   <View style={ui.card}>
    <Text style={ui.title}>Ask about your car</Text>
    <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Answers come from your car's recorded evidence, never invented readings.</Text>
    <View style={[ui.row,{gap:10}]}>
     <TextInput style={[ui.input,{flex:1,marginBottom:0}]} value={message} onChangeText={setMessage} placeholder="Why did fuel use go up?" placeholderTextColor={c.faint}/>
-    <Pressable accessibilityRole="button" accessibilityLabel="Ask" disabled={busy||!message.trim()} onPress={()=>run(async()=>setAnswer(await server.call('/assistant/messages',{vehicleId:selected,message})))} style={({pressed})=>[s.send,(busy||!message.trim())&&{opacity:0.45},pressed&&{opacity:0.8}]}><Icon name="arrow-up" size={20} color="#fff"/></Pressable>
+    <PressableScale accessibilityRole="button" accessibilityLabel="Ask" disabled={busy||!message.trim()} scale={0.92} onPress={()=>run(async()=>setAnswer(await server.call('/assistant/messages',{vehicleId:selected,message})))} style={[s.send,(busy||!message.trim())&&{opacity:0.45}]}><Icon name="arrow-up" size={20} color="#fff"/></PressableScale>
    </View>
    {answer&&<View style={s.answer}><Text style={[ui.body,{color:c.ink2}]}>{answer.text}</Text>{answer.type==='CONFIRMATION'&&<Button title="Confirm inspection task" icon="checkmark" onPress={()=>run(async()=>{await server.call('/pending-actions/'+answer.pendingActionId+'/confirm',{});Alert.alert('Work order created');})}/>}</View>}
   </View>
-  <Row icon="cloud-done" tint={c.green} bg={c.green50} title="Server" caption={`${host} · ${server.mode==='oidc'?'signed in securely':'connected'}`} onPress={()=>setServerOpen(true)}/>
+  <Section title="Connection"/>
+  <Group>
+   <ListRow card={false} first icon="cloud-done" tone="green" title="Server" caption={`${host} · ${server.mode==='oidc'?'signed in securely':'connected'}`} onPress={()=>setServerOpen(true)}/>
+  </Group>
   <Text style={s.note}>Read-only diagnostics. Yazzy never clears codes or controls anything in your car.{build?`\nYazzy build ${build}`:''}</Text>
 
   <Sheet open={serverOpen} onClose={()=>setServerOpen(false)} title="Server">
@@ -54,20 +62,9 @@ export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,pa
  </ScrollView>;
 });
 
-function Row({icon,tint,bg,title,caption,onPress}:{icon:string;tint:string;bg:string;title:string;caption:string;onPress:()=>void}){
- return <Pressable accessibilityRole="button" onPress={onPress} style={({pressed})=>[ui.card,s.rowCard,pressed&&{opacity:0.9}]}>
-  <View style={[s.circle,{backgroundColor:bg}]}><Icon name={icon} size={18} color={tint}/></View>
-  <View style={{flex:1}}><Text style={s.rowTitle} numberOfLines={1}>{title}</Text><Text style={ui.caption} numberOfLines={1}>{caption}</Text></View>
-  <Icon name="chevron-forward" size={16} color={c.ink}/>
- </Pressable>;
-}
-
 const s=StyleSheet.create({
- rowCard:{flexDirection:'row',alignItems:'center',gap:12},
- circle:{width:40,height:40,borderRadius:20,alignItems:'center',justifyContent:'center'},
- rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
- fieldLabel:{fontSize:13,fontWeight:'600',color:c.ink2,marginBottom:6},
+ fieldLabel:{fontFamily:F[700],fontSize:13,color:c.ink2,marginBottom:6},
  send:{width:48,height:48,borderRadius:24,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
- answer:{backgroundColor:c.blue50,borderRadius:16,padding:14,marginTop:12},
- note:{fontSize:12.5,lineHeight:18,color:c.muted,marginTop:6,marginBottom:10,paddingHorizontal:4,textAlign:'center'},
+ answer:{backgroundColor:c.blue50,borderRadius:radius.md,padding:14,marginTop:12},
+ note:{fontFamily:F[500],fontSize:12.5,lineHeight:18,color:c.muted,marginTop:6,marginBottom:10,paddingHorizontal:4,textAlign:'center'},
 });

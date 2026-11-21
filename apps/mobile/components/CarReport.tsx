@@ -2,9 +2,10 @@ import {useState,type ReactNode} from 'react';
 import {Alert,Platform,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {StatusBar} from 'expo-status-bar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {c,mono,shadow,ui} from './theme';
+import {c,F,floatShadow,mono,radius,ui} from './theme';
+import {PressableScale} from './motion';
 import {Button,Icon,Notice} from './kit';
-import {CarArt} from './art';
+import {CarArt,NightGlow} from './art';
 import {exportCarPdf} from './carPdf';
 import {CarLocation} from './CarMap';
 import {battery12,boost,carSpot,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
@@ -31,14 +32,15 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
   <StatusBar style="light"/>
   <ScrollView contentContainerStyle={{paddingBottom:120+insets.bottom}}>
    <View style={[s_.hero,{paddingTop:insets.top+10}]}>
-    <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={({pressed})=>[s_.back,pressed&&{opacity:0.8}]}>
+    <NightGlow glowX="80%" glowY="85%"/>
+    <PressableScale accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={s_.back}>
      <Icon name="arrow-back" size={18} color="#fff"/><Text style={s_.backText}>Car report</Text>
-    </Pressable>
+    </PressableScale>
     <Text style={s_.name} numberOfLines={2}>{vehicle?.name||'Your car'}</Text>
     <Text style={s_.sub} numberOfLines={1}>{vehicle?[carLine(vehicle),maker&&!vehicle.make?maker:null].filter(Boolean).join(' · '):''}</Text>
     <View style={[ui.row,{gap:8,marginTop:14,flexWrap:'wrap'}]}>
      <View style={s_.badge}><Icon name={kindIcon(kind)} size={14} color="#fff"/><Text style={s_.badgeText}>{type.label}</Text></View>
-     <View style={[s_.badge,{backgroundColor:c.night2}]}><View style={[s_.dot,{backgroundColor:live?'#4ade80':c.nightMuted}]}/><Text style={s_.badgeText}>{live?'Live from the car':p.readAt?`Read ${since(p.readAt)}`:'Not read yet'}</Text></View>
+     <View style={[s_.badge,s_.glass]}><View style={[s_.dot,{backgroundColor:live?'#4ade80':c.nightMuted}]}/><Text style={s_.badgeText}>{live?'Live from the car':p.readAt?`Read ${since(p.readAt)}`:'Not read yet'}</Text></View>
     </View>
     <Text style={s_.source}>{type.source}</Text>
     <View style={s_.car} pointerEvents="none"><CarArt width={220}/></View>
@@ -145,36 +147,38 @@ function Code({code,kind}:{code:string;kind:string}){
 
 const s_=StyleSheet.create({
  page:{flex:1,backgroundColor:c.bg},
- hero:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:24,overflow:'hidden',minHeight:250},
- back:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:'rgba(255,255,255,0.1)',borderRadius:999,paddingVertical:9,paddingHorizontal:14,marginBottom:18},
- backText:{fontSize:14,fontWeight:'700',color:'#fff'},
- name:{fontSize:28,fontWeight:'800',color:'#fff',letterSpacing:-0.8,maxWidth:'70%'},
- sub:{fontSize:14,color:c.nightMuted,marginTop:4,maxWidth:'70%'},
- badge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:c.blue,borderRadius:999,paddingVertical:6,paddingHorizontal:11},
- badgeText:{fontSize:12.5,fontWeight:'700',color:'#fff'},
+ hero:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:44,overflow:'hidden',minHeight:270},
+ back:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:c.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine,borderRadius:radius.pill,paddingVertical:9,paddingHorizontal:14,marginBottom:18},
+ backText:{fontFamily:F[700],fontSize:14,color:'#fff'},
+ name:{fontFamily:F[800],fontSize:30,lineHeight:36,color:'#fff',letterSpacing:-0.9,maxWidth:'70%'},
+ sub:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:4,maxWidth:'70%'},
+ badge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:c.blue,borderRadius:radius.pill,paddingVertical:6,paddingHorizontal:11},
+ glass:{backgroundColor:c.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine},
+ badgeText:{fontFamily:F[700],fontSize:12.5,color:'#fff'},
  dot:{width:7,height:7,borderRadius:4},
- source:{fontSize:12,color:c.nightMuted,marginTop:8,maxWidth:'62%'},
- car:{position:'absolute',right:-30,bottom:-6},
- body:{padding:16},
- link:{fontSize:13.5,fontWeight:'700',color:c.blue},
+ source:{fontFamily:F[500],fontSize:12,color:c.nightMuted,marginTop:8,maxWidth:'62%'},
+ car:{position:'absolute',right:-30,bottom:30},
+ // The light page rises over the night hero with rounded corners, as on Home.
+ body:{padding:16,marginTop:-26,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,backgroundColor:c.bg},
+ link:{fontFamily:F[700],fontSize:13.5,color:c.blue},
  chips:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:10},
- chip:{flexDirection:'row',alignItems:'center',gap:6,borderRadius:999,paddingVertical:8,paddingHorizontal:12,backgroundColor:c.blue50},
+ chip:{flexDirection:'row',alignItems:'center',gap:6,borderRadius:radius.pill,paddingVertical:8,paddingHorizontal:12,backgroundColor:c.blue50},
  chipOn:{backgroundColor:c.blue},
- chipText:{fontSize:13,fontWeight:'700',color:c.blue},
- big:{fontSize:34,fontWeight:'800',color:c.ink,letterSpacing:-1,fontVariant:['tabular-nums']},
+ chipText:{fontFamily:F[700],fontSize:13,color:c.blue},
+ big:{fontFamily:F[800],fontSize:34,color:c.ink,letterSpacing:-1,fontVariant:['tabular-nums']},
  track:{height:12,borderRadius:6,backgroundColor:c.track,overflow:'hidden',marginTop:10,marginBottom:6},
  fill:{height:'100%',borderRadius:6},
- row:{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:16,paddingVertical:8,borderTopWidth:1,borderTopColor:c.line2},
- rowLabel:{fontSize:14,color:c.muted,flexShrink:0,maxWidth:'55%'},
- rowValue:{fontSize:14,fontWeight:'700',textAlign:'right'},
+ row:{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:16,paddingVertical:9,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
+ rowLabel:{fontFamily:F[500],fontSize:14,color:c.muted,flexShrink:0,maxWidth:'55%'},
+ rowValue:{fontFamily:F[700],fontSize:14,textAlign:'right',fontVariant:['tabular-nums']},
  lamp:{width:26,height:26,borderRadius:13,alignItems:'center',justifyContent:'center'},
- code:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:9,borderTopWidth:1,borderTopColor:c.line2},
+ code:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:9,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
  codeTag:{backgroundColor:c.amber50,borderRadius:8,paddingVertical:5,paddingHorizontal:8},
  codeText:{fontFamily:mono,fontSize:13,fontWeight:'700',color:c.amber},
- codeTitle:{fontSize:14,fontWeight:'600',color:c.ink},
+ codeTitle:{fontFamily:F[600],fontSize:14,color:c.ink},
  grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:10,marginTop:4},
  tile:{width:'48.5%',backgroundColor:c.surface2,borderRadius:14,padding:12},
- tileValue:{fontSize:16,fontWeight:'700',color:c.ink,fontVariant:['tabular-nums']},
- footer:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:14,backgroundColor:c.surface,borderTopLeftRadius:26,borderTopRightRadius:26,paddingHorizontal:20,paddingTop:14,...shadow,shadowOffset:{width:0,height:-4},elevation:12},
- footTitle:{fontSize:20,fontWeight:'800',color:c.ink,letterSpacing:-0.4},
+ tileValue:{fontFamily:F[700],fontSize:16,color:c.ink,fontVariant:['tabular-nums']},
+ footer:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:14,backgroundColor:c.frost,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,paddingHorizontal:20,paddingTop:14,borderWidth:StyleSheet.hairlineWidth,borderColor:c.frostLine,...floatShadow,shadowOpacity:0.1,shadowOffset:{width:0,height:-6}},
+ footTitle:{fontFamily:F[800],fontSize:20,color:c.ink,letterSpacing:-0.4},
 });

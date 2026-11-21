@@ -1,12 +1,14 @@
 import {memo,useMemo} from 'react';
-import {ActivityIndicator,Pressable,RefreshControl,ScrollView,StyleSheet,Text,useWindowDimensions,View} from 'react-native';
+import {ActivityIndicator,RefreshControl,StyleSheet,Text,useWindowDimensions,View} from 'react-native';
+import Animated,{Extrapolation,interpolate,useAnimatedScrollHandler,useAnimatedStyle,useReducedMotion,useSharedValue} from 'react-native-reanimated';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Updater} from '../Updater';
-import {c,ui} from '../theme';
-import {Button,Icon,Notice,RoundButton,Stat} from '../kit';
-import {CarArt,RouteArt,WeekBars} from '../art';
+import {c,F,radius,type,ui} from '../theme';
+import {Button,Chip,Icon,ListRow,Notice,QuickAction,RoundButton,Section,Tile} from '../kit';
+import {PressableScale} from '../motion';
+import {CarArt,NightGlow,Ring,RouteArt,WeekBars} from '../art';
 import {distance,minutes} from '../TripDetail';
-import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,weekday} from '../format';
+import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,smoothDriving,weekday} from '../format';
 import type {Car} from './types';
 import {kindIcon,type Kind} from '../car';
 
@@ -14,31 +16,52 @@ type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:str
  onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
  carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean};onOpenCar:()=>void};
 
-/** Home: the selected car on a night header, with distance, fuel, health, the last trip and service at a glance. */
+/**
+ * Home. The car sits on a night hero with glass quick actions; the light page slides over it as you scroll, while the
+ * car drifts back at a third of the speed (depth, on the UI thread, dropped with Reduce Motion). Below: live status
+ * tiles, the last trip, smooth driving and reminders, each one card you can read at a glance.
+ */
 export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar}:Props){
- const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-24,380);
+ const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-48,360),reduced=useReducedMotion();
  const lastTrip=latest(car?.trips,'startAt'),lastService=latest(car?.service,'observedAt'),findingCount=car?.findings?.length??0;
  const week=useMemo(()=>lastWeek(car?.trips),[car?.trips]),weekKm=week.reduce((a,b)=>a+b,0),fuel=car?.fuel;
- return <ScrollView contentContainerStyle={{paddingBottom:padBottom}} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" colors={[c.blue]} progressViewOffset={insets.top}/>}>
+ const smooth=useMemo(()=>smoothDriving(car?.trips),[car?.trips]);
+ const scrollY=useSharedValue(0);
+ const onScroll=useAnimatedScrollHandler(e=>{scrollY.set(e.contentOffset.y);});
+ const carStyle=useAnimatedStyle(()=>reduced?{}:{
+  transform:[
+   {translateY:interpolate(scrollY.get(),[-120,0,260],[-18,0,86],Extrapolation.CLAMP)},
+   {scale:interpolate(scrollY.get(),[-120,0,260],[1.05,1,0.94],Extrapolation.CLAMP)},
+  ],
+ });
+ const route=routeOf(lastTrip);
+ return <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={{paddingBottom:padBottom}}
+  refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" colors={[c.blue]} progressViewOffset={insets.top}/>}>
   <View style={s.overscroll}/>
-  <View style={[s.top,{paddingTop:insets.top+16,paddingBottom:vehicle?92:28}]}>
+  <View style={[s.hero,{paddingTop:insets.top+14}]}>
+   <NightGlow/>
    <View style={[ui.row,{alignItems:'flex-start',gap:12}]}>
     <View style={{flex:1}}>
      <Text style={s.greet}>{greeting()}</Text>
-     <Text style={s.topTitle} numberOfLines={2}>{vehicle?vehicle.name:'Your garage'}</Text>
-     <Text style={s.topText} numberOfLines={1}>{vehicle?carLine(vehicle):'Add your first vehicle to begin'}</Text>
+     <Text style={s.name} numberOfLines={2}>{vehicle?vehicle.name:'Your garage'}</Text>
+     <Text style={s.line} numberOfLines={1}>{vehicle?carLine(vehicle):'Add your first vehicle to begin'}</Text>
     </View>
     {busy&&!refreshing?<ActivityIndicator color={c.nightMuted} style={{marginTop:12}}/>:null}
     <RoundButton dark icon="swap-horizontal" label="Switch or add vehicle" onPress={onSwitch}/>
    </View>
-   {vehicle?<Pressable accessibilityRole="button" accessibilityLabel={`Recorder: ${recorder.label}. Open Drive`} onPress={()=>onGo('Record')} style={({pressed})=>[s.statusPill,pressed&&{opacity:0.8}]}>
-    <View style={[s.dot,{backgroundColor:recorder.live?'#4ade80':recorder.recording?c.blue300:c.nightMuted}]}/>
-    <Text style={s.statusText}>{recorder.label}</Text>
-    <Icon name="chevron-forward" size={13} color={c.nightMuted}/>
-   </Pressable>:null}
+   {vehicle?<PressableScale accessibilityRole="button" accessibilityLabel={`Recorder: ${recorder.label}. Open Drive`} onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',marginTop:14}}>
+    <Chip glass dot={recorder.live?'#4ade80':recorder.recording?c.blue300:c.nightMuted} label={recorder.label}/>
+   </PressableScale>:null}
+   {vehicle?<Animated.View style={[s.car,carStyle]} pointerEvents="none"><CarArt width={carWidth}/></Animated.View>:<View style={{height:24}}/>}
+   {vehicle?<View style={s.actions}>
+    <QuickAction icon={recorder.live?'radio':'play'} label="Drive" accent={recorder.live} onPress={()=>onGo('Record')}/>
+    <QuickAction icon="document-text" label="Car report" onPress={onOpenCar}/>
+    <QuickAction icon="map" label="Trips" onPress={()=>onGo('Trips')}/>
+    <QuickAction icon="construct" label="Service" onPress={()=>onGo('Service')}/>
+   </View>:null}
   </View>
-  {vehicle?<View style={[s.car,{marginTop:-(carWidth*0.4)+34}]}><CarArt width={carWidth}/></View>:null}
-  <View style={[s.pad,{paddingTop:vehicle?4:20}]}>
+
+  <View style={s.sheet}>
    {offline?<Notice icon="cloud-offline-outline" tone="warn">{offline} Showing what was saved on this phone.</Notice>:null}
    <Updater/>
    {!vehicle?<View style={ui.card}>
@@ -46,60 +69,72 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
     <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Add your car to start recording trips, fuel and health.</Text>
     <Button title="Add a vehicle" icon="add" onPress={onSwitch}/>
    </View>:<>
+    <Section title="Status"/>
     <View style={s.tiles}>
-     <Stat title="Distance" icon="trending-up" value={fmt(fuel?.distanceKm,0)} unit="km" caption={fuel?.tripCount?`${fmt(weekKm)} km this week · ${fuel.tripCount} trips`:'No trips yet'} onPress={()=>onGo('Trips')} style={{flex:1}}>
-      <WeekBars values={week}/>
-     </Stat>
+     <Tile style={{flex:1}} icon="trending-up" label="This week" value={fmt(weekKm,0)} unit="km" caption={fuel?.tripCount?`${fmt(fuel.distanceKm,0)} km in ${fuel.tripCount} trips`:'No trips yet'} onPress={()=>onGo('Trips')}>
+      <WeekBars values={week} height={52}/>
+     </Tile>
      <View style={{flex:1,gap:12}}>
-      <Stat title="Fuel" icon="water" value={fuel?.litresPer100Km!=null?fmt(fuel.litresPer100Km):fmt(fuel?.fuelLitres)} unit={fuel?.litresPer100Km!=null?'L/100':'L'} caption={fuel?.litresPer100Km!=null?'Average use':'Used on trips'} onPress={()=>onGo('Trips')}/>
-      <Stat title="Health" icon="pulse" tone={car?.findings?findingCount?'warn':'ok':undefined} value={!car?.findings?'—':findingCount?String(findingCount):'All clear'} unit={findingCount?'to review':undefined} caption={findingCount?'Evidence-backed':'No findings'} onPress={()=>onGo('Health')}/>
+      <Tile icon="water" label="Fuel" value={fuel?.litresPer100Km!=null?fmt(fuel.litresPer100Km):fmt(fuel?.fuelLitres)} unit={fuel?.litresPer100Km!=null?'L/100':'L'} caption={fuel?.litresPer100Km!=null?'Average use':'Used on trips'} onPress={()=>onGo('Trips')}/>
+      <Tile icon="pulse" tone={car?.findings?findingCount?'amber':'green':'blue'} label="Health" value={!car?.findings?'—':findingCount?String(findingCount):'All clear'} unit={findingCount?'to review':undefined} caption={findingCount?'Evidence-backed':'No findings'} onPress={()=>onGo('Health')}/>
      </View>
     </View>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Car report: ${carInfo.label}`} onPress={onOpenCar} style={({pressed})=>[ui.card,s.rowCard,pressed&&{opacity:0.9}]}>
-     <View style={[s.circle,{backgroundColor:carInfo.mil?c.amber50:c.blue50}]}><Icon name={carInfo.mil?'warning':kindIcon(carInfo.kind)} size={18} color={carInfo.mil?c.amber:c.blue}/></View>
+
+    <Section title="Last trip" action={lastTrip?'All trips':undefined} onAction={()=>onGo('Trips')}/>
+    {lastTrip?<PressableScale accessibilityRole="button" accessibilityLabel={`Last trip, ${weekday(lastTrip.startAt)}, ${distance(lastTrip.metrics?.distanceKm)}`} onPress={()=>onOpenTrip(lastTrip)} style={[ui.card,s.trip]}>
+     {route.length?<RouteArt route={route} style={s.thumb} stroke={3.5}/>:<View style={[s.thumb,s.thumbEmpty]}><Icon name="navigate" size={26} color={c.blue}/></View>}
      <View style={{flex:1}}>
-      <Text style={s.rowTitle}>{carInfo.kind?`${carInfo.label} car`:'Car report'}</Text>
-      <Text style={[ui.caption,carInfo.mil&&{color:c.amber}]} numberOfLines={1}>{!carInfo.read?'Type, codes and battery: read on your next drive':carInfo.mil?`Check engine light on · ${carInfo.codes} codes`:carInfo.codes?`${carInfo.codes} stored fault codes`:'Check engine off · no fault codes'}</Text>
+      <Text style={type.overline}>{weekday(lastTrip.startAt)} · {clock(lastTrip.startAt)}</Text>
+      <Text style={[type.metric,{marginTop:8}]} numberOfLines={1}>{distance(lastTrip.metrics?.distanceKm)}</Text>
+      <View style={[ui.row,{gap:10,marginTop:4,flexWrap:'wrap'}]}>
+       <Text style={s.meta}>{minutes(lastTrip.metrics?.durationSeconds||0)}</Text>
+       {lastTrip.metrics?.fuelLitres!=null?<Text style={s.meta}>{lastTrip.metrics.fuelMethod==='MAF_ESTIMATE_PETROL'?'≈ ':''}{fmt(lastTrip.metrics.fuelLitres,2)} L</Text>:null}
+      </View>
      </View>
-     <Icon name="chevron-forward" size={16} color={c.ink}/>
-    </Pressable>
-    <View style={[ui.card,s.tripCard]}>
-     <View style={{flex:1,paddingRight:12}}>
-      <Text style={ui.title}>Last trip</Text>
-      <Text style={[ui.caption,{marginTop:2}]}>{lastTrip?`${weekday(lastTrip.startAt)} · ${clock(lastTrip.startAt)}`:'No recorded journeys yet'}</Text>
-      <Text style={[ui.value,{marginTop:12}]}>{lastTrip?distance(lastTrip.metrics?.distanceKm):'—'}</Text>
-      <Text style={ui.caption}>{lastTrip?minutes(lastTrip.metrics?.durationSeconds||0):'Start a drive from the Drive tab'}</Text>
-      <Button title={lastTrip?'View trip':'Start a drive'} icon={lastTrip?'navigate':'play'} onPress={()=>lastTrip?onOpenTrip(lastTrip):onGo('Record')} style={{marginTop:14,minHeight:44,alignSelf:'flex-start',paddingHorizontal:16}}/>
+     <Icon name="chevron-forward" size={16} color={c.faint}/>
+    </PressableScale>:<View style={[ui.card,s.trip]}>
+     <View style={[s.thumb,s.thumbEmpty]}><Icon name="map-outline" size={26} color={c.faint}/></View>
+     <View style={{flex:1}}><Text style={ui.title}>No trips yet</Text><Text style={[ui.caption,{marginTop:2,marginBottom:10}]}>Start a drive and it appears here with its route.</Text>
+      <Button title="Start a drive" icon="play" onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',minHeight:44,paddingHorizontal:16,marginVertical:0}}/></View>
+    </View>}
+
+    <Section title="Driving"/>
+    <View style={[ui.card,s.smooth]}>
+     <Ring value={smooth.drives?smooth.smooth/smooth.drives:0}>
+      <Text style={s.ringValue}>{smooth.drives?`${Math.round(smooth.smooth/smooth.drives*100)}%`:'—'}</Text>
+     </Ring>
+     <View style={{flex:1}}>
+      <Text style={ui.title}>Smooth drives</Text>
+      <Text style={[ui.body,{marginTop:3}]}>{smooth.drives?`${smooth.smooth} of ${smooth.drives} drives in the last 30 days had no hard braking or acceleration.`:'No drives in the last 30 days yet.'}</Text>
+      {smooth.events?<View style={{marginTop:8}}><Chip tone="amber" label={`${smooth.events} hard ${smooth.events===1?'event':'events'}`}/></View>:null}
      </View>
-     {routeOf(lastTrip).length?<RouteArt route={routeOf(lastTrip)} style={s.tripThumb} stroke={3.5}/>
-      :<View style={[s.tripThumb,{alignItems:'center',justifyContent:'center'}]}><Icon name="map-outline" size={30} color={c.faint}/></View>}
     </View>
-    <Pressable accessibilityRole="button" onPress={()=>onGo('Service')} style={({pressed})=>[ui.card,s.rowCard,pressed&&{opacity:0.9}]}>
-     <View style={[s.circle,{backgroundColor:c.green50}]}><Icon name="construct" size={18} color={c.green}/></View>
-     <View style={{flex:1}}><Text style={s.rowTitle}>Service</Text><Text style={ui.caption} numberOfLines={1}>{lastService?`${lastService.description} · ${ago(lastService.observedAt)}`:'No maintenance records yet'}</Text></View>
-     <Icon name="chevron-forward" size={16} color={c.ink}/>
-    </Pressable>
+
+    <Section title="Reminders"/>
+    <ListRow icon={carInfo.mil?'warning':kindIcon(carInfo.kind)} tone={carInfo.mil?'amber':'blue'} title={carInfo.kind?`${carInfo.label} car`:'Car report'} onPress={onOpenCar}
+     caption={!carInfo.read?'Type, codes and battery: read on your next drive':carInfo.mil?`Check engine light on · ${carInfo.codes} codes`:carInfo.codes?`${carInfo.codes} stored fault codes`:'Check engine off · no fault codes'}/>
+    <ListRow icon="construct" tone="green" title="Service" onPress={()=>onGo('Service')} caption={lastService?`${lastService.description} · ${ago(lastService.observedAt)}`:'No maintenance records yet'}/>
+    {findingCount?<ListRow icon="pulse" tone="amber" title={`${findingCount} health ${findingCount===1?'finding':'findings'}`} caption="Open Health for the evidence and next step" onPress={()=>onGo('Health')}/>:null}
    </>}
   </View>
- </ScrollView>;
+ </Animated.ScrollView>;
 });
 
 const s=StyleSheet.create({
- pad:{paddingHorizontal:16},
- // Night above the header too, so pulling down to refresh never shows a light gap on iOS.
+ // Night above the hero too, so pulling down to refresh never shows a light gap.
  overscroll:{position:'absolute',left:0,right:0,top:-1000,height:1000,backgroundColor:c.night},
- top:{backgroundColor:c.night,paddingHorizontal:20},
- greet:{fontSize:15,color:c.nightMuted,fontWeight:'500'},
- topTitle:{fontSize:30,fontWeight:'800',color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
- topText:{fontSize:14,color:c.nightMuted,marginTop:6},
- car:{alignItems:'center'},
- statusPill:{flexDirection:'row',alignItems:'center',alignSelf:'flex-start',gap:8,backgroundColor:c.night2,borderRadius:999,paddingVertical:7,paddingHorizontal:12,marginTop:16},
- statusText:{fontSize:13,fontWeight:'600',color:'#e6ebf1'},
- dot:{width:8,height:8,borderRadius:4},
- tiles:{flexDirection:'row',gap:12,marginBottom:14},
- tripCard:{flexDirection:'row',alignItems:'stretch'},
- tripThumb:{width:128,minHeight:150,borderRadius:18},
- rowCard:{flexDirection:'row',alignItems:'center',gap:12},
- circle:{width:40,height:40,borderRadius:20,alignItems:'center',justifyContent:'center'},
- rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
+ hero:{paddingHorizontal:20,paddingBottom:52,overflow:'hidden',backgroundColor:c.night},
+ greet:{fontFamily:F[700],fontSize:11,letterSpacing:1.1,textTransform:'uppercase',color:c.nightMuted},
+ name:{fontFamily:F[800],fontSize:30,lineHeight:36,letterSpacing:-0.9,color:'#fff',marginTop:4},
+ line:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:4},
+ car:{alignItems:'center',marginTop:6},
+ actions:{flexDirection:'row',justifyContent:'space-between',marginTop:10,paddingHorizontal:2},
+ sheet:{marginTop:-28,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,backgroundColor:c.bg,paddingHorizontal:16,paddingTop:14},
+ tiles:{flexDirection:'row',gap:12,marginBottom:4},
+ trip:{flexDirection:'row',alignItems:'center',gap:14,padding:12},
+ thumb:{width:96,height:96,borderRadius:radius.md},
+ thumbEmpty:{backgroundColor:c.blue50,alignItems:'center',justifyContent:'center'},
+ meta:{fontFamily:F[600],fontSize:13.5,color:c.muted,fontVariant:['tabular-nums']},
+ smooth:{flexDirection:'row',alignItems:'center',gap:16},
+ ringValue:{fontFamily:F[800],fontSize:18,color:c.ink,fontVariant:['tabular-nums']},
 });

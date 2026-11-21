@@ -1,7 +1,22 @@
-import {memo,useState} from 'react';
-import {Text,View,type StyleProp,type ViewStyle} from 'react-native';
-import Svg,{Circle,Defs,Ellipse,G,Line,LinearGradient,Path,Polyline,Rect,Stop} from 'react-native-svg';
-import {c} from './theme';
+import {memo,useState,type ReactNode} from 'react';
+import {StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
+import Svg,{Circle,Defs,Ellipse,G,Line,LinearGradient,Path,Polyline,RadialGradient,Rect,Stop} from 'react-native-svg';
+import {c,F} from './theme';
+
+/**
+ * The night surface behind hero moments: a deep graphite-to-navy gradient with a soft blue glow where the car sits.
+ * Drawn once as vectors, so it costs nothing to scroll (no image, no blur).
+ */
+export const NightGlow=memo(function NightGlow({glowX='72%',glowY='70%'}:{glowX?:string;glowY?:string}){
+ return <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none" pointerEvents="none">
+  <Defs>
+   <LinearGradient id="nightFill" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#0b111c"/><Stop offset="1" stopColor="#15203a"/></LinearGradient>
+   <RadialGradient id="nightGlow" cx={glowX} cy={glowY} rx="60%" ry="48%"><Stop offset="0" stopColor="#2f6bff" stopOpacity="0.34"/><Stop offset="1" stopColor="#2f6bff" stopOpacity="0"/></RadialGradient>
+  </Defs>
+  <Rect width="100%" height="100%" fill="url(#nightFill)"/>
+  <Rect width="100%" height="100%" fill="url(#nightGlow)"/>
+ </Svg>;
+});
 
 /** A generic side-view car drawn in vectors: no photo, no brand, a few kilobytes. Faces right. */
 export const CarArt=memo(function CarArt({width=300}:{width?:number}){
@@ -78,7 +93,20 @@ export const WeekBars=memo(function WeekBars({values,height=58}:{values:number[]
    {values.map((v,i)=><View key={i} style={{flex:1,height:Math.max(5,v/top*height),borderRadius:4,backgroundColor:v>0?(i===values.length-1?c.blue:c.blue300):c.track}}/>)}
   </View>
   <View style={{flexDirection:'row',gap:5,marginTop:6}}>
-   {values.map((_,i)=><Text key={i} style={{flex:1,textAlign:'center',fontSize:10.5,fontWeight:i===values.length-1?'700':'500',color:i===values.length-1?c.ink:c.faint}}>{'SMTWTFS'[(today-6+i+7)%7]}</Text>)}
+   {values.map((_,i)=><Text key={i} style={{flex:1,textAlign:'center',fontSize:10.5,fontFamily:i===values.length-1?F[700]:F[500],color:i===values.length-1?c.ink:c.faint}}>{'SMTWTFS'[(today-6+i+7)%7]}</Text>)}
   </View>
+ </View>;
+});
+
+/** A progress ring: the share of something done, with the number in the middle. Static: it is data, not decoration. */
+export const Ring=memo(function Ring({value,size=86,stroke=9,color=c.green,children}:{value:number;size?:number;stroke?:number;color?:string;children?:ReactNode}){
+ const r=(size-stroke)/2,length=2*Math.PI*r,part=Math.max(0,Math.min(1,value));
+ return <View style={{width:size,height:size,alignItems:'center',justifyContent:'center'}}>
+  <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+   <Circle cx={size/2} cy={size/2} r={r} stroke={c.track} strokeWidth={stroke} fill="none"/>
+   {part>0?<Circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round"
+    strokeDasharray={`${length*part} ${length}`} transform={`rotate(-90 ${size/2} ${size/2})`}/>:null}
+  </Svg>
+  {children}
  </View>;
 });

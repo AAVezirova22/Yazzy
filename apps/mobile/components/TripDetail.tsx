@@ -1,13 +1,14 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {Alert,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {Alert,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {StatusBar} from 'expo-status-bar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MapView,{Polyline,type LatLng} from 'react-native-maps';
 import {Dot,FullMap,MapPreview,nativeMaps,Pin,regionFor} from './maps';
 import {exportTripPdf,REPORT_SIGNALS,type SeriesPoint} from './tripPdf';
-import {c,shadow,ui} from './theme';
-import {Button,Icon} from './kit';
-import {CarArt,RouteArt} from './art';
+import {c,F,floatShadow,radius,shadow,type,ui} from './theme';
+import {Button,Chip,Icon,Section,Tile} from './kit';
+import {PressableScale} from './motion';
+import {CarArt,NightGlow,RouteArt} from './art';
 
 // Android maps need a Google Maps key baked in at build time (see app.config.js); iOS uses Apple Maps.
 export {nativeMaps};
@@ -33,7 +34,7 @@ function Bars({points,from,to,unit,color}:{points:Point[];from:number;to:number;
  const top=Math.max(1,...points.map(p=>p.value));
  return <View>
   <View style={s.bars}>{peaks.map((v,i)=><View key={i} style={[s.bar,{backgroundColor:Number.isNaN(v)?c.track:color,height:Number.isNaN(v)?4:Math.max(4,v/top*86)}]}/>)}</View>
-  <View style={[ui.row,{justifyContent:'space-between',marginTop:8}]}><Text style={ui.caption}>{clock(from)}</Text><Text style={ui.caption}>peak {num(top,0)} {unit}</Text><Text style={ui.caption}>{clock(to)}</Text></View>
+  <View style={[ui.row,{justifyContent:'space-between',marginTop:8}]}><Text style={[ui.caption,s.nums]}>{clock(from)}</Text><Text style={[ui.caption,s.nums]}>peak {num(top,0)} {unit}</Text><Text style={[ui.caption,s.nums]}>{clock(to)}</Text></View>
  </View>;
 }
 
@@ -48,15 +49,7 @@ function RouteLayers({route,events}:{route:LatLng[];events:DrivingEvent[]}){
  </>;
 }
 
-function Tile({icon,value,label}:{icon:string;value:string;label:string}){
- return <View style={s.tile}>
-  <Icon name={icon} size={18} color={c.blue}/>
-  <Text style={s.tileValue} numberOfLines={1}>{value}</Text>
-  <Text style={ui.caption} numberOfLines={1}>{label}</Text>
- </View>;
-}
-
-/** Full-screen trip page: map on top, a dark summary card, overview tiles, charts and a sticky export bar. */
+/** Full-screen trip page: a night summary with the distance up front, the route, overview tiles, charts and export. */
 export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  const m=trip.metrics,from=trip.startAt,to=trip.endAt??trip.startAt;
  const [speed,setSpeed]=useState<Series|null>(()=>seen.get(trip.id)?.[0]??null),[rpm,setRpm]=useState<Series|null>(()=>seen.get(trip.id)?.[1]??null),[failed,setFailed]=useState('');
@@ -71,6 +64,7 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
  },[trip.id]);
  const speeds=(speed?.points||[]).map(p=>p.value),topSpeed=speeds.length?Math.max(...speeds):null;
  const events:DrivingEvent[]=m.drivingEvents||[],braking=events.filter(e=>e.type==='HARD_BRAKING').length,accelerating=events.length-braking;
+ const estimated=m.fuelMethod==='MAF_ESTIMATE_PETROL',stationary=trip.status==='STATIONARY';
  async function exportPdf(){
   setExporting(true);
   try{
@@ -83,28 +77,31 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
   finally{setExporting(false);}
  }
  const started=new Date(from*1000);
+ const eventChip=[braking?`${braking} hard braking`:null,accelerating?`${accelerating} hard accel.`:null].filter(Boolean).join(' · ');
  return <View style={s.page}>
   <StatusBar style="dark"/>
   <ScrollView contentContainerStyle={{padding:16,paddingTop:insets.top+10,paddingBottom:120+insets.bottom}}>
    <View style={[ui.row,{marginBottom:14}]}>
-    <Pressable accessibilityRole="button" accessibilityLabel="Back to trips" onPress={onClose} style={({pressed})=>[s.back,pressed&&{opacity:0.85}]}>
+    <PressableScale accessibilityRole="button" accessibilityLabel="Back to trips" onPress={onClose} style={s.back}>
      <Icon name="arrow-back" size={18} color={c.ink}/><Text style={s.backText}>Trips</Text>
-    </Pressable>
+    </PressableScale>
    </View>
-   <View style={s.summary}>
-    <View style={[ui.row,{gap:8}]}>
-     <Icon name="navigate" size={15} color={c.blue300}/>
-     <Text style={s.summaryTitle} numberOfLines={1}>{started.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})} · {clock(from)}</Text>
+
+   <View style={s.hero}>
+    <NightGlow glowX="85%" glowY="90%"/>
+    <Text style={s.heroOver} numberOfLines={1}>{started.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})} · {clock(from)} – {clock(to)}</Text>
+    <Text style={s.heroValue} numberOfLines={1} adjustsFontSizeToFit>{distance(m.distanceKm)}</Text>
+    <View style={s.heroStats}>
+     <HeroStat label="Duration" value={minutes(m.durationSeconds||0)}/>
+     <View style={s.heroDivider}/>
+     <HeroStat label={estimated?'Fuel (est.)':'Fuel'} value={m.fuelLitres!=null?`${estimated?'≈ ':''}${num(m.fuelLitres,2)} L`:'n/a'}/>
+     <View style={s.heroDivider}/>
+     <HeroStat label="Per 100 km" value={m.litresPer100Km!=null?`${num(m.litresPer100Km)} L`:'—'}/>
     </View>
-    <View style={s.summaryRow}>
-     <View><Text style={s.summaryValue}>{distance(m.distanceKm)}</Text><Text style={s.summaryLabel}>Distance</Text></View>
-     <View><Text style={s.summaryValue}>{minutes(m.durationSeconds||0)}</Text><Text style={s.summaryLabel}>Duration</Text></View>
+    <View style={[ui.row,{gap:8,marginTop:16,flexWrap:'wrap'}]}>
+     {stationary?<Chip glass icon="pause" label="Stationary"/>:events.length?<Chip glass dot={braking?c.red:c.amber} label={eventChip}/>:<Chip glass dot="#4ade80" label="Smooth drive"/>}
     </View>
-    <View style={[ui.row,{gap:8,marginTop:16}]}>
-     <View style={s.fuelPill}><Icon name="water" size={13} color={c.blue300}/><Text style={s.fuelText}>{m.fuelLitres!=null?`${m.fuelMethod==='MAF_ESTIMATE_PETROL'?'≈ ':''}${num(m.fuelLitres,2)} L`:'Fuel n/a'}</Text></View>
-     <Text style={s.summaryLabel}>{m.litresPer100Km!=null?`${num(m.litresPer100Km)} L/100 km`:trip.status==='STATIONARY'?'Stationary':''}</Text>
-    </View>
-    <View style={s.summaryCar} pointerEvents="none"><CarArt width={170}/></View>
+    <View style={s.heroCar} pointerEvents="none"><CarArt width={150}/></View>
    </View>
 
    {route.length?<View style={[ui.card,{padding:0,overflow:'hidden'}]}>
@@ -117,29 +114,26 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
      <View style={s.legLine}/>
      <View style={s.leg}><View style={[s.legDot,{backgroundColor:c.blue}]}/><Text style={s.legText}>End {clock(to)}</Text></View>
      <View style={{flex:1}}/>
-     <Pressable accessibilityRole="button" onPress={()=>setExpanded(true)} hitSlop={8}><Text style={s.link}>Full map</Text></Pressable>
+     <PressableScale accessibilityRole="button" onPress={()=>setExpanded(true)} hitSlop={8}><Text style={s.link}>Full map</Text></PressableScale>
     </View>
    </View>:<View style={[ui.card,s.noRoute]}><Icon name="location-outline" size={20} color={c.faint}/><Text style={ui.caption}>No GPS position was recorded for this trip.</Text></View>}
 
-   <Text style={s.heading}>Overview</Text>
+   <Section title="Overview"/>
    <View style={s.grid}>
-    <Tile icon="speedometer-outline" value={topSpeed!=null?`${num(topSpeed,0)} km/h`:'—'} label="Top speed"/>
-    <Tile icon="time-outline" value={minutes(m.movingSeconds||0)} label="Moving"/>
-    <Tile icon="hourglass-outline" value={minutes(m.idleEngineSeconds||0)} label="Idling, engine on"/>
-    <Tile icon="analytics-outline" value={m.litresPer100Km!=null?`${num(m.litresPer100Km)} L`:'—'} label="Per 100 km"/>
+    <Tile style={s.half} icon="speedometer-outline" label="Top speed" value={topSpeed!=null?num(topSpeed,0):'—'} unit={topSpeed!=null?'km/h':undefined}/>
+    <Tile style={s.half} icon="time-outline" label="Moving" value={minutes(m.movingSeconds||0)}/>
+    <Tile style={s.half} icon="hourglass-outline" label="Idling" value={minutes(m.idleEngineSeconds||0)} caption="Engine on, standing"/>
+    <Tile style={s.half} icon="leaf-outline" tone="green" label="Per 100 km" value={m.litresPer100Km!=null?num(m.litresPer100Km):'—'} unit={m.litresPer100Km!=null?'L':undefined} caption={estimated?'Estimated from air flow':undefined}/>
    </View>
    {m.fuelMethod==='UNAVAILABLE'&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel unavailable: this car reports neither its fuel rate nor, for a petrol engine, its air flow and fuel trims, so nothing is estimated.</Text>}
-   {m.fuelMethod==='MAF_ESTIMATE_PETROL'&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel is estimated from the engine's air flow and fuel trims, because this car does not report its fuel rate. Expect it within about 10% of the pump.</Text>}
+   {estimated&&<Text style={[ui.caption,{marginBottom:14}]}>Fuel is estimated from the engine's air flow and fuel trims, because this car does not report its fuel rate. Expect it within about 10% of the pump.</Text>}
 
    <View style={ui.card}>
     <View style={[ui.row,{justifyContent:'space-between',marginBottom:6}]}>
      <Text style={ui.title}>Driving events</Text>
-     <View style={[ui.row,{gap:12}]}><Text style={[s.count,{color:c.red}]}>{braking} braking</Text><Text style={[s.count,{color:c.amber}]}>{accelerating} accel.</Text></View>
+     <View style={[ui.row,{gap:6}]}><Chip tone="red" label={`${braking} braking`}/><Chip tone="amber" label={`${accelerating} accel.`}/></View>
     </View>
-    {events.length?events.map(e=><View key={e.type+e.time} style={s.event}>
-     <View style={[s.eventDot,{backgroundColor:eventColor(e)}]}/>
-     <View style={{flex:1}}><Text style={s.eventTitle}>{eventLabel(e)}</Text><Text style={ui.caption}>{eventText(e)}{e.latitude==null?' · no GPS fix nearby':''}</Text></View>
-    </View>):<Text style={ui.body}>A smooth drive: nothing harder than 3 m/s² braking or 2.5 m/s² acceleration.</Text>}
+    {events.length?events.map(e=><EventRow key={e.type+e.time} event={e}/>):<Text style={ui.body}>A smooth drive: nothing harder than 3 m/s² braking or 2.5 m/s² acceleration.</Text>}
    </View>
 
    {failed?<Text style={[ui.body,{color:c.red,marginBottom:14}]}>Could not load readings: {failed}</Text>:<>
@@ -150,54 +144,66 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
   </ScrollView>
 
   <View style={[s.footer,{paddingBottom:Math.max(insets.bottom,12)+4}]}>
-   <View style={{flex:1}}><Text style={s.footValue}>{distance(m.distanceKm)}</Text><Text style={ui.caption}>{minutes(m.durationSeconds||0)}{vehicleName?` · ${vehicleName}`:''}</Text></View>
-   <Button title={exporting?'Preparing…':'Export PDF'} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:16}}/>
+   <View style={{flex:1}}><Text style={s.footValue}>{distance(m.distanceKm)}</Text><Text style={ui.caption} numberOfLines={1}>{minutes(m.durationSeconds||0)}{vehicleName?` · ${vehicleName}`:''}</Text></View>
+   <Button title={exporting?'Preparing…':'Export PDF'} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:18}}/>
   </View>
 
   {route.length?<FullMap visible={expanded} onClose={()=>setExpanded(false)} region={regionFor(route)} title={`${clock(from)} – ${clock(to)}`}
-   bottom={<View style={s.legend}>
-    <View style={[ui.row,{gap:6}]}><View style={[s.eventDot,{backgroundColor:c.red}]}/><Text style={ui.caption}>Hard braking ({braking})</Text></View>
-    <View style={[ui.row,{gap:6}]}><View style={[s.eventDot,{backgroundColor:c.amber}]}/><Text style={ui.caption}>Hard acceleration ({accelerating})</Text></View>
-   </View>}>
+   peek={<View style={{paddingBottom:4}}>
+    <View style={[ui.row,{justifyContent:'space-between'}]}>
+     <View><Text style={type.overline}>Distance</Text><Text style={s.peekValue}>{distance(m.distanceKm)}</Text></View>
+     <View style={{alignItems:'flex-end'}}><Text style={type.overline}>Duration</Text><Text style={s.peekValue}>{minutes(m.durationSeconds||0)}</Text></View>
+    </View>
+    <View style={[ui.row,{gap:16,marginTop:12}]}>
+     <View style={[ui.row,{gap:6}]}><View style={[s.legDot,{backgroundColor:c.red}]}/><Text style={ui.caption}>Hard braking ({braking})</Text></View>
+     <View style={[ui.row,{gap:6}]}><View style={[s.legDot,{backgroundColor:c.amber}]}/><Text style={ui.caption}>Hard acceleration ({accelerating})</Text></View>
+    </View>
+   </View>}
+   more={events.length?<View>{events.map(e=><EventRow key={e.type+e.time} event={e}/>)}</View>:<Text style={[ui.body,{paddingVertical:8}]}>A smooth drive: no hard braking or acceleration.</Text>}>
    <RouteLayers route={route} events={events}/>
   </FullMap>:null}
  </View>;
 }
 
+function HeroStat({label,value}:{label:string;value:string}){
+ return <View style={{flex:1}}><Text style={s.heroStatValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text><Text style={s.heroStatLabel} numberOfLines={1}>{label}</Text></View>;
+}
+
+function EventRow({event:e}:{event:DrivingEvent}){
+ return <View style={s.event}>
+  <View style={[s.eventDot,{backgroundColor:eventColor(e)}]}/>
+  <View style={{flex:1}}><Text style={s.eventTitle}>{eventLabel(e)}</Text><Text style={[ui.caption,s.nums]}>{eventText(e)}{e.latitude==null?' · no GPS fix nearby':''}</Text></View>
+ </View>;
+}
+
 const s=StyleSheet.create({
  page:{flex:1,backgroundColor:c.bg},
- mapBox:{height:'40%',backgroundColor:'#e6ebf1'},
- noMap:{alignItems:'center',justifyContent:'center'},
- mapBar:{position:'absolute',left:16,right:16,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
- back:{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:c.surface,borderRadius:999,paddingVertical:10,paddingHorizontal:14,...shadow},
- backText:{fontSize:14,fontWeight:'700',color:c.ink},
- sheet:{flex:1,marginTop:-26,borderTopLeftRadius:28,borderTopRightRadius:28,backgroundColor:c.bg},
- summary:{backgroundColor:c.night,borderRadius:24,padding:18,marginBottom:20,overflow:'hidden',minHeight:150},
- summaryTitle:{fontSize:13.5,fontWeight:'600',color:'#dfe5ec',flex:1},
- summaryRow:{flexDirection:'row',gap:28,marginTop:16},
- summaryValue:{fontSize:24,fontWeight:'800',color:'#fff',letterSpacing:-0.5,fontVariant:['tabular-nums']},
- summaryLabel:{fontSize:12.5,color:c.nightMuted,marginTop:2},
- summaryCar:{position:'absolute',right:-18,bottom:-10},
- fuelPill:{flexDirection:'row',alignItems:'center',gap:5,backgroundColor:c.night2,borderRadius:999,paddingVertical:5,paddingHorizontal:10},
- fuelText:{fontSize:12.5,fontWeight:'700',color:'#fff'},
- heading:{fontSize:20,fontWeight:'800',color:c.ink,letterSpacing:-0.4,marginBottom:12},
- grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:12,marginBottom:16},
- tile:{width:'48.3%',backgroundColor:c.surface,borderRadius:20,padding:14,...shadow},
- tileValue:{fontSize:18,fontWeight:'700',color:c.ink,marginTop:10,fontVariant:['tabular-nums']},
- count:{fontSize:12.5,fontWeight:'700'},
- event:{flexDirection:'row',gap:12,paddingVertical:9,borderTopWidth:1,borderTopColor:c.line2},
+ nums:{fontVariant:['tabular-nums']},
+ back:{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:c.frost,borderRadius:radius.pill,paddingVertical:10,paddingHorizontal:14,borderWidth:StyleSheet.hairlineWidth,borderColor:c.frostLine,...shadow},
+ backText:{fontFamily:F[700],fontSize:14,color:c.ink},
+ hero:{borderRadius:radius.xl,padding:20,marginBottom:14,overflow:'hidden',minHeight:200,backgroundColor:c.night},
+ heroOver:{fontFamily:F[700],fontSize:11,letterSpacing:1.1,textTransform:'uppercase',color:'#9fb0c8'},
+ heroValue:{fontFamily:F[800],fontSize:46,lineHeight:52,letterSpacing:-1.6,color:'#fff',marginTop:6,fontVariant:['tabular-nums']},
+ heroStats:{flexDirection:'row',alignItems:'center',backgroundColor:c.glass,borderRadius:radius.md,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine,paddingVertical:12,paddingHorizontal:14,marginTop:14,gap:12},
+ heroDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.glassLine},
+ heroStatValue:{fontFamily:F[800],fontSize:17,color:'#fff',fontVariant:['tabular-nums']},
+ heroStatLabel:{fontFamily:F[600],fontSize:11.5,color:c.nightMuted,marginTop:2},
+ heroCar:{position:'absolute',right:-20,top:14,opacity:0.9},
+ grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:12,marginBottom:14},
+ half:{width:'48.4%'},
+ event:{flexDirection:'row',gap:12,paddingVertical:10,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
  eventDot:{width:10,height:10,borderRadius:5,marginTop:5},
- eventTitle:{fontSize:14,fontWeight:'700',color:c.ink},
+ eventTitle:{fontFamily:F[700],fontSize:14,color:c.ink},
  bars:{flexDirection:'row',alignItems:'flex-end',height:88,gap:3},
  bar:{flex:1,borderRadius:3},
- footer:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:14,backgroundColor:c.surface,borderTopLeftRadius:26,borderTopRightRadius:26,paddingHorizontal:20,paddingTop:14,...shadow,shadowOffset:{width:0,height:-4},elevation:12},
- footValue:{fontSize:24,fontWeight:'800',color:c.ink,letterSpacing:-0.5},
- legend:{backgroundColor:c.surface,borderRadius:18,padding:14,gap:6,...shadow},
+ footer:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:14,backgroundColor:c.frost,borderTopLeftRadius:radius.xl,borderTopRightRadius:radius.xl,paddingHorizontal:20,paddingTop:14,borderWidth:StyleSheet.hairlineWidth,borderColor:c.frostLine,...floatShadow,shadowOpacity:0.1,shadowOffset:{width:0,height:-6}},
+ footValue:{fontFamily:F[800],fontSize:22,color:c.ink,letterSpacing:-0.5,fontVariant:['tabular-nums']},
+ peekValue:{fontFamily:F[800],fontSize:24,color:c.ink,letterSpacing:-0.6,marginTop:2,fontVariant:['tabular-nums']},
  routeInfo:{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:16,paddingVertical:13},
  leg:{flexDirection:'row',alignItems:'center',gap:6},
  legDot:{width:9,height:9,borderRadius:5},
  legLine:{width:14,height:2,borderRadius:1,backgroundColor:c.track},
- legText:{fontSize:13,fontWeight:'600',color:c.ink2},
- link:{fontSize:13.5,fontWeight:'700',color:c.blue},
+ legText:{fontFamily:F[600],fontSize:13,color:c.ink2,fontVariant:['tabular-nums']},
+ link:{fontFamily:F[700],fontSize:13.5,color:c.blue},
  noRoute:{flexDirection:'row',alignItems:'center',gap:10},
 });

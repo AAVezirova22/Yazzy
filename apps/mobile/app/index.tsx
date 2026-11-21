@@ -5,7 +5,7 @@ import {ScreenContainer} from 'react-native-screens';
 import {StatusBar} from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import {TripDetail} from '../components/TripDetail';
-import {c,ui} from '../components/theme';
+import {c,ui,F} from '../components/theme';
 import {Icon,useAction} from '../components/kit';
 import {Sheet} from '../components/Sheet';
 import {NavBar,NAV_HEIGHT,TabPane,TABS,type TabKey} from '../components/Tabs';
@@ -264,7 +264,7 @@ function AddVehicle({onAdded}:{onAdded:(list:any[],id?:string)=>void}){
 const s=StyleSheet.create({
  screen:{flex:1,backgroundColor:c.bg},
  circle:{width:40,height:40,borderRadius:20,alignItems:'center',justifyContent:'center'},
- rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
+ rowTitle:{fontFamily:F[700],fontSize:15,color:c.ink},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12},
  listRowBorder:{borderTopWidth:1,borderTopColor:c.line2},
  radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},

@@ -1,2 +1,7 @@
 import {Stack} from 'expo-router';
-export default function Layout(){return <Stack screenOptions={{headerShown:false}}/>;}
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
+
+// Gestures (the draggable sheets) only work inside this root view.
+export default function Layout(){
+ return <GestureHandlerRootView style={{flex:1}}><Stack screenOptions={{headerShown:false}}/></GestureHandlerRootView>;
+}

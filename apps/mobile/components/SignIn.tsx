@@ -3,7 +3,7 @@ import {ScrollView,StyleSheet,Text,useWindowDimensions,View} from 'react-native'
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import {c,ui} from './theme';
+import {c,ui,F} from './theme';
 import {Button,useAction} from './kit';
 import {CarArt} from './art';
 import {server} from './server';
@@ -58,7 +58,7 @@ function SecureSignIn({onConnected}:{onConnected:()=>void}){
 
 const s=StyleSheet.create({
  top:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:96},
- wordmark:{fontSize:20,fontWeight:'800',color:'#fff',letterSpacing:-0.5,marginBottom:28},
- title:{fontSize:30,fontWeight:'800',color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
- text:{fontSize:14,color:c.nightMuted,marginTop:6},
+ wordmark:{fontFamily:F[800],fontSize:20,color:'#fff',letterSpacing:-0.5,marginBottom:28},
+ title:{fontFamily:F[800],fontSize:30,color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
+ text:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:6},
 });

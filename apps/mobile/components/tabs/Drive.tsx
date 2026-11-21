@@ -2,8 +2,9 @@ import {memo,useEffect,useState} from 'react';
 import {ActivityIndicator,Alert,Platform,PermissionsAndroid,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
-import {c,mono,ui} from '../theme';
-import {Button,Check,Icon,Notice,ScreenHeader,Segment,useAction} from '../kit';
+import {c,F,mono,radius,ui} from '../theme';
+import {Button,Check,Chip,Icon,IconTile,Notice,ScreenHeader,Segment,useAction} from '../kit';
+import {NightGlow} from '../art';
 import {server} from '../server';
 import {Recorder,knownChannels,pickChannels,type Characteristic,type Peripheral,type RecorderSnapshot} from '../../modules/yazzy-recorder/src';
 
@@ -61,18 +62,19 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
 
   {view==='Record'&&<>
    <View style={s.live}>
+    <NightGlow glowX="20%" glowY="40%"/>
     <View style={[ui.row,{justifyContent:'space-between'}]}>
-     <View style={s.statusPill}><View style={[s.dot,{backgroundColor:live?'#4ade80':snapshot.recording?c.blue300:c.nightMuted}]}/><Text style={s.statusText}>{live?'Recording':snapshot.recording?'Armed':'Ready when you are'}</Text></View>
+     <Chip glass dot={live?'#4ade80':snapshot.recording?c.blue300:c.nightMuted} label={live?'Recording':snapshot.recording?'Armed':'Ready when you are'}/>
      <Icon name="bluetooth" size={18} color={snapshot.connected?c.blue300:c.nightMuted}/>
     </View>
     <View style={s.liveNumbers}>
-     <View style={{flex:1.3}}><Text style={s.liveValue}>{snapshot.signals.VEHICLE_SPEED??'—'}</Text><Text style={s.liveUnit}>km/h</Text></View>
+     <View style={{flex:1.3}}><Text style={s.liveValue} numberOfLines={1}>{snapshot.signals.VEHICLE_SPEED??'—'}</Text><Text style={s.liveUnit}>km/h</Text></View>
      <View style={s.liveDivider}/>
-     <View style={{flex:1,paddingLeft:18}}><Text style={[s.liveValue,{fontSize:34}]}>{snapshot.signals.ENGINE_RPM??'—'}</Text><Text style={s.liveUnit}>rpm</Text></View>
+     <View style={{flex:1,paddingLeft:18}}><Text style={[s.liveValue,{fontSize:34,lineHeight:40}]} numberOfLines={1}>{snapshot.signals.ENGINE_RPM??'—'}</Text><Text style={s.liveUnit}>rpm</Text></View>
     </View>
-    <View style={[ui.row,{gap:18,flexWrap:'wrap'}]}>
-     <Text style={s.liveMeta}>{snapshot.connected?'Adapter connected':'Adapter not connected'}</Text>
-     <Text style={s.liveMeta}>{snapshot.queued} waiting to upload</Text>
+    <View style={[ui.row,{gap:8,flexWrap:'wrap'}]}>
+     <Chip glass icon={snapshot.connected?'link':'unlink'} label={snapshot.connected?'Adapter connected':'Adapter not connected'}/>
+     <Chip glass icon="cloud-upload-outline" label={`${snapshot.queued} waiting to upload`}/>
     </View>
    </View>
    {snapshot.error?<Notice tone="error">{snapshot.error}</Notice>:null}
@@ -95,7 +97,7 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
   {view==='Connect'&&<>
    {snapshot.recording?<View style={ui.card}>
     <View style={[ui.row,{gap:12}]}>
-     <View style={[s.circle,{backgroundColor:live?c.green50:c.blue50}]}><Icon name={live?'checkmark-circle':'time'} size={20} color={live?c.green:c.blue}/></View>
+     <IconTile icon={live?'checkmark-circle':'time'} tone={live?'green':'blue'}/>
      <View style={{flex:1}}><Text style={s.rowTitle}>{live?`Connected to ${adapterName}`:`Waiting for ${adapterName}`}</Text><Text style={ui.caption}>{live?'Recording. Stop on the Record tab to change adapters.':'Auto-connect is on: it links up when the car is switched on.'}</Text></View>
     </View>
     {waiting&&canNudge?<Button title={busy?'Looking for the adapter…':'Connect now'} icon="bluetooth" disabled={busy} onPress={connectNow} style={{marginTop:12}}/>:null}
@@ -132,26 +134,22 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
 });
 
 const s=StyleSheet.create({
- statusPill:{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:c.night2,borderRadius:999,paddingVertical:7,paddingHorizontal:12},
- statusText:{fontSize:13,fontWeight:'600',color:'#e6ebf1'},
- dot:{width:8,height:8,borderRadius:4},
- circle:{width:40,height:40,borderRadius:20,alignItems:'center',justifyContent:'center'},
- rowTitle:{fontSize:15,fontWeight:'700',color:c.ink},
- live:{backgroundColor:c.night,borderRadius:26,padding:20,marginBottom:14},
- liveNumbers:{flexDirection:'row',alignItems:'center',marginVertical:26},
- liveValue:{fontSize:60,fontWeight:'800',color:'#fff',letterSpacing:-2,fontVariant:['tabular-nums']},
- liveUnit:{fontSize:13,fontWeight:'600',color:c.nightMuted,marginTop:2},
- liveDivider:{width:1,alignSelf:'stretch',backgroundColor:c.nightLine},
- liveMeta:{fontSize:13,color:c.nightMuted},
+ circle:{width:40,height:40,borderRadius:12,alignItems:'center',justifyContent:'center'},
+ rowTitle:{fontFamily:F[700],fontSize:15,color:c.ink},
+ live:{backgroundColor:c.night,borderRadius:radius.xl,padding:20,marginBottom:14,overflow:'hidden'},
+ liveNumbers:{flexDirection:'row',alignItems:'center',marginVertical:24},
+ liveValue:{fontFamily:F[800],fontSize:62,lineHeight:68,color:'#fff',letterSpacing:-2.2,fontVariant:['tabular-nums']},
+ liveUnit:{fontFamily:F[600],fontSize:13,color:c.nightMuted,marginTop:2},
+ liveDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.glassLine},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12},
- listRowBorder:{borderTopWidth:1,borderTopColor:c.line2},
+ listRowBorder:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
  radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},
  badge:{flexDirection:'row',alignItems:'center',gap:4,backgroundColor:c.blue50,borderRadius:999,paddingVertical:4,paddingHorizontal:9},
- badgeText:{fontSize:12,fontWeight:'700',color:c.blue},
+ badgeText:{fontFamily:F[700],fontSize:12,color:c.blue},
  mono:{fontFamily:mono,fontSize:11,color:c.muted,marginTop:4},
- charRow:{borderTopWidth:1,borderTopColor:c.line2,marginTop:12,paddingTop:10,gap:8},
+ charRow:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line,marginTop:12,paddingTop:10,gap:8},
  choice:{flexDirection:'row',alignItems:'center',gap:6,borderRadius:999,paddingVertical:8,paddingHorizontal:14,backgroundColor:c.surface2,borderWidth:1,borderColor:c.line},
  choiceOn:{backgroundColor:c.blue,borderColor:c.blue},
- choiceText:{fontSize:13,fontWeight:'700',color:c.ink2},
- note:{fontSize:12.5,lineHeight:18,color:c.muted,marginTop:6,marginBottom:10,paddingHorizontal:4,textAlign:'center'},
+ choiceText:{fontFamily:F[700],fontSize:13,color:c.ink2},
+ note:{fontFamily:F[500],fontSize:12.5,lineHeight:18,color:c.muted,marginTop:6,marginBottom:10,paddingHorizontal:4,textAlign:'center'},
 });

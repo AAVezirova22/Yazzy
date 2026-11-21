@@ -14,3 +14,14 @@ export function lastWeek(trips:any[]|null|undefined){
  for(const t of trips||[]){if(t.startAt==null||!t.metrics?.distanceKm)continue;const d=new Date(t.startAt*1000);d.setHours(0,0,0,0);const back=Math.round((today.getTime()-d.getTime())/86400000);if(back>=0&&back<7)out[6-back]+=t.metrics.distanceKm;}
  return out;
 }
+/**
+ * Smooth driving over the last 30 days: how many drives had no hard braking (stronger than 3 m/s²) or hard
+ * acceleration (stronger than 2.5 m/s²). A plain count, not an invented score.
+ */
+export function smoothDriving(trips:any[]|null|undefined,days=30){
+ const since=Date.now()/1000-days*86400;
+ const drives=(trips||[]).filter(t=>t.startAt!=null&&t.startAt>=since&&t.status!=='STATIONARY'&&t.metrics);
+ const smooth=drives.filter(t=>!(t.metrics.drivingEvents||[]).length).length;
+ const events=drives.reduce((n,t)=>n+(t.metrics.drivingEvents||[]).length,0);
+ return {drives:drives.length,smooth,events};
+}
