@@ -5,7 +5,8 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {c,F,floatShadow,mono,radius,ui} from './theme';
 import {PressableScale} from './motion';
 import {Button,Icon,Notice} from './kit';
-import {CarArt,NightGlow} from './art';
+import {LightSurface} from './LightSurface';
+import {CarImage} from './CarImage';
 import {exportCarPdf} from './carPdf';
 import {CarLocation} from './CarMap';
 import {battery12,boost,carSpot,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
@@ -30,21 +31,21 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
   finally{setExporting(false);}
  }
  return <View style={s_.page}>
-  <StatusBar style="light"/>
+  <StatusBar style="dark"/>
   <ScrollView contentContainerStyle={{paddingBottom:120+insets.bottom}}>
    <View style={[s_.hero,{paddingTop:insets.top+10}]}>
-    <NightGlow glowX="80%" glowY="85%"/>
+    <LightSurface/>
     <PressableScale accessibilityRole="button" accessibilityLabel={t('Back')} onPress={onClose} style={s_.back}>
-     <Icon name="arrow-back" size={18} color="#fff"/><Text style={s_.backText}>{t('Car report')}</Text>
+     <Icon name="arrow-back" size={18} color={c.ink}/><Text style={s_.backText}>{t('Car report')}</Text>
     </PressableScale>
     <Text style={s_.name} numberOfLines={2}>{vehicle?.name||t('Your car')}</Text>
     <Text style={s_.sub} numberOfLines={1}>{vehicle?[carLine(vehicle),maker&&!vehicle.make?maker:null].filter(Boolean).join(' · '):''}</Text>
     <View style={[ui.row,{gap:8,marginTop:14,flexWrap:'wrap'}]}>
      <View style={s_.badge}><Icon name={kindIcon(kind)} size={14} color="#fff"/><Text style={s_.badgeText}>{type.label}</Text></View>
-     <View style={[s_.badge,s_.glass]}><View style={[s_.dot,{backgroundColor:live?'#4ade80':c.nightMuted}]}/><Text style={s_.badgeText}>{live?t('Live from the car'):p.readAt?t('Read {when}',{when:since(p.readAt)}):t('Not read yet')}</Text></View>
+     <View style={[s_.badge,s_.plain]}><View style={[s_.dot,{backgroundColor:live?c.green:c.muted}]}/><Text style={[s_.badgeText,{color:c.ink}]}>{live?t('Live from the car'):p.readAt?t('Read {when}',{when:since(p.readAt)}):t('Not read yet')}</Text></View>
     </View>
     <Text style={s_.source}>{type.source}</Text>
-    <View style={s_.car} pointerEvents="none"><CarArt width={220}/></View>
+    <View style={s_.car} pointerEvents="none"><CarImage vinModel={p.vinModel} width={220}/></View>
    </View>
 
    <View style={s_.body}>
@@ -148,16 +149,16 @@ function Code({code,kind}:{code:string;kind:string}){
 
 const s_=StyleSheet.create({
  page:{flex:1,backgroundColor:c.bg},
- hero:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:24,overflow:'hidden',minHeight:250},
- back:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:c.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine,borderRadius:radius.pill,paddingVertical:9,paddingHorizontal:14,marginBottom:18},
- backText:{fontFamily:F[700],fontSize:14,color:'#fff'},
- name:{fontFamily:F[600],fontSize:30,lineHeight:36,color:'#fff',letterSpacing:-1,maxWidth:'70%'},
- sub:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:4,maxWidth:'70%'},
+ hero:{backgroundColor:c.surface,paddingHorizontal:20,paddingBottom:24,overflow:'hidden',minHeight:250},
+ back:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:c.surface,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,borderRadius:radius.pill,paddingVertical:9,paddingHorizontal:14,marginBottom:18},
+ backText:{fontFamily:F[700],fontSize:14,color:c.ink},
+ name:{fontFamily:F[600],fontSize:30,lineHeight:36,color:c.ink,letterSpacing:-1,maxWidth:'70%'},
+ sub:{fontFamily:F[500],fontSize:14,color:c.ink2,marginTop:4,maxWidth:'70%'},
  badge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:c.blue,borderRadius:radius.pill,paddingVertical:6,paddingHorizontal:11},
- glass:{backgroundColor:c.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine},
+ plain:{backgroundColor:c.surface,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line},
  badgeText:{fontFamily:F[700],fontSize:12.5,color:'#fff'},
  dot:{width:7,height:7,borderRadius:4},
- source:{fontFamily:F[500],fontSize:12,color:c.nightMuted,marginTop:8,maxWidth:'62%'},
+ source:{fontFamily:F[500],fontSize:12,color:c.muted,marginTop:8,maxWidth:'62%'},
  car:{position:'absolute',right:-30,bottom:8},
  body:{padding:16},
  link:{fontFamily:F[700],fontSize:13.5,color:c.blue},

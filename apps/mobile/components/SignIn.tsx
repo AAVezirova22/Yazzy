@@ -5,7 +5,8 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import {c,ui,F} from './theme';
 import {Button,useAction} from './kit';
-import {CarArt} from './art';
+import {CarImage} from './CarImage';
+import {LightSurface} from './LightSurface';
 import {server} from './server';
 import {ServerForm} from './tabs/More';
 import {t} from './i18n';
@@ -20,11 +21,12 @@ export function SignIn({api,onConnected}:{api:string;onConnected:()=>void}){
  const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-24,380);
  return <ScrollView style={{flex:1,backgroundColor:c.bg}} contentContainerStyle={{paddingBottom:insets.bottom+30}} keyboardShouldPersistTaps="handled">
   <View style={[s.top,{paddingTop:insets.top+18}]}>
+   <LightSurface/>
    <Text style={s.wordmark}>yazzy</Text>
    <Text style={s.title}>{t('Your car,\nin context.')}</Text>
    <Text style={s.text}>{t('Trips, fuel and health from your own OBD adapter.')}</Text>
   </View>
-  <View style={{alignItems:'center',marginTop:-(carWidth*0.4)+40}}><CarArt width={carWidth}/></View>
+  <View style={{alignItems:'center',marginTop:-(carWidth*0.4)+40}} pointerEvents="none"><CarImage width={carWidth}/></View>
   <View style={{paddingHorizontal:16}}>
    <View style={ui.card}>
     <Text style={ui.title}>{t('Connect to your server')}</Text>
@@ -58,8 +60,8 @@ function SecureSignIn({onConnected}:{onConnected:()=>void}){
 }
 
 const s=StyleSheet.create({
- top:{backgroundColor:c.night,paddingHorizontal:20,paddingBottom:96},
- wordmark:{fontFamily:F[700],fontSize:20,color:'#fff',letterSpacing:-0.5,marginBottom:28},
- title:{fontFamily:F[700],fontSize:30,color:'#fff',letterSpacing:-0.8,lineHeight:35,marginTop:2},
- text:{fontFamily:F[500],fontSize:14,color:c.nightMuted,marginTop:6},
+ top:{backgroundColor:c.surface,paddingHorizontal:20,paddingBottom:96,overflow:'hidden'},
+ wordmark:{fontFamily:F[700],fontSize:20,color:c.blue,letterSpacing:-0.5,marginBottom:28},
+ title:{fontFamily:F[700],fontSize:30,color:c.ink,letterSpacing:-0.8,lineHeight:35,marginTop:2},
+ text:{fontFamily:F[500],fontSize:14,color:c.ink2,marginTop:6},
 });

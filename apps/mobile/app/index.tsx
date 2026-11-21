@@ -22,6 +22,7 @@ import {readCache,server,writeCache} from '../components/server';
 import {carLine} from '../components/format';
 import {available,Recorder,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
 import {loadLang,t,useLang} from '../components/i18n';
+import {decodeVin,hasImageKey,imageFound} from '../components/vinCar';
 
 const empty:RecorderSnapshot={recording:false,connected:false,queued:0,error:null,signals:{},qualification:'PENDING_DEVICE_TEST'};
 // Fetched one after another: the free server has a tenth of a CPU, and trips come first because Home and Trips show them.
@@ -185,13 +186,15 @@ export default function App(){
 
  /** Saves the report on the server with the detected type; skipped when nothing important changed in the last 15 minutes. */
  const pushReport=useCallback(async(id:string,next:CarProfile,force=false)=>{
-  const key=JSON.stringify([next.vin,next.fuelType,next.ignition,next.mil,next.stored,next.pending,next.permanent,next.readiness,next.ecus,next.userKind]);
+  const key=JSON.stringify([next.vin,next.fuelType,next.ignition,next.mil,next.stored,next.pending,next.permanent,next.readiness,next.ecus,next.userKind,next.vinModel]);
   const last=pushed.current[id];
   if(!force&&last&&last.key===key&&Date.now()-last.at<900000)return;
   pushed.current[id]={key,at:Date.now()};
   const fields:Record<string,unknown>={profile:next},type=detect(next),odo=next.signals?.ODOMETER??next.odometerKm;
   if(type.kind)Object.assign(fields,serverType(type.kind,next));
   if(odo!=null)fields.odometerKm=Math.round(odo*10)/10;
+  // The VIN names the car exactly, so its make, model and year replace whatever was there.
+  const vm=next.vinModel;if(vm&&vm.vin===next.vin){fields.make=vm.make;fields.model=vm.model;if(vm.year!=null)fields.year=vm.year;}
   const save=(version:number)=>server.call(`/vehicles/${id}`,{...fields,version},'PATCH');
   try{
    let v=vehiclesRef.current.find(x=>x.id===id);if(!v)return;
@@ -215,6 +218,22 @@ export default function App(){
   const parkedNow=wasConnected.current&&!snapshot.connected;wasConnected.current=snapshot.connected;
   storeReport(id,next,parkedNow||(nativeProfile?.readAt||0)>(prev?.readAt||0)+170);
  },[mode,recorderVehicle,nativeProfile,nativeSpot,snapshot.signals,snapshot.connected]);
+ // Once the car has told us its VIN, look up its make, model and year, and whether there is a picture of that model.
+ const vinTried=useRef<Record<string,boolean>>({});
+ useEffect(()=>{
+  const id=selected,vin=(report?.vin||'').trim().toUpperCase(),known=report?.vinModel;
+  if(!mode||!id||vin.length!==17)return;
+  const need=known?.vin!==vin||(hasImageKey&&known.year!=null&&known.found===undefined);
+  if(!need||vinTried.current[id+vin])return;
+  vinTried.current[id+vin]=true;
+  void(async()=>{
+   try{
+    const decoded=known?.vin===vin?known:await decodeVin(vin);if(!decoded)return;
+    const vinModel={...decoded,found:hasImageKey&&decoded.year!=null?await imageFound(decoded).catch(()=>undefined):undefined};
+    storeReport(id,{...(reports.current[id]||{}),vinModel},true);
+   }catch{delete vinTried.current[id+vin];/* offline: try again next time the report changes */}
+  })();
+ },[mode,selected,report?.vin,report?.vinModel]);
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
  const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report,lang]);
@@ -222,12 +241,12 @@ export default function App(){
  const live=snapshot.recording&&snapshot.connected,speed=snapshot.signals.VEHICLE_SPEED;
  const recorder=useMemo(()=>({label:live?t('Recording')+(speed!=null?' · '+t('{n} km/h',{n:speed}):''):t(snapshot.recording?'Waiting for your car':'Not recording'),live,recording:snapshot.recording}),[live,speed,snapshot.recording,lang]);
 
- if(mode===undefined)return <View style={{flex:1,backgroundColor:c.night}}><StatusBar style="light"/></View>;
- if(!mode)return <View key={lang} style={{flex:1}}><StatusBar style="light"/><SignIn api={api} onConnected={boot}/></View>;
+ if(mode===undefined)return <View style={{flex:1,backgroundColor:c.bg}}><StatusBar style="dark"/></View>;
+ if(!mode)return <View key={lang} style={{flex:1}}><StatusBar style="dark"/><SignIn api={api} onConnected={boot}/></View>;
 
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
@@ -254,7 +273,7 @@ export default function App(){
   </Modal>
 
   <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>
-   {tripView?<TripDetail trip={tripView} vehicleId={selected} vehicleName={vehicle?.name} call={server.call} onClose={()=>setTripView(null)}/>:null}
+   {tripView?<TripDetail trip={tripView} vehicleId={selected} vehicleName={vehicle?.name} vinModel={report?.vinModel} call={server.call} onClose={()=>setTripView(null)}/>:null}
   </Modal>
  </View>;
 }
@@ -276,7 +295,7 @@ function VehicleRow({vehicle:v,first,on,onPick,onUpdate}:{vehicle:any;first:bool
  </View>;
  return <View style={[s.listRow,!first&&s.listRowBorder]}>
   <Pressable accessibilityRole="button" accessibilityState={{selected:on}} style={({pressed})=>[{flex:1,flexDirection:'row',alignItems:'center',gap:12},pressed&&{opacity:0.7}]} onPress={()=>onPick(v.id)}>
-   <View style={[s.circle,on?{backgroundColor:c.night}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
+   <View style={[s.circle,on?{backgroundColor:c.blue}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
    <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{carLine(v)}</Text></View>
    {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
   </Pressable>

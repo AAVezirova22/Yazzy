@@ -16,7 +16,10 @@ export type CarProfile={
  parked?:Spot|null;
  /** The type chosen by hand on the car page; wins over detection. */
  userKind?:Kind|null;
+ /** Make, model and model year decoded from the VIN (components/vinCar.ts). */
+ vinModel?:VinModel|null;
 };
+import type {VinModel} from './vinCar';
 export type Spot={latitude:number;longitude:number;accuracy?:number;at:number};
 export type Kind='HYBRID'|'PETROL'|'DIESEL'|'ELECTRIC'|'LPG';
 export type Detection={kind:Kind|null;label:string;source:string};

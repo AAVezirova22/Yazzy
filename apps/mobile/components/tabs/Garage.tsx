@@ -1,5 +1,5 @@
 import {memo,useMemo} from 'react';
-import {ActivityIndicator,Image,RefreshControl,StyleSheet,Text,useWindowDimensions,View} from 'react-native';
+import {ActivityIndicator,RefreshControl,StyleSheet,Text,useWindowDimensions,View} from 'react-native';
 import Animated,{Extrapolation,interpolate,useAnimatedScrollHandler,useAnimatedStyle,useReducedMotion,useSharedValue} from 'react-native-reanimated';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Updater} from '../Updater';
@@ -8,6 +8,8 @@ import {Button,Chip,Icon,ListRow,Notice,QuickAction,RoundButton,Section,Tile} fr
 import {PressableScale} from '../motion';
 import {RouteArt,WeekBars} from '../art';
 import {LightSurface} from '../LightSurface';
+import {CarImage} from '../CarImage';
+import type {VinModel} from '../vinCar';
 import {distance,minutes} from '../TripDetail';
 import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,smoothDriving,weekday} from '../format';
 import type {Car} from './types';
@@ -16,7 +18,7 @@ import {t,tp} from '../i18n';
 
 type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:string;recorder:{label:string;live:boolean;recording:boolean};padBottom:number;
  onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
- carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean};onOpenCar:()=>void};
+ carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean};onOpenCar:()=>void;vinModel?:VinModel|null};
 
 /**
  * Home. A realistic, illustrative car sits on a light studio wash with square quick actions; as you scroll, the
@@ -24,7 +26,7 @@ type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:str
  * dropped with Reduce Motion). Below: live status
  * tiles, the last trip, smooth driving and reminders, each one card you can read at a glance.
  */
-export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar}:Props){
+export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar,vinModel}:Props){
  const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-24,430),reduced=useReducedMotion();
  const lastTrip=latest(car?.trips,'startAt'),lastService=latest(car?.service,'observedAt'),findingCount=car?.findings?.length??0;
  const week=useMemo(()=>lastWeek(car?.trips),[car?.trips]),weekKm=week.reduce((a,b)=>a+b,0),fuel=car?.fuel;
@@ -53,7 +55,7 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
     <RoundButton icon="swap-horizontal" label={t('Switch or add vehicle')} onPress={onSwitch}/>
    </View>
    {vehicle?<Animated.View style={[s.car,carStyle]} pointerEvents="none" accessible={false}>
-    <Image source={require('../../assets/images/car-hero.png')} style={{width:carWidth,height:carWidth*0.5}} resizeMode="contain" accessible={false}/>
+    <CarImage vinModel={vinModel} width={carWidth}/>
    </Animated.View>:<View style={{height:24}}/>}
    <Text style={s.line} numberOfLines={1}>{vehicle?carLine(vehicle):t('Add your first vehicle to begin')}</Text>
    {vehicle?<PressableScale accessibilityRole="button" accessibilityLabel={t('Recorder: {state}. Open Drive',{state:recorder.label})} onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',minHeight:44,justifyContent:'center'}}>

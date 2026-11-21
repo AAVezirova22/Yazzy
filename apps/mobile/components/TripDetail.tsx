@@ -8,7 +8,10 @@ import {exportTripPdf,REPORT_SIGNALS,type SeriesPoint} from './tripPdf';
 import {c,F,floatShadow,radius,shadow,type,ui} from './theme';
 import {Button,Chip,Icon,Section,Tile} from './kit';
 import {PressableScale} from './motion';
-import {CarArt,NightGlow,RouteArt} from './art';
+import {RouteArt} from './art';
+import {LightSurface} from './LightSurface';
+import {CarImage} from './CarImage';
+import type {VinModel} from './vinCar';
 import {locale,t} from './i18n';
 
 // Android maps need a Google Maps key baked in at build time (see app.config.js); iOS uses Apple Maps.
@@ -18,7 +21,7 @@ type Series={points:Point[]};
 type DrivingEvent={type:'HARD_ACCELERATION'|'HARD_BRAKING';time:number;peakMetresPerSecond2:number;fromKmh:number;toKmh:number;durationSeconds:number;latitude:number|null;longitude:number|null};
 // Readings of recently opened trips, so opening one again is instant. A trip's readings never change once recorded.
 const seen=new Map<string,[Series,Series]>();
-type Props={trip:any;vehicleId:string;vehicleName?:string;call:(path:string)=>Promise<any>;onClose:()=>void};
+type Props={trip:any;vehicleId:string;vehicleName?:string;vinModel?:VinModel|null;call:(path:string)=>Promise<any>;onClose:()=>void};
 
 export const minutes=(seconds:number)=>seconds>=3600?t('{h} h {m} min',{h:Math.floor(seconds/3600),m:Math.round(seconds%3600/60)}):seconds>=60?t('{n} min',{n:Math.round(seconds/60)}):t('{n} s',{n:Math.round(seconds)});
 export const distance=(km:number|null|undefined)=>km==null?'—':km<1?t('{n} m',{n:Math.round(km*1000)}):t('{n} km',{n:km.toFixed(km<10?2:1)});
@@ -51,7 +54,7 @@ function RouteLayers({route,events}:{route:LatLng[];events:DrivingEvent[]}){
 }
 
 /** Full-screen trip page: a night summary with the distance up front, the route, overview tiles, charts and export. */
-export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
+export function TripDetail({trip,vehicleId,vehicleName,vinModel,call,onClose}:Props){
  const m=trip.metrics,from=trip.startAt,to=trip.endAt??trip.startAt;
  const [speed,setSpeed]=useState<Series|null>(()=>seen.get(trip.id)?.[0]??null),[rpm,setRpm]=useState<Series|null>(()=>seen.get(trip.id)?.[1]??null),[failed,setFailed]=useState('');
  const [expanded,setExpanded]=useState(false),[exporting,setExporting]=useState(false),insets=useSafeAreaInsets(),inlineMap=useRef<MapView|null>(null);
@@ -89,7 +92,7 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
    </View>
 
    <View style={s.hero}>
-    <NightGlow glowX="85%" glowY="90%"/>
+    <LightSurface/>
     <Text style={s.heroOver} numberOfLines={1}>{started.toLocaleDateString(locale(),{weekday:'short',day:'numeric',month:'short'})} · {clock(from)} – {clock(to)}</Text>
     <Text style={s.heroValue} numberOfLines={1} adjustsFontSizeToFit>{distance(m.distanceKm)}</Text>
     <View style={s.heroStats}>
@@ -100,9 +103,9 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
      <HeroStat label={t('Per 100 km')} value={m.litresPer100Km!=null?t('{n} L',{n:num(m.litresPer100Km)}):'—'}/>
     </View>
     <View style={[ui.row,{gap:8,marginTop:16,flexWrap:'wrap'}]}>
-     {stationary?<Chip glass icon="pause" label={t('Stationary')}/>:events.length?<Chip glass dot={braking?c.red:c.amber} label={eventChip}/>:<Chip glass dot="#4ade80" label={t('Smooth drive')}/>}
+     {stationary?<Chip icon="pause" label={t('Stationary')}/>:events.length?<Chip dot={braking?c.red:c.amber} label={eventChip}/>:<Chip dot={c.green} label={t('Smooth drive')}/>}
     </View>
-    <View style={s.heroCar} pointerEvents="none"><CarArt width={150}/></View>
+    <View style={s.heroCar} pointerEvents="none"><CarImage vinModel={vinModel} width={170}/></View>
    </View>
 
    {route.length?<View style={[ui.card,{padding:0,overflow:'hidden'}]}>
@@ -139,7 +142,7 @@ export function TripDetail({trip,vehicleId,vehicleName,call,onClose}:Props){
 
    {failed?<Text style={[ui.body,{color:c.red,marginBottom:14}]}>{t('Could not load readings: {reason}',{reason:failed})}</Text>:<>
     <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>{t('Speed')}</Text>{speed?<Bars points={speed.points} from={from} to={to} unit={t('km/h')} color={c.blue}/>:<Text style={ui.caption}>{t('Loading…')}</Text>}</View>
-    <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>{t('Engine speed')}</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit={t('rpm')} color={c.night}/>:<Text style={ui.caption}>{t('Loading…')}</Text>}</View>
+    <View style={ui.card}><Text style={[ui.title,{marginBottom:12}]}>{t('Engine speed')}</Text>{rpm?<Bars points={rpm.points} from={from} to={to} unit={t('rpm')} color={c.blue300}/>:<Text style={ui.caption}>{t('Loading…')}</Text>}</View>
    </>}
    <Text style={[ui.caption,{textAlign:'center',lineHeight:18}]}>{t('Started {when}',{when:started.toLocaleString(locale())})}{m.endReason?' · '+t('ended: {reason}',{reason:t(String(m.endReason).replaceAll('_',' ').toLowerCase())}):''}{m.distanceMethod?' · '+t('distance from {method}',{method:t(String(m.distanceMethod).replaceAll('_',' ').toLowerCase())}):''}</Text>
   </ScrollView>
@@ -182,14 +185,14 @@ const s=StyleSheet.create({
  nums:{fontVariant:['tabular-nums']},
  back:{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:c.frost,borderRadius:radius.pill,paddingVertical:10,paddingHorizontal:14,borderWidth:StyleSheet.hairlineWidth,borderColor:c.frostLine,...shadow},
  backText:{fontFamily:F[700],fontSize:14,color:c.ink},
- hero:{borderRadius:radius.xl,padding:20,marginBottom:14,overflow:'hidden',minHeight:200,backgroundColor:c.night},
- heroOver:{fontFamily:F[700],fontSize:10.5,letterSpacing:1.6,textTransform:'uppercase',color:'#9fb0c8'},
- heroValue:{fontFamily:F[500],fontSize:50,lineHeight:56,letterSpacing:-2.2,color:'#fff',marginTop:6,fontVariant:['tabular-nums']},
- heroStats:{flexDirection:'row',alignItems:'center',backgroundColor:c.glass,borderRadius:radius.md,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine,paddingVertical:12,paddingHorizontal:14,marginTop:14,gap:12},
- heroDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.glassLine},
- heroStatValue:{fontFamily:F[600],fontSize:17,color:'#fff',fontVariant:['tabular-nums']},
- heroStatLabel:{fontFamily:F[600],fontSize:11.5,color:c.nightMuted,marginTop:2},
- heroCar:{position:'absolute',right:-20,top:14,opacity:0.9},
+ hero:{borderRadius:radius.xl,padding:20,marginBottom:14,overflow:'hidden',minHeight:200,backgroundColor:c.surface,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line},
+ heroOver:{fontFamily:F[700],fontSize:10.5,letterSpacing:1.6,textTransform:'uppercase',color:c.muted},
+ heroValue:{fontFamily:F[500],fontSize:50,lineHeight:56,letterSpacing:-2.2,color:c.ink,marginTop:6,fontVariant:['tabular-nums']},
+ heroStats:{flexDirection:'row',alignItems:'center',backgroundColor:c.surface,borderRadius:radius.md,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,paddingVertical:12,paddingHorizontal:14,marginTop:14,gap:12},
+ heroDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.line},
+ heroStatValue:{fontFamily:F[600],fontSize:17,color:c.ink,fontVariant:['tabular-nums']},
+ heroStatLabel:{fontFamily:F[600],fontSize:11.5,color:c.muted,marginTop:2},
+ heroCar:{position:'absolute',right:-18,top:10},
  grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:12,marginBottom:14},
  half:{width:'48.4%'},
  event:{flexDirection:'row',gap:12,paddingVertical:10,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},

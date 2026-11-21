@@ -1,56 +1,8 @@
 import {memo,useState,type ReactNode} from 'react';
 import {StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
-import Svg,{Circle,Defs,Ellipse,G,Line,LinearGradient,Path,Polyline,RadialGradient,Rect,Stop} from 'react-native-svg';
+import Svg,{Circle,G,Line,Polyline} from 'react-native-svg';
 import {c,F} from './theme';
 import {t} from './i18n';
-
-/**
- * The night surface behind hero moments: a deep graphite-to-navy gradient with a soft blue glow where the car sits.
- * Drawn once as vectors, so it costs nothing to scroll (no image, no blur).
- */
-export const NightGlow=memo(function NightGlow({glowX='72%',glowY='70%'}:{glowX?:string;glowY?:string}){
- // Sized from the parent's measured box: percentage sizes on an Svg do not always fill it on Android.
- const [box,setBox]=useState({width:0,height:0});
- return <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={e=>{const {width,height}=e.nativeEvent.layout;if(width!==box.width||height!==box.height)setBox({width,height});}}>
-  {box.width>0?<Svg width={box.width} height={box.height}>
-   <Defs>
-    <LinearGradient id="nightFill" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#0b111c"/><Stop offset="1" stopColor="#15203a"/></LinearGradient>
-    <RadialGradient id="nightGlow" cx={glowX} cy={glowY} rx="60%" ry="48%"><Stop offset="0" stopColor="#2f6bff" stopOpacity="0.34"/><Stop offset="1" stopColor="#2f6bff" stopOpacity="0"/></RadialGradient>
-   </Defs>
-   <Rect width={box.width} height={box.height} fill="url(#nightFill)"/>
-   <Rect width={box.width} height={box.height} fill="url(#nightGlow)"/>
-  </Svg>:null}
- </View>;
-});
-
-/** A generic side-view car drawn in vectors: no photo, no brand, a few kilobytes. Faces right. */
-export const CarArt=memo(function CarArt({width=300}:{width?:number}){
- const wheel=(x:number)=><G key={x}>
-  <Circle cx={x} cy={90} r={21} fill="#0d1117"/>
-  <Circle cx={x} cy={90} r={14} fill="url(#rim)"/>
-  {[0,72,144,216,288].map(a=>{const r=a*Math.PI/180;return <Line key={a} x1={x} y1={90} x2={x+12*Math.cos(r)} y2={90+12*Math.sin(r)} stroke="#5b6573" strokeWidth={2.6} strokeLinecap="round"/>;})}
-  <Circle cx={x} cy={90} r={4} fill={c.blue}/>
- </G>;
- return <Svg width={width} height={width*0.4} viewBox="0 0 320 128">
-  <Defs>
-   <LinearGradient id="body" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#ffffff"/><Stop offset="0.55" stopColor="#e9edf2"/><Stop offset="1" stopColor="#b9c2ce"/></LinearGradient>
-   <LinearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#3b4a5e"/><Stop offset="1" stopColor="#141b24"/></LinearGradient>
-   <LinearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#e3e7ec"/><Stop offset="1" stopColor="#8b95a3"/></LinearGradient>
-  </Defs>
-  <Ellipse cx={162} cy={112} rx={128} ry={5} fill="#0b0f14" opacity={0.16}/>
-  <Ellipse cx={162} cy={111} rx={100} ry={3.5} fill="#0b0f14" opacity={0.18}/>
-  <Path d="M22 90 L18 78 C16 70 18 62 30 58 L72 54 C88 44 104 33 122 29 C150 24 180 24 196 27 C212 31 228 42 240 50 C262 53 284 56 296 61 C304 65 306 74 304 82 L300 90 L271 90 A26 26 0 0 0 219 90 L106 90 A26 26 0 0 0 54 90 Z" fill="url(#body)"/>
-  <Path d="M92 52 C104 42 116 35 128 33 C152 29 178 29 192 31 C204 35 216 43 226 51 Z" fill="url(#glass)"/>
-  <Rect x={166} y={29} width={4} height={23} fill="#dfe4ea"/>
-  <Path d="M40 70 C120 66 220 64 296 67" stroke="#c4ccd6" strokeWidth={1.2} fill="none"/>
-  <Line x1={170} y1={55} x2={168} y2={86} stroke="#c4ccd6" strokeWidth={1}/>
-  <Rect x={146} y={60} width={13} height={3} rx={1.5} fill="#9aa4b1"/>
-  <Path d="M106 90 L219 90 L216 84 L109 84 Z" fill="#2a323d"/>
-  <Path d="M283 62 L300 66" stroke={c.blue300} strokeWidth={3.5} strokeLinecap="round"/>
-  <Path d="M19 64 L29 61" stroke="#e5484d" strokeWidth={3.5} strokeLinecap="round"/>
-  {wheel(80)}{wheel(245)}
- </Svg>;
-});
 
 type LatLng={latitude:number;longitude:number};
 
