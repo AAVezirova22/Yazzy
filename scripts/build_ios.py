@@ -93,6 +93,24 @@ def ensure_podfile_fix() -> bool:
     return True
 
 
+def missing_packages() -> list:
+    """Dependencies declared in apps/mobile/package.json that are not in node_modules yet."""
+    manifest = json.loads((MOBILE / "package.json").read_text(encoding="utf-8"))
+    declared = {**manifest.get("dependencies", {}), **manifest.get("devDependencies", {})}
+    return [name for name in declared
+            if not (ROOT / "node_modules" / name).exists() and not (MOBILE / "node_modules" / name).exists()]
+
+
+def pods_outdated() -> bool:
+    """True when there are no Pods yet, or the dependency files changed after the last `pod install`."""
+    lock = IOS / "Podfile.lock"
+    if not (IOS / "Pods").exists() or not lock.exists():
+        return True
+    newest = max((p.stat().st_mtime for p in (ROOT / "package-lock.json", MOBILE / "package.json",
+                                                MOBILE / "app.json", MOBILE / "app.config.js") if p.exists()))
+    return newest > lock.stat().st_mtime
+
+
 def find_iphone(wanted: str | None) -> dict:
     """The connected physical iPhone/iPad as {name, udid, identifier}; exits with advice when there is not exactly one."""
     with tempfile.TemporaryDirectory() as folder:
@@ -141,10 +159,14 @@ def main():
     phone = find_iphone(args.device)
     print(f"iPhone: {phone['name']} ({phone['udid']})  API: {env['EXPO_PUBLIC_API_URL']}", flush=True)
 
+    # After a `git pull` the app often needs packages this Mac does not have yet (Metro then fails with "Unable to
+    # resolve module ..."); install them, and rebuild the Pods when the dependency files are newer than the Pods.
+    if missing_packages():
+        run(["npm", "install", "--no-audit", "--no-fund"], ROOT, env)
     if not IOS.exists():
         run(["npx", "expo", "prebuild", "--platform", "ios", "--no-install"], MOBILE, env)
     patched = ensure_podfile_fix()
-    if args.pods or patched or not (IOS / "Pods").exists():
+    if args.pods or patched or pods_outdated():
         run(["pod", "install"], IOS, env)
 
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
