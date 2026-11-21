@@ -81,6 +81,6 @@ const s=StyleSheet.create({
  thumbEmpty:{alignItems:'center',justifyContent:'center'},
  distance:{fontFamily:F[800],fontSize:20,color:c.ink,letterSpacing:-0.5,marginTop:4,fontVariant:['tabular-nums']},
  meta:{fontFamily:F[600],fontSize:13,color:c.muted,fontVariant:['tabular-nums']},
- rebuild:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingVertical:14},
- rebuildText:{fontFamily:F[700],fontSize:13.5,color:c.blue},
+ rebuild:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingVertical:14,paddingHorizontal:8},
+ rebuildText:{fontFamily:F[700],fontSize:13.5,color:c.blue,flexShrink:1,textAlign:'center'},
 });

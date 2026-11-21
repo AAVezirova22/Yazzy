@@ -8,14 +8,18 @@ import {c,F} from './theme';
  * Drawn once as vectors, so it costs nothing to scroll (no image, no blur).
  */
 export const NightGlow=memo(function NightGlow({glowX='72%',glowY='70%'}:{glowX?:string;glowY?:string}){
- return <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none" pointerEvents="none">
-  <Defs>
-   <LinearGradient id="nightFill" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#0b111c"/><Stop offset="1" stopColor="#15203a"/></LinearGradient>
-   <RadialGradient id="nightGlow" cx={glowX} cy={glowY} rx="60%" ry="48%"><Stop offset="0" stopColor="#2f6bff" stopOpacity="0.34"/><Stop offset="1" stopColor="#2f6bff" stopOpacity="0"/></RadialGradient>
-  </Defs>
-  <Rect width="100%" height="100%" fill="url(#nightFill)"/>
-  <Rect width="100%" height="100%" fill="url(#nightGlow)"/>
- </Svg>;
+ // Sized from the parent's measured box: percentage sizes on an Svg do not always fill it on Android.
+ const [box,setBox]=useState({width:0,height:0});
+ return <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={e=>{const {width,height}=e.nativeEvent.layout;if(width!==box.width||height!==box.height)setBox({width,height});}}>
+  {box.width>0?<Svg width={box.width} height={box.height}>
+   <Defs>
+    <LinearGradient id="nightFill" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#0b111c"/><Stop offset="1" stopColor="#15203a"/></LinearGradient>
+    <RadialGradient id="nightGlow" cx={glowX} cy={glowY} rx="60%" ry="48%"><Stop offset="0" stopColor="#2f6bff" stopOpacity="0.34"/><Stop offset="1" stopColor="#2f6bff" stopOpacity="0"/></RadialGradient>
+   </Defs>
+   <Rect width={box.width} height={box.height} fill="url(#nightFill)"/>
+   <Rect width={box.width} height={box.height} fill="url(#nightGlow)"/>
+  </Svg>:null}
+ </View>;
 });
 
 /** A generic side-view car drawn in vectors: no photo, no brand, a few kilobytes. Faces right. */
