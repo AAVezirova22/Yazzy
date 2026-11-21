@@ -225,7 +225,7 @@ export default function App(){
  }};
 
  return <View style={s.screen}>
-  <StatusBar style={tab==='Home'?'light':'dark'}/>
+  <StatusBar style="dark"/>
   <ScreenContainer style={{flex:1}} hasTwoStates>
    {TABS.filter(t=>visited.includes(t.key)).map(t=><TabPane key={t.key} active={tab===t.key}>{page(t.key)}</TabPane>)}
   </ScreenContainer>

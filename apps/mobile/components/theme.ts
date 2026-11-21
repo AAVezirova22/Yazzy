@@ -4,8 +4,8 @@ import {Platform,StyleSheet,type TextStyle} from 'react-native';
  * Yazzy design tokens: precise and quiet.
  *
  * Square geometry (2–6 px corners), flat surfaces drawn with hairlines instead of soft shadows, generous space,
- * wide-tracked labels and light, large numerals. A near-black "night" carries the hero moments (the car, live
- * driving, map chrome); everything you read sits on a neutral canvas. One electric-blue accent, used sparingly for
+ * wide-tracked labels and light, large numerals. Home and Drive use a pale studio wash; navigation uses
+ * a light material. Existing secondary screens retain their styling. One electric-blue accent, used sparingly for
  * the active state and the main action; green, amber and red only ever mean status.
  */
 export const c={
@@ -13,6 +13,8 @@ export const c={
  bg:'#f3f4f6',surface:'#ffffff',surface2:'#f7f8fa',track:'#e6e8ec',
  ink:'#0a0b0d',ink2:'#2a2f37',muted:'#6b7280',faint:'#a4abb6',
  line:'#e2e5ea',line2:'#eef0f3',
+ // Light hero and live readout: retain the original blue accent and square cards.
+ skyTop:'#e4edff',skyMiddle:'#edf2f7',skyBottom:'#f8fafc',skyLine:'#cdd9eb',
  // Accent
  blue:'#2f6bff',blue600:'#1f56e0',blue50:'#edf2ff',blue300:'#8fb0ff',
  // Night surfaces

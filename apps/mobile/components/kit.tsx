@@ -137,10 +137,10 @@ export function ListRow({icon,tone='blue',title,caption,onPress,right,card=true,
 export function Group({children}:{children:ReactNode}){return <View style={[ui.card,{paddingVertical:2,paddingHorizontal:0}]}>{children}</View>;}
 
 /** A square glass key with a tracked label under it, for the hero's quick actions. */
-export function QuickAction({icon,label,onPress,accent}:{icon:string;label:string;onPress:()=>void;accent?:boolean}){
- return <PressableScale accessibilityRole="button" accessibilityLabel={label} onPress={onPress} tick scale={0.94} style={s.quick}>
-  <View style={[s.quickIcon,accent&&{backgroundColor:c.blue,borderColor:c.blue}]}><Icon name={icon} size={20} color="#fff"/></View>
-  <Text style={s.quickLabel} numberOfLines={1}>{label}</Text>
+export function QuickAction({icon,label,onPress,accent,light=false}:{icon:string;label:string;onPress:()=>void;accent?:boolean;light?:boolean}){
+ return <PressableScale accessibilityRole="button" accessibilityLabel={label} onPress={onPress} tick scale={0.94} style={[s.quick,light&&s.quickLight,light&&accent&&{borderColor:c.blue}]}>
+  <View style={[s.quickIcon,light&&s.quickIconLight,accent&&{backgroundColor:c.blue,borderColor:c.blue}]}><Icon name={icon} size={20} color={light&&!accent?c.blue:"#fff"}/></View>
+  <Text style={[s.quickLabel,light&&{color:c.ink2}]} numberOfLines={1}>{label}</Text>
  </PressableScale>;
 }
 
@@ -191,6 +191,8 @@ const s=StyleSheet.create({
  row:{flexDirection:'row',alignItems:'center',gap:14},
  rowPlain:{paddingVertical:14,paddingHorizontal:16},
  rowDivider:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
+ quickLight:{flex:1,width:undefined,minHeight:68,gap:5,justifyContent:'center',paddingVertical:10,backgroundColor:c.surface,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,borderRadius:radius.lg},
+ quickIconLight:{width:28,height:25,backgroundColor:'transparent',borderWidth:0},
  quick:{alignItems:'center',gap:8,width:74},
  quickIcon:{width:54,height:54,borderRadius:radius.md,backgroundColor:c.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:c.glassLine,alignItems:'center',justifyContent:'center'},
  quickLabel:{fontFamily:F[700],fontSize:10,letterSpacing:1.1,textTransform:'uppercase',color:'#c9cfd8'},

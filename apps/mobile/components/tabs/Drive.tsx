@@ -4,7 +4,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import {c,F,mono,radius,ui} from '../theme';
 import {Button,Check,Chip,Icon,IconTile,Notice,ScreenHeader,Segment,useAction} from '../kit';
-import {NightGlow} from '../art';
+import {LightSurface} from '../LightSurface';
 import {server} from '../server';
 import {Recorder,knownChannels,pickChannels,type Characteristic,type Peripheral,type RecorderSnapshot} from '../../modules/yazzy-recorder/src';
 
@@ -62,10 +62,10 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
 
   {view==='Record'&&<>
    <View style={s.live}>
-    <NightGlow glowX="20%" glowY="40%"/>
+    <LightSurface variant="drive"/>
     <View style={[ui.row,{justifyContent:'space-between'}]}>
-     <Chip glass dot={live?'#4ade80':snapshot.recording?c.blue300:c.nightMuted} label={live?'Recording':snapshot.recording?'Armed':'Ready when you are'}/>
-     <Icon name="bluetooth" size={18} color={snapshot.connected?c.blue300:c.nightMuted}/>
+     <Chip dot={live?c.green:snapshot.recording?c.blue:c.muted} label={live?'Recording':snapshot.recording?'Armed':'Ready when you are'}/>
+     <Icon name="bluetooth" size={18} color={snapshot.connected?c.blue:c.muted}/>
     </View>
     <View style={s.liveNumbers}>
      <View style={{flex:1.3}}><Text style={s.liveValue} numberOfLines={1}>{snapshot.signals.VEHICLE_SPEED??'—'}</Text><Text style={s.liveUnit}>km/h</Text></View>
@@ -73,14 +73,14 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
      <View style={{flex:1,paddingLeft:18}}><Text style={[s.liveValue,{fontSize:34,lineHeight:40}]} numberOfLines={1}>{snapshot.signals.ENGINE_RPM??'—'}</Text><Text style={s.liveUnit}>rpm</Text></View>
     </View>
     <View style={[ui.row,{gap:8,flexWrap:'wrap'}]}>
-     <Chip glass icon={snapshot.connected?'link':'unlink'} label={snapshot.connected?'Adapter connected':'Adapter not connected'}/>
-     <Chip glass icon="cloud-upload-outline" label={`${snapshot.queued} waiting to upload`}/>
+     <Chip icon={snapshot.connected?'link':'unlink'} label={snapshot.connected?'Adapter connected':'Adapter not connected'}/>
+     <Chip icon="cloud-upload-outline" label={`${snapshot.queued} waiting to upload`}/>
     </View>
    </View>
    {snapshot.error?<Notice tone="error">{snapshot.error}</Notice>:null}
    {waiting&&<Notice icon="time">Waiting for your adapter. Turn the car on and it connects by itself, even with the app closed. Each start of the car begins a new trip.</Notice>}
    {waiting&&canNudge?<Button title={busy?'Looking for the adapter…':'Connect now'} icon="bluetooth" disabled={busy} onPress={connectNow}/>:null}
-   {snapshot.recording?<Button kind="dark" title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" disabled={busy} onPress={()=>run(async()=>{await Recorder.stop();await refreshSnapshot();})}/>
+   {snapshot.recording?<Button title={snapshot.connected?'Stop recording':'Disarm auto-connect'} icon="stop" disabled={busy} onPress={()=>run(async()=>{await Recorder.stop();await refreshSnapshot();})}/>
     :<Button title={snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording'} icon="play" disabled={busy} onPress={()=>run(async()=>{await start();await refreshSnapshot();})}/>}
    <Button kind="light" title="Upload now" icon="cloud-upload-outline" disabled={busy} onPress={()=>run(async()=>{await Recorder.sync();await refreshSnapshot();})}/>
    {Recorder.canReset?<Button kind="light" title="Reset recorder (discard queue)" icon="trash-outline" disabled={busy} onPress={()=>Alert.alert('Reset recorder?',`This permanently discards ${snapshot.queued} queued readings that have not uploaded, and forgets the server, vehicle and adapter pairing. Start again afterwards to re-pair.`,[{text:'Cancel',style:'cancel'},{text:'Discard and reset',style:'destructive',onPress:()=>{void run(async()=>{await Recorder.reset();await SecureStore.deleteItemAsync('yazzy-configured');await refreshSnapshot();});}}])}/>:null}
@@ -136,11 +136,11 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
 const s=StyleSheet.create({
  circle:{width:40,height:40,borderRadius:radius.md,alignItems:'center',justifyContent:'center'},
  rowTitle:{fontFamily:F[700],fontSize:15,color:c.ink},
- live:{backgroundColor:c.night,borderRadius:radius.xl,padding:20,marginBottom:14,overflow:'hidden'},
+ live:{backgroundColor:c.skyTop,borderWidth:StyleSheet.hairlineWidth,borderColor:c.skyLine,borderRadius:radius.xl,padding:20,marginBottom:14,overflow:'hidden'},
  liveNumbers:{flexDirection:'row',alignItems:'center',marginVertical:24},
- liveValue:{fontFamily:F[500],fontSize:64,lineHeight:70,color:'#fff',letterSpacing:-2.6,fontVariant:['tabular-nums']},
- liveUnit:{fontFamily:F[600],fontSize:13,color:c.nightMuted,marginTop:2},
- liveDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.glassLine},
+ liveValue:{fontFamily:F[500],fontSize:64,lineHeight:70,color:c.ink,letterSpacing:-2.6,fontVariant:['tabular-nums']},
+ liveUnit:{fontFamily:F[600],fontSize:13,color:c.ink2,marginTop:2},
+ liveDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.skyLine},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12},
  listRowBorder:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
  radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},

@@ -5,6 +5,7 @@ Usage (from the repository root, iPhone plugged in and unlocked):
     python3 scripts/build_ios.py --no-launch     # install only
     python3 scripts/build_ios.py --pods          # force `pod install` first (after native dependency changes)
     python3 scripts/build_ios.py --device NAME   # pick a phone by name or UDID when several are connected
+    python3 scripts/build_ios.py --team ID       # sign with this Apple development team (default: detected)
 
 Why this exists instead of `npx expo run:ios --device`: Expo CLI 54 refuses to start when Xcode has no Simulator.app,
 and Xcode 27 no longer ships one. This runs the same build and install steps without that check.
@@ -139,11 +140,38 @@ def find_iphone(wanted: str | None) -> dict:
     return ready[0]
 
 
+def find_team(wanted: str | None) -> str | None:
+    """Apple development team ID to sign with: --team, $YAZZY_IOS_TEAM, an existing setting in the Xcode project,
+    the team of the first Apple Development certificate in the keychain, then the team Xcode is signed in to.
+
+    ios/ is generated, so `expo prebuild` leaves DEVELOPMENT_TEAM empty and xcodebuild stops with "Signing for
+    "Yazzy" requires a development team"."""
+    if wanted or os.environ.get("YAZZY_IOS_TEAM"):
+        return wanted or os.environ["YAZZY_IOS_TEAM"]
+    project = (IOS / "Yazzy.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+    found = re.search(r"DEVELOPMENT_TEAM = ([A-Z0-9]{10});", project)
+    if found:
+        return found.group(1)
+    certificate = subprocess.run(["security", "find-certificate", "-c", "Apple Development", "-p"],
+                                 capture_output=True, text=True)
+    if certificate.returncode == 0 and certificate.stdout:
+        subject = subprocess.run(["openssl", "x509", "-noout", "-subject", "-nameopt", "multiline"],
+                                 input=certificate.stdout, capture_output=True, text=True).stdout
+        found = re.search(r"organizationalUnitName\s*=\s*([A-Z0-9]{10})", subject)
+        if found:
+            return found.group(1)
+    prefs = subprocess.run(["defaults", "read", "com.apple.dt.Xcode", "IDEProvisioningTeamByIdentifier"],
+                           capture_output=True, text=True).stdout
+    found = re.search(r"teamID = ([A-Z0-9]{10});", prefs)
+    return found.group(1) if found else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pods", action="store_true", help="run `pod install` before building")
     parser.add_argument("--no-launch", action="store_true", help="install the app but do not open it")
     parser.add_argument("--device", help="name (or part of it) or UDID of the iPhone to use")
+    parser.add_argument("--team", help="Apple development team ID to sign with (default: detected)")
     parser.add_argument("--no-sdk-compat", action="store_true",
                         help=f"do not stamp the app as linked against iOS {COMPAT_SDK} (it then crashes on iOS 27)")
     args = parser.parse_args()
@@ -178,6 +206,13 @@ def main():
         sys.exit("Another build_ios.py run is already building. Wait for it to finish, then run this again.")
 
     settings = []
+    team = find_team(args.team)
+    if team:
+        settings.append(f"DEVELOPMENT_TEAM={team}")
+        print(f"Signing team: {team}", flush=True)
+    else:
+        print("warning: no Apple development team found; sign in to Xcode (Settings > Accounts) or pass --team ID.",
+              flush=True)
     if not args.no_sdk_compat:
         # -platform_version <platform> <min OS> <SDK>: keep the real minimum OS, report the older SDK.
         minimum = re.search(r"IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);",
