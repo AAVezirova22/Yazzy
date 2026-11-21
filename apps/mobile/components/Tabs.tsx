@@ -7,6 +7,7 @@ import {c,F} from './theme';
 import {Icon} from './kit';
 import {NavigationMaterial} from './NavigationMaterial';
 import {EASE_IN_OUT,haptic} from './motion';
+import {t} from './i18n';
 
 export type TabKey='Home'|'Trips'|'Health'|'Drive'|'More';
 export const TABS:{key:TabKey;icon:string}[]=[
@@ -28,7 +29,7 @@ export function TabPane({active,children}:{active:boolean;children:ReactNode}){
 /** iOS keeps its floating glass dock; Android uses an edge-to-edge, bottom-fixed light bar. */
 export const NavBar=memo(function NavBar({active,onChange,bottom,recording}:{active:TabKey;onChange:(t:TabKey)=>void;bottom:number;recording:null|'live'|'armed'}){
  const reduced=useReducedMotion(),insets=useSafeAreaInsets(),android=Platform.OS==='android';
- const at=(k:TabKey)=>TABS.findIndex(t=>t.key===k);
+ const at=(k:TabKey)=>TABS.findIndex(tab=>tab.key===k);
  const [width,setWidth]=useState(0),[typing,setTyping]=useState(false),[shown,setShown]=useState(active),current=useRef(active);
  const item=width/TABS.length,x=useSharedValue(0);
  const move=(k:TabKey,animate:boolean)=>{if(!item)return;const to=at(k)*item;x.set(animate&&!reduced?withTiming(to,{duration:220,easing:EASE_IN_OUT}):to);};
@@ -50,12 +51,12 @@ export const NavBar=memo(function NavBar({active,onChange,bottom,recording}:{act
   <View style={[s.material,android&&s.androidMaterial]}><NavigationMaterial/></View>
   {item>0?<Animated.View pointerEvents="none" style={[s.track,{width:item},line]}><View style={s.line}/></Animated.View>:null}
   <View style={s.bar} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
-   {TABS.map(t=>{const on=t.key===shown;return <Pressable key={t.key} accessibilityRole="tab" accessibilityState={{selected:on}} accessibilityLabel={t.key==='Drive'?`Drive, ${recording==='live'?'recording':recording==='armed'?'waiting for your car':'not recording'}`:t.key} onPress={()=>press(t.key)} style={s.item}>
+   {TABS.map(tab=>{const on=tab.key===shown;return <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{selected:on}} accessibilityLabel={tab.key==='Drive'?`${t('Drive')}, ${t(recording==='live'?'Recording':recording==='armed'?'Waiting for your car':'Not recording')}`:t(tab.key)} onPress={()=>press(tab.key)} style={s.item}>
     <View>
-     <Icon name={on?t.icon:`${t.icon}-outline`} size={21} color={on?c.blue600:c.muted}/>
-     {t.key==='Drive'&&recording?<View style={[s.dot,{backgroundColor:recording==='live'?c.green:c.blue}]}/>:null}
+     <Icon name={on?tab.icon:`${tab.icon}-outline`} size={21} color={on?c.blue600:c.muted}/>
+     {tab.key==='Drive'&&recording?<View style={[s.dot,{backgroundColor:recording==='live'?c.green:c.blue}]}/>:null}
     </View>
-    <Text style={[s.label,on&&{color:c.blue600}]} numberOfLines={1}>{t.key}</Text>
+    <Text style={[s.label,on&&{color:c.blue600}]} numberOfLines={1}>{t(tab.key)}</Text>
    </Pressable>;})}
   </View>
  </View>;

@@ -5,6 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import {c,ui,F} from './theme';
+import {t} from './i18n';
 
 /** yazzy-android.json, which scripts/build_apk.py --publish puts next to the APK in the GitHub release. */
 type Build={versionCode:number;version?:string;apk:string;size?:number;md5?:string};
@@ -47,25 +48,25 @@ export function Updater(){
    await FileSystem.deleteAsync(target,{idempotent:true});
    const download=FileSystem.createDownloadResumable(`${releases}/${latest.apk}`,target,{},p=>setProgress(p.totalBytesExpectedToWrite>0?p.totalBytesWritten/p.totalBytesExpectedToWrite:0));
    const result=await download.downloadAsync();
-   if(!result||result.status!==200)throw new Error('Download failed ('+(result?.status??'no response')+')');
+   if(!result||result.status!==200)throw new Error(t('Download failed ({status})',{status:result?.status??t('no response')}));
    if(latest.md5){
     setChecking(true);
     const info=await FileSystem.getInfoAsync(result.uri,{md5:true});
-    if(!info.exists||info.md5!==latest.md5){await FileSystem.deleteAsync(target,{idempotent:true});throw new Error('The download was incomplete. Tap Update to try again.');}
+    if(!info.exists||info.md5!==latest.md5){await FileSystem.deleteAsync(target,{idempotent:true});throw new Error(t('The download was incomplete. Tap Update to try again.'));}
    }
    const uri=await FileSystem.getContentUriAsync(result.uri);
    // FLAG_GRANT_READ_URI_PERMISSION so the system installer can read the file.
    await IntentLauncher.startActivityAsync('android.intent.action.VIEW',{data:uri,flags:1,type:'application/vnd.android.package-archive'});
-  }catch(e){Alert.alert('Yazzy update',(e as Error).message+'\n\nIf Android blocked it, allow "Install unknown apps" for Yazzy and tap Update again.');}
+  }catch(e){Alert.alert(t('Yazzy update'),(e as Error).message+'\n\n'+t('If Android blocked it, allow "Install unknown apps" for Yazzy and tap Update again.'));}
   finally{setProgress(null);setChecking(false);}
  }
  const mb=build.size?` · ${Math.round(build.size/1048576)} MB`:'';
- const status=progress===null?`Build ${build.versionCode}${mb}`:checking?'Checking the download…':`Downloading… ${Math.round(progress*100)}%`;
+ const status=progress===null?t('Build {n}',{n:build.versionCode})+mb:checking?t('Checking the download…'):t('Downloading… {p}%',{p:Math.round(progress*100)});
  return <View style={[ui.card,{flexDirection:'row',alignItems:'center',gap:12}]}>
   <View style={{width:42,height:42,borderRadius:3,backgroundColor:c.blue50,alignItems:'center',justifyContent:'center'}}><Ionicons name="sparkles" size={19} color={c.blue}/></View>
-  <View style={{flex:1}}><Text style={ui.title}>New version</Text><Text style={ui.caption}>{status}</Text></View>
-  <Pressable accessibilityRole="button" accessibilityLabel="Update the app" disabled={progress!==null} onPress={update} style={({pressed})=>[{backgroundColor:c.blue,borderRadius:3,paddingVertical:10,paddingHorizontal:16},(pressed||progress!==null)&&{opacity:0.7}]}>
-   <Text style={{color:'#fff',fontFamily:F[700],fontSize:14}}>{progress===null?'Update':checking?'…':`${Math.round(progress*100)}%`}</Text>
+  <View style={{flex:1}}><Text style={ui.title}>{t('New version')}</Text><Text style={ui.caption}>{status}</Text></View>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Update the app')} disabled={progress!==null} onPress={update} style={({pressed})=>[{backgroundColor:c.blue,borderRadius:3,paddingVertical:10,paddingHorizontal:16},(pressed||progress!==null)&&{opacity:0.7}]}>
+   <Text style={{color:'#fff',fontFamily:F[700],fontSize:14}}>{progress===null?t('Update'):checking?'…':`${Math.round(progress*100)}%`}</Text>
   </Pressable>
  </View>;
 }

@@ -2,6 +2,7 @@ import {memo,useState,type ReactNode} from 'react';
 import {StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
 import Svg,{Circle,Defs,Ellipse,G,Line,LinearGradient,Path,Polyline,RadialGradient,Rect,Stop} from 'react-native-svg';
 import {c,F} from './theme';
+import {t} from './i18n';
 
 /**
  * The night surface behind hero moments: a deep graphite-to-navy gradient with a soft blue glow where the car sits.
@@ -97,7 +98,7 @@ export const WeekBars=memo(function WeekBars({values,height=58}:{values:number[]
    {values.map((v,i)=><View key={i} style={{flex:1,height:Math.max(3,v/top*height),borderRadius:1,backgroundColor:v>0?(i===values.length-1?c.blue:c.blue300):c.track}}/>)}
   </View>
   <View style={{flexDirection:'row',gap:5,marginTop:6}}>
-   {values.map((_,i)=><Text key={i} style={{flex:1,textAlign:'center',fontSize:10.5,fontFamily:i===values.length-1?F[700]:F[500],color:i===values.length-1?c.ink:c.faint}}>{'SMTWTFS'[(today-6+i+7)%7]}</Text>)}
+   {values.map((_,i)=><Text key={i} style={{flex:1,textAlign:'center',fontSize:10.5,fontFamily:i===values.length-1?F[700]:F[500],color:i===values.length-1?c.ink:c.faint}}>{t('SMTWTFS')[(today-6+i+7)%7]}</Text>)}
   </View>
  </View>;
 });

@@ -8,6 +8,7 @@ import {PressableScale} from './motion';
 import {Dot,FullMap,MapPreview,Pin,regionFor} from './maps';
 import {away,metres,since,type Spot} from './car';
 import {Recorder} from '../modules/yazzy-recorder/src';
+import {t} from './i18n';
 
 const NEAR=20000;
 
@@ -28,17 +29,17 @@ export function CarLocation({spot,live}:{spot:Spot&{source:'recorder'|'trip'};li
   return()=>{active=false;};
  },[]);
  const distance=me?metres(me,car):null,both=me&&distance!=null&&distance<NEAR?[car,me]:[car];
- const title=live?'With you now':spot.source==='trip'?'Where your last trip ended':'Parked';
- const when=live?'Updating while you drive':since(spot.at),far=distance!=null?`${away(distance)} from you`:null;
+ const title=t(live?'With you now':spot.source==='trip'?'Where your last trip ended':'Parked');
+ const when=live?t('Updating while you drive'):since(spot.at),far=distance!=null?t('{d} from you',{d:away(distance)}):null;
  const detail=[when,far].filter(Boolean).join(' · ');
  const lookUp=(map:MapView)=>{map.addressForCoordinate(car).then(a=>{const street=[a.thoroughfare,a.subThoroughfare].filter(Boolean).join(' ')||a.name;setAddress([street,a.locality].filter(Boolean).join(', ')||null);}).catch(()=>{});};
  const directions=()=>{const q=`${car.latitude},${car.longitude}`;Linking.openURL(Platform.OS==='ios'?`http://maps.apple.com/?daddr=${q}&dirflg=w`:`https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=walking`).catch(()=>{});};
  const where=address||`${car.latitude.toFixed(5)}, ${car.longitude.toFixed(5)}`;
  return <View style={[ui.card,{padding:0,overflow:'hidden'}]}>
-  <MapPreview key={both.length} region={regionFor(both)} height={190} onPress={()=>setOpen(true)} onReady={lookUp} label="Open the car's location on a map"
+  <MapPreview key={both.length} region={regionFor(both)} height={190} onPress={()=>setOpen(true)} onReady={lookUp} label={t("Open the car's location on a map")}
    fallback={<View style={[StyleSheet.absoluteFill,s.fallback]}><Icon name="car-sport" size={26} color={c.blue}/></View>}>
-   <Pin coordinate={car} icon="car-sport" title="Your car"/>
-   {me&&both.length>1?<Dot coordinate={me} title="You"/>:null}
+   <Pin coordinate={car} icon="car-sport" title={t('Your car')}/>
+   {me&&both.length>1?<Dot coordinate={me} title={t('You')}/>:null}
   </MapPreview>
   <View style={s.body}>
    <View style={{flex:1}}>
@@ -46,7 +47,7 @@ export function CarLocation({spot,live}:{spot:Spot&{source:'recorder'|'trip'};li
     <Text style={s.address} numberOfLines={2} selectable>{where}</Text>
     <Text style={type.caption} numberOfLines={1}>{detail}</Text>
    </View>
-   <PressableScale accessibilityRole="button" accessibilityLabel="Walking directions to the car" onPress={directions} scale={0.92} style={s.go}>
+   <PressableScale accessibilityRole="button" accessibilityLabel={t('Walking directions to the car')} onPress={directions} scale={0.92} style={s.go}>
     <Icon name="navigate" size={19} color="#fff"/>
    </PressableScale>
   </View>
@@ -56,15 +57,15 @@ export function CarLocation({spot,live}:{spot:Spot&{source:'recorder'|'trip'};li
     <Text style={[type.overline,{color:c.blue}]}>{title}</Text>
     <Text style={[s.address,{fontSize:18}]} numberOfLines={2}>{where}</Text>
     <Text style={type.caption} numberOfLines={1}>{detail}</Text>
-    <Button title="Walking directions" icon="navigate" onPress={directions} style={{marginTop:14}}/>
+    <Button title={t('Walking directions')} icon="navigate" onPress={directions} style={{marginTop:14}}/>
    </View>}
    more={<View style={s.facts}>
-    <Fact icon="time-outline" label={live?'Position':'Parked'} value={when}/>
-    <Fact icon="walk-outline" label="From you" value={far||'Your position is unknown'}/>
-    {spot.accuracy?<Fact icon="radio-button-on-outline" label="Accuracy" value={`± ${Math.round(spot.accuracy)} m`}/>:null}
-    <Fact icon={spot.source==='trip'?'flag-outline':'car-sport-outline'} label="Saved from" value={spot.source==='trip'?'The end of your last trip':'The last position before the engine stopped'}/>
+    <Fact icon="time-outline" label={t(live?'Position':'Parked')} value={when}/>
+    <Fact icon="walk-outline" label={t('From you')} value={far||t('Your position is unknown')}/>
+    {spot.accuracy?<Fact icon="radio-button-on-outline" label={t('Accuracy')} value={`± ${Math.round(spot.accuracy)} m`}/>:null}
+    <Fact icon={spot.source==='trip'?'flag-outline':'car-sport-outline'} label={t('Saved from')} value={t(spot.source==='trip'?'The end of your last trip':'The last position before the engine stopped')}/>
    </View>}>
-   <Pin coordinate={car} icon="car-sport" title="Your car" description={detail}/>
+   <Pin coordinate={car} icon="car-sport" title={t('Your car')} description={detail}/>
   </FullMap>
  </View>;
 }

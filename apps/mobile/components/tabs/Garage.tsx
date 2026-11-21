@@ -12,6 +12,7 @@ import {distance,minutes} from '../TripDetail';
 import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,smoothDriving,weekday} from '../format';
 import type {Car} from './types';
 import {kindIcon,type Kind} from '../car';
+import {t,tp} from '../i18n';
 
 type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:string;recorder:{label:string;live:boolean;recording:boolean};padBottom:number;
  onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
@@ -46,23 +47,23 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
    <View style={[ui.row,{alignItems:'flex-start',gap:12}]}>
     <View style={{flex:1}}>
      <Text style={s.greet}>{greeting()}</Text>
-     <Text style={s.name} numberOfLines={2}>{vehicle?vehicle.name:'Your garage'}</Text>
+     <Text style={s.name} numberOfLines={2}>{vehicle?vehicle.name:t('Your garage')}</Text>
     </View>
     {busy&&!refreshing?<ActivityIndicator color={c.muted} style={{marginTop:12}}/>:null}
-    <RoundButton icon="swap-horizontal" label="Switch or add vehicle" onPress={onSwitch}/>
+    <RoundButton icon="swap-horizontal" label={t('Switch or add vehicle')} onPress={onSwitch}/>
    </View>
    {vehicle?<Animated.View style={[s.car,carStyle]} pointerEvents="none" accessible={false}>
     <Image source={require('../../assets/images/car-hero.png')} style={{width:carWidth,height:carWidth*0.5}} resizeMode="contain" accessible={false}/>
    </Animated.View>:<View style={{height:24}}/>}
-   <Text style={s.line} numberOfLines={1}>{vehicle?carLine(vehicle):'Add your first vehicle to begin'}</Text>
-   {vehicle?<PressableScale accessibilityRole="button" accessibilityLabel={`Recorder: ${recorder.label}. Open Drive`} onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',minHeight:44,justifyContent:'center'}}>
+   <Text style={s.line} numberOfLines={1}>{vehicle?carLine(vehicle):t('Add your first vehicle to begin')}</Text>
+   {vehicle?<PressableScale accessibilityRole="button" accessibilityLabel={t('Recorder: {state}. Open Drive',{state:recorder.label})} onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',minHeight:44,justifyContent:'center'}}>
     <Chip dot={recorder.live?c.green:recorder.recording?c.blue:c.muted} label={recorder.label}/>
    </PressableScale>:null}
    {vehicle?<View style={s.actions}>
-    <QuickAction light icon={recorder.live?'radio':'play'} label="Drive" accent={recorder.live} onPress={()=>onGo('Record')}/>
-    <QuickAction light icon="document-text" label="Report" onPress={onOpenCar}/>
-    <QuickAction light icon="map" label="Trips" onPress={()=>onGo('Trips')}/>
-    <QuickAction light icon="construct" label="Service" onPress={()=>onGo('Service')}/>
+    <QuickAction light icon={recorder.live?'radio':'play'} label={t('Drive')} accent={recorder.live} onPress={()=>onGo('Record')}/>
+    <QuickAction light icon="document-text" label={t('Report')} onPress={onOpenCar}/>
+    <QuickAction light icon="map" label={t('Trips')} onPress={()=>onGo('Trips')}/>
+    <QuickAction light icon="construct" label={t('Service')} onPress={()=>onGo('Service')}/>
    </View>:null}
   </View>
 
@@ -70,23 +71,23 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
    {offline?<Notice icon="cloud-offline-outline" tone="warn">{offline} Showing what was saved on this phone.</Notice>:null}
    <Updater/>
    {!vehicle?<View style={ui.card}>
-    <Text style={ui.title}>No vehicle yet</Text>
-    <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>Add your car to start recording trips, fuel and health.</Text>
-    <Button title="Add a vehicle" icon="add" onPress={onSwitch}/>
+    <Text style={ui.title}>{t('No vehicle yet')}</Text>
+    <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>{t('Add your car to start recording trips, fuel and health.')}</Text>
+    <Button title={t('Add a vehicle')} icon="add" onPress={onSwitch}/>
    </View>:<>
-    <Section title="Status"/>
+    <Section title={t('Status')}/>
     <View style={s.tiles}>
-     <Tile style={{flex:1}} icon="trending-up" label="This week" value={car?.trips?fmt(weekKm,0):'—'} unit="km" caption={fuel?.tripCount?`${fmt(fuel.distanceKm,0)} km in ${fuel.tripCount} trips`:'No trips yet'} onPress={()=>onGo('Trips')}>
+     <Tile style={{flex:1}} icon="trending-up" label={t('This week')} value={car?.trips?fmt(weekKm,0):'—'} unit={t('km')} caption={fuel?.tripCount?tp(fuel.tripCount,'{km} km in {n} trip','{km} km in {n} trips',{km:fmt(fuel.distanceKm,0)}):t('No trips yet')} onPress={()=>onGo('Trips')}>
       <WeekBars values={week} height={52}/>
      </Tile>
      <View style={{flex:1,gap:12}}>
-      <Tile icon="water" label="Fuel" value={fuel?.litresPer100Km!=null?fmt(fuel.litresPer100Km):fmt(fuel?.fuelLitres)} unit={fuel?.litresPer100Km!=null?'L/100':'L'} caption={fuel?.litresPer100Km!=null?'Average use':'Used on trips'} onPress={()=>onGo('Trips')}/>
-      <Tile icon="pulse" tone={car?.findings?findingCount?'amber':'green':'blue'} label="Health" value={!car?.findings?'—':findingCount?String(findingCount):'All clear'} unit={findingCount?'to review':undefined} caption={findingCount?'Evidence-backed':'No findings'} onPress={()=>onGo('Health')}/>
+      <Tile icon="water" label={t('Fuel')} value={fuel?.litresPer100Km!=null?fmt(fuel.litresPer100Km):fmt(fuel?.fuelLitres)} unit={fuel?.litresPer100Km!=null?t('L/100'):t('L')} caption={fuel?.litresPer100Km!=null?t('Average use'):t('Used on trips')} onPress={()=>onGo('Trips')}/>
+      <Tile icon="pulse" tone={car?.findings?findingCount?'amber':'green':'blue'} label={t('Health')} value={!car?.findings?'—':findingCount?String(findingCount):t('All clear')} unit={findingCount?t('to review'):undefined} caption={findingCount?t('Evidence-backed'):t('No findings')} onPress={()=>onGo('Health')}/>
      </View>
     </View>
 
-    <Section title="Last trip" action={lastTrip?'All trips':undefined} onAction={()=>onGo('Trips')}/>
-    {lastTrip?<PressableScale accessibilityRole="button" accessibilityLabel={`Last trip, ${weekday(lastTrip.startAt)}, ${distance(lastTrip.metrics?.distanceKm)}`} onPress={()=>onOpenTrip(lastTrip)} style={[ui.card,s.trip]}>
+    <Section title={t('Last trip')} action={lastTrip?t('All trips'):undefined} onAction={()=>onGo('Trips')}/>
+    {lastTrip?<PressableScale accessibilityRole="button" accessibilityLabel={t('Last trip, {day}, {distance}',{day:weekday(lastTrip.startAt),distance:distance(lastTrip.metrics?.distanceKm)})} onPress={()=>onOpenTrip(lastTrip)} style={[ui.card,s.trip]}>
      {route.length?<RouteArt route={route} style={s.thumb} stroke={3.5}/>:<View style={[s.thumb,s.thumbEmpty]}><Icon name="navigate" size={26} color={c.blue}/></View>}
      <View style={{flex:1}}>
       <Text style={type.overline}>{weekday(lastTrip.startAt)} · {clock(lastTrip.startAt)}</Text>
@@ -99,25 +100,25 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
      <Icon name="chevron-forward" size={16} color={c.faint}/>
     </PressableScale>:<View style={[ui.card,s.trip]}>
      <View style={[s.thumb,s.thumbEmpty]}><Icon name="map-outline" size={26} color={c.faint}/></View>
-     <View style={{flex:1}}><Text style={ui.title}>No trips yet</Text><Text style={[ui.caption,{marginTop:2,marginBottom:10}]}>Start a drive and it appears here with its route.</Text>
-      <Button title="Start a drive" icon="play" onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',minHeight:44,paddingHorizontal:16,marginVertical:0}}/></View>
+     <View style={{flex:1}}><Text style={ui.title}>{t('No trips yet')}</Text><Text style={[ui.caption,{marginTop:2,marginBottom:10}]}>{t('Start a drive and it appears here with its route.')}</Text>
+      <Button title={t('Start a drive')} icon="play" onPress={()=>onGo('Record')} style={{alignSelf:'flex-start',minHeight:44,paddingHorizontal:16,marginVertical:0}}/></View>
     </View>}
 
-    <Section title="Driving"/>
+    <Section title={t('Driving')}/>
     <View style={ui.card}>
      <View style={[ui.row,{justifyContent:'space-between',alignItems:'flex-end'}]}>
-      <View><Text style={type.overline}>Smooth drives · 30 days</Text><Text style={[type.metric,{marginTop:10}]}>{smooth.drives?`${Math.round(smooth.smooth/smooth.drives*100)}`:'—'}<Text style={type.unit}>{smooth.drives?' %':''}</Text></Text></View>
-      {smooth.events?<Chip tone="amber" label={`${smooth.events} hard ${smooth.events===1?'event':'events'}`}/>:null}
+      <View><Text style={type.overline}>{t('Smooth drives · 30 days')}</Text><Text style={[type.metric,{marginTop:10}]}>{smooth.drives?`${Math.round(smooth.smooth/smooth.drives*100)}`:'—'}<Text style={type.unit}>{smooth.drives?' %':''}</Text></Text></View>
+      {smooth.events?<Chip tone="amber" label={tp(smooth.events,'{n} hard event','{n} hard events')}/>:null}
      </View>
      <View style={s.meter}><View style={[s.meterFill,{width:`${smooth.drives?Math.max(2,smooth.smooth/smooth.drives*100):0}%`}]}/></View>
-     <Text style={ui.body}>{smooth.drives?`${smooth.smooth} of ${smooth.drives} drives had no hard braking or acceleration.`:'No drives in the last 30 days yet.'}</Text>
+     <Text style={ui.body}>{smooth.drives?tp(smooth.drives,'{s} of {n} drive had no hard braking or acceleration.','{s} of {n} drives had no hard braking or acceleration.',{s:smooth.smooth}):t('No drives in the last 30 days yet.')}</Text>
     </View>
 
-    <Section title="Reminders"/>
-    <ListRow icon={carInfo.mil?'warning':kindIcon(carInfo.kind)} tone={carInfo.mil?'amber':'blue'} title={carInfo.kind?`${carInfo.label} car`:'Car report'} onPress={onOpenCar}
-     caption={!carInfo.read?'Type, codes and battery: read on your next drive':carInfo.mil?`Check engine light on · ${carInfo.codes} codes`:carInfo.codes?`${carInfo.codes} stored fault codes`:'Check engine off · no fault codes'}/>
-    <ListRow icon="construct" tone="green" title="Service" onPress={()=>onGo('Service')} caption={lastService?`${lastService.description} · ${ago(lastService.observedAt)}`:'No maintenance records yet'}/>
-    {findingCount?<ListRow icon="pulse" tone="amber" title={`${findingCount} health ${findingCount===1?'finding':'findings'}`} caption="Open Health for the evidence and next step" onPress={()=>onGo('Health')}/>:null}
+    <Section title={t('Reminders')}/>
+    <ListRow icon={carInfo.mil?'warning':kindIcon(carInfo.kind)} tone={carInfo.mil?'amber':'blue'} title={carInfo.kind?t('{type} car',{type:carInfo.label}):t('Car report')} onPress={onOpenCar}
+     caption={!carInfo.read?t('Type, codes and battery: read on your next drive'):carInfo.mil?tp(carInfo.codes,'Check engine light on · {n} code','Check engine light on · {n} codes'):carInfo.codes?tp(carInfo.codes,'{n} stored fault code','{n} stored fault codes'):t('Check engine off · no fault codes')}/>
+    <ListRow icon="construct" tone="green" title={t('Service')} onPress={()=>onGo('Service')} caption={lastService?`${lastService.description} · ${ago(lastService.observedAt)}`:t('No maintenance records yet')}/>
+    {findingCount?<ListRow icon="pulse" tone="amber" title={tp(findingCount,'{n} health finding','{n} health findings')} caption={t('Open Health for the evidence and next step')} onPress={()=>onGo('Health')}/>:null}
    </>}
   </View>
  </Animated.ScrollView>;

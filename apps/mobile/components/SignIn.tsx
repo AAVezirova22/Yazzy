@@ -8,6 +8,7 @@ import {Button,useAction} from './kit';
 import {CarArt} from './art';
 import {server} from './server';
 import {ServerForm} from './tabs/More';
+import {t} from './i18n';
 
 WebBrowser.maybeCompleteAuthSession();
 const issuer=(process.env.EXPO_PUBLIC_OIDC_ISSUER||'').trim();
@@ -20,14 +21,14 @@ export function SignIn({api,onConnected}:{api:string;onConnected:()=>void}){
  return <ScrollView style={{flex:1,backgroundColor:c.bg}} contentContainerStyle={{paddingBottom:insets.bottom+30}} keyboardShouldPersistTaps="handled">
   <View style={[s.top,{paddingTop:insets.top+18}]}>
    <Text style={s.wordmark}>yazzy</Text>
-   <Text style={s.title}>Your car,{'\n'}in context.</Text>
-   <Text style={s.text}>Trips, fuel and health from your own OBD adapter.</Text>
+   <Text style={s.title}>{t('Your car,\nin context.')}</Text>
+   <Text style={s.text}>{t('Trips, fuel and health from your own OBD adapter.')}</Text>
   </View>
   <View style={{alignItems:'center',marginTop:-(carWidth*0.4)+40}}><CarArt width={carWidth}/></View>
   <View style={{paddingHorizontal:16}}>
    <View style={ui.card}>
-    <Text style={ui.title}>Connect to your server</Text>
-    <Text style={[ui.body,{marginTop:4,marginBottom:16}]}>You only do this once. To switch servers later, open More › Server.</Text>
+    <Text style={ui.title}>{t('Connect to your server')}</Text>
+    <Text style={[ui.body,{marginTop:4,marginBottom:16}]}>{t('You only do this once. To switch servers later, open More › Server.')}</Text>
     <ServerForm initialApi={api} cta="Open my garage" onConnected={onConnected}/>
     {issuer?<SecureSignIn onConnected={onConnected}/>:null}
    </View>
@@ -40,18 +41,18 @@ function SecureSignIn({onConnected}:{onConnected:()=>void}){
  useEffect(()=>{
   let active=true;
   AuthSession.fetchDiscoveryAsync(issuer).then(d=>{if(!d.authorizationEndpoint||!d.tokenEndpoint)throw new Error();if(active)setDiscovery(d);})
-   .catch(()=>{if(active)setError('Secure sign-in is unavailable. Check your sign-in configuration and connection, then reload the app.');});
+   .catch(()=>{if(active)setError(t('Secure sign-in is unavailable. Check your sign-in configuration and connection, then reload the app.'));});
   return()=>{active=false;};
  },[]);
  const [request,,promptAsync]=AuthSession.useAuthRequest({clientId,redirectUri,scopes:['openid','profile','offline_access'],usePKCE:true},discovery);
  async function signIn(){
   const result=await promptAsync();
   if(result.type!=='success'||!discovery)return;
-  const t=await AuthSession.exchangeCodeAsync({clientId,code:result.params.code,redirectUri,extraParams:{code_verifier:request?.codeVerifier||''}},discovery);
-  await server.signInWithToken(server.api,t.accessToken,t.refreshToken);onConnected();
+  const token=await AuthSession.exchangeCodeAsync({clientId,code:result.params.code,redirectUri,extraParams:{code_verifier:request?.codeVerifier||''}},discovery);
+  await server.signInWithToken(server.api,token.accessToken,token.refreshToken);onConnected();
  }
  return <>
-  <Button kind="light" title="Sign in securely" icon="shield-checkmark-outline" disabled={!discovery||!request||busy} onPress={()=>run(signIn)}/>
+  <Button kind="light" title={t('Sign in securely')} icon="shield-checkmark-outline" disabled={!discovery||!request||busy} onPress={()=>run(signIn)}/>
   {error?<Text accessibilityRole="alert" style={[ui.body,{color:c.red,marginTop:8}]}>{error}</Text>:null}
  </>;
 }

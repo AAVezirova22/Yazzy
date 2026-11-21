@@ -7,6 +7,7 @@ import {PressableScale} from '../motion';
 import {RouteArt} from '../art';
 import {distance,minutes} from '../TripDetail';
 import {clock,fmt,lastWeek,routeOf,smoothDriving,weekday} from '../format';
+import {t,tp} from '../i18n';
 
 type Props={vehicle:any;trips:any[]|null;refreshing:boolean;busy:boolean;offline:string;padBottom:number;onRefresh:()=>void;onOpenTrip:(t:any)=>void;onRebuild:()=>void};
 
@@ -25,19 +26,19 @@ export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offl
   contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}}
   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.blue} colors={[c.blue]} progressViewOffset={insets.top}/>}
   ListHeaderComponent={<>
-   <ScreenHeader title="Trips" subtitle={vehicle?vehicle.name:'No vehicle selected'} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>
+   <ScreenHeader title={t('Trips')} subtitle={vehicle?vehicle.name:t('No vehicle selected')} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>
    {trips?.length?<View style={[ui.card,s.summary]}>
-    <Summary label="Last 7 days" value={fmt(week.km,0)} unit="km"/>
+    <Summary label={t('Last 7 days')} value={fmt(week.km,0)} unit={t('km')}/>
     <View style={s.divider}/>
-    <Summary label="Drives" value={String(week.count)}/>
+    <Summary label={t('Drives')} value={String(week.count)}/>
     <View style={s.divider}/>
-    <Summary label="Driving" value={minutes(week.seconds)}/>
+    <Summary label={t('Driving')} value={minutes(week.seconds)}/>
     <View style={s.divider}/>
-    <Summary label="Smooth" value={week.smooth.drives?`${week.smooth.smooth}/${week.smooth.drives}`:'—'}/>
+    <Summary label={t('Smooth')} value={week.smooth.drives?`${week.smooth.smooth}/${week.smooth.drives}`:'—'}/>
    </View>:null}
   </>}
-  ListFooterComponent={trips?<Pressable accessibilityRole="button" onPress={onRebuild} style={({pressed})=>[s.rebuild,pressed&&{opacity:0.6}]}><Icon name="construct-outline" size={15} color={c.blue}/><Text style={s.rebuildText}>Missing a drive? Rebuild trips from recordings</Text></Pressable>:null}
-  ListEmptyComponent={trips?<Empty icon="map-outline" title="Nothing here yet" text="Recorded drives appear here with their route."/>:<Loading text={busy?'Loading…':offline}/>}/>;
+  ListFooterComponent={trips?<Pressable accessibilityRole="button" onPress={onRebuild} style={({pressed})=>[s.rebuild,pressed&&{opacity:0.6}]}><Icon name="construct-outline" size={15} color={c.blue}/><Text style={s.rebuildText}>{t('Missing a drive? Rebuild trips from recordings')}</Text></Pressable>:null}
+  ListEmptyComponent={trips?<Empty icon="map-outline" title={t('Nothing here yet')} text={t('Recorded drives appear here with their route.')}/>:<Loading text={busy?t('Loading…'):offline}/>}/>;
 });
 
 function Summary({label,value,unit}:{label:string;value:string;unit?:string}){
@@ -47,7 +48,7 @@ function Summary({label,value,unit}:{label:string;value:string;unit?:string}){
  </View>;
 }
 
-export function Loading({text}:{text:string}){return <View style={[ui.card,{alignItems:'center',paddingVertical:28}]}><Text style={[ui.caption,{textAlign:'center'}]}>{text||'Loading…'}</Text></View>;}
+export function Loading({text}:{text:string}){return <View style={[ui.card,{alignItems:'center',paddingVertical:28}]}><Text style={[ui.caption,{textAlign:'center'}]}>{text||t('Loading…')}</Text></View>;}
 
 /** One trip in the log. Memoised so polling or loading elsewhere never redraws every route thumbnail. */
 const TripRow=memo(function TripRow({trip:d,onOpen}:{trip:any;onOpen:(t:any)=>void}){
@@ -58,13 +59,13 @@ const TripRow=memo(function TripRow({trip:d,onOpen}:{trip:any;onOpen:(t:any)=>vo
   <View style={{flex:1}}>
    <Text style={type.overline} numberOfLines={1}>{d.startAt!=null?`${weekday(d.startAt)} · ${clock(d.startAt)}`:d.summary||d.description}</Text>
    {d.metrics?<>
-    <Text style={s.distance}>{stationary?'Stationary':distance(d.metrics.distanceKm)}</Text>
+    <Text style={s.distance}>{stationary?t('Stationary'):distance(d.metrics.distanceKm)}</Text>
     <View style={[ui.row,{gap:12,marginTop:2,flexWrap:'wrap'}]}>
      <Text style={s.meta}>{minutes(d.metrics.durationSeconds||0)}</Text>
      {d.metrics.fuelLitres!=null?<Text style={s.meta}>{d.metrics.fuelMethod==='MAF_ESTIMATE_PETROL'?'≈ ':''}{fmt(d.metrics.fuelLitres,2)} L</Text>:null}
      {d.metrics.litresPer100Km!=null?<Text style={s.meta}>{fmt(d.metrics.litresPer100Km)} L/100</Text>:null}
     </View>
-    {events.length?<View style={{marginTop:8}}><Chip tone={braking?'red':'amber'} label={`${events.length} hard ${events.length===1?'event':'events'}`}/></View>:null}
+    {events.length?<View style={{marginTop:8}}><Chip tone={braking?'red':'amber'} label={tp(events.length,'{n} hard event','{n} hard events')}/></View>:null}
    </>:null}
   </View>
   {open?<Icon name="chevron-forward" size={16} color={c.faint}/>:null}

@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
+import {t} from './i18n';
 
 /**
  * The one connection to the Yazzy server. It is remembered on the phone: once connected, the app opens straight into
@@ -20,17 +21,17 @@ export function normaliseApi(value:string){const v=value.trim().replace(/\/+$/,'
 async function request(url:string,init:RequestInit,ms=75000){
  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),ms);
  try{return await fetch(url,{...init,signal:abort.signal});}
- catch(e){throw new Error((e as Error).name==='AbortError'?'The server did not answer in time. It may be waking up; try again in a minute.':'Cannot reach the server. Check your connection.');}
+ catch(e){throw new Error(t((e as Error).name==='AbortError'?'The server did not answer in time. It may be waking up; try again in a minute.':'Cannot reach the server. Check your connection.'));}
  finally{clearTimeout(timer);}
 }
 
 async function demoLogin(api:string,password:string){
  const r=await request(api+'/api/v1/auth/demo?mode=personal',{method:'POST',credentials:'include',headers:password?{'X-Access-Password':password}:{}});
  const data=await r.json().catch(()=>({}));
- if(r.status===401)throw new Error('The server rejected the access password. Update it in More › Server.');
+ if(r.status===401)throw new Error(t('The server rejected the access password. Update it in More › Server.'));
  // Wrong passwords lock the login for a while (even the right one), so guessing a short password gets nowhere.
- if(r.status===429)throw new Error(`Too many wrong passwords. Try again in ${Math.max(1,Math.ceil((Number(data?.detail?.retryAfter)||60)/60))} min.`);
- if(!r.ok)throw new Error(r.status===404?'This server does not offer a personal garage.':`The server could not sign you in (HTTP ${r.status}).`);
+ if(r.status===429)throw new Error(t('Too many wrong passwords. Try again in {n} min.',{n:Math.max(1,Math.ceil((Number(data?.detail?.retryAfter)||60)/60))}));
+ if(!r.ok)throw new Error(r.status===404?t('This server does not offer a personal garage.'):t('The server could not sign you in (HTTP {status}).',{status:r.status}));
  return data.csrfToken as string;
 }
 
@@ -90,7 +91,7 @@ export const server={
   let r=await send(),value=await r.json().catch(()=>({}));
   // The session cookie lasts 8 hours; after that (or after a reinstall) sign back in once and repeat the request.
   if(st.mode==='demo'&&(r.status===401||value?.detail?.code==='CSRF_FAILED')){await relogin();r=await send();value=await r.json().catch(()=>({}));}
-  if(!r.ok)throw new Error(typeof value?.detail?.code==='string'?value.detail.code:`Request failed (HTTP ${r.status})`);
+  if(!r.ok)throw new Error(typeof value?.detail?.code==='string'?value.detail.code:t('Request failed (HTTP {status})',{status:r.status}));
   return value;
  },
 };

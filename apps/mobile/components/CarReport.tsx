@@ -11,6 +11,7 @@ import {CarLocation} from './CarMap';
 import {battery12,boost,carSpot,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
 import {carLine,fmt,latest} from './format';
 import type {Car} from './tabs/types';
+import {t,tp} from './i18n';
 
 type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void};
 const DIESEL_MONITORS=['PM_FILTER','NOX_SCR','EGR','BOOST_PRESSURE','EXHAUST_SENSOR','NMHC_CATALYST'];
@@ -33,14 +34,14 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
   <ScrollView contentContainerStyle={{paddingBottom:120+insets.bottom}}>
    <View style={[s_.hero,{paddingTop:insets.top+10}]}>
     <NightGlow glowX="80%" glowY="85%"/>
-    <PressableScale accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={s_.back}>
-     <Icon name="arrow-back" size={18} color="#fff"/><Text style={s_.backText}>Car report</Text>
+    <PressableScale accessibilityRole="button" accessibilityLabel={t('Back')} onPress={onClose} style={s_.back}>
+     <Icon name="arrow-back" size={18} color="#fff"/><Text style={s_.backText}>{t('Car report')}</Text>
     </PressableScale>
-    <Text style={s_.name} numberOfLines={2}>{vehicle?.name||'Your car'}</Text>
+    <Text style={s_.name} numberOfLines={2}>{vehicle?.name||t('Your car')}</Text>
     <Text style={s_.sub} numberOfLines={1}>{vehicle?[carLine(vehicle),maker&&!vehicle.make?maker:null].filter(Boolean).join(' · '):''}</Text>
     <View style={[ui.row,{gap:8,marginTop:14,flexWrap:'wrap'}]}>
      <View style={s_.badge}><Icon name={kindIcon(kind)} size={14} color="#fff"/><Text style={s_.badgeText}>{type.label}</Text></View>
-     <View style={[s_.badge,s_.glass]}><View style={[s_.dot,{backgroundColor:live?'#4ade80':c.nightMuted}]}/><Text style={s_.badgeText}>{live?'Live from the car':p.readAt?`Read ${since(p.readAt)}`:'Not read yet'}</Text></View>
+     <View style={[s_.badge,s_.glass]}><View style={[s_.dot,{backgroundColor:live?'#4ade80':c.nightMuted}]}/><Text style={s_.badgeText}>{live?t('Live from the car'):p.readAt?t('Read {when}',{when:since(p.readAt)}):t('Not read yet')}</Text></View>
     </View>
     <Text style={s_.source}>{type.source}</Text>
     <View style={s_.car} pointerEvents="none"><CarArt width={220}/></View>
@@ -49,81 +50,81 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
    <View style={s_.body}>
     {/* No saved spot, no map. */}
     {spot?<CarLocation spot={spot} live={live&&spot.source==='recorder'}/>:null}
-    {!report?.readAt?<Notice icon="bluetooth">Turn the car on and start recording on the Drive tab. Within a minute the recorder reads the fuel type, VIN, fault codes and readiness, and this page fills in.{Platform.OS==='ios'?' Reading the car report needs the Android app for now; reports read there show here too.':''}</Notice>:null}
+    {!report?.readAt?<Notice icon="bluetooth">{t('Turn the car on and start recording on the Drive tab. Within a minute the recorder reads the fuel type, VIN, fault codes and readiness, and this page fills in.')}{Platform.OS==='ios'?' '+t('Reading the car report needs the Android app for now; reports read there show here too.'):''}</Notice>:null}
 
-    <Card title="Type" right={<Pressable accessibilityRole="button" onPress={()=>setPicking(v=>!v)} hitSlop={8}><Text style={s_.link}>{picking?'Done':'Not right?'}</Text></Pressable>}>
-     <Row label="Detected as" value={type.label}/>
-     {p.fuelType!=null?<Row label="Fuel type reading" value={`Code ${p.fuelType}`}/>:null}
-     {p.ignition?<Row label="Engine" value={p.ignition==='COMPRESSION'?'Compression ignition (diesel)':'Spark ignition (petrol or hybrid)'}/>:null}
+    <Card title={t('Type')} right={<Pressable accessibilityRole="button" onPress={()=>setPicking(v=>!v)} hitSlop={8}><Text style={s_.link}>{picking?t('Done'):t('Not right?')}</Text></Pressable>}>
+     <Row label={t('Detected as')} value={type.label}/>
+     {p.fuelType!=null?<Row label={t('Fuel type reading')} value={t('Code {n}',{n:p.fuelType})}/>:null}
+     {p.ignition?<Row label={t('Engine')} value={p.ignition==='COMPRESSION'?t('Compression ignition (diesel)'):t('Spark ignition (petrol or hybrid)')}/>:null}
      {picking?<View style={s_.chips}>
-      {KINDS.map(([k,label,icon])=>{const on=p.userKind===k;return <Pressable key={k} accessibilityRole="button" accessibilityState={{selected:on}} onPress={()=>onSetKind(k)} style={[s_.chip,on&&s_.chipOn]}><Icon name={icon} size={14} color={on?'#fff':c.blue}/><Text style={[s_.chipText,on&&{color:'#fff'}]}>{label}</Text></Pressable>;})}
-      {p.userKind?<Pressable accessibilityRole="button" onPress={()=>onSetKind(null)} style={s_.chip}><Icon name="refresh" size={14} color={c.blue}/><Text style={s_.chipText}>Detect</Text></Pressable>:null}
+      {KINDS.map(([k,label,icon])=>{const on=p.userKind===k;return <Pressable key={k} accessibilityRole="button" accessibilityState={{selected:on}} onPress={()=>onSetKind(k)} style={[s_.chip,on&&s_.chipOn]}><Icon name={icon} size={14} color={on?'#fff':c.blue}/><Text style={[s_.chipText,on&&{color:'#fff'}]}>{t(label)}</Text></Pressable>;})}
+      {p.userKind?<Pressable accessibilityRole="button" onPress={()=>onSetKind(null)} style={s_.chip}><Icon name="refresh" size={14} color={c.blue}/><Text style={s_.chipText}>{t('Detect')}</Text></Pressable>:null}
      </View>:null}
     </Card>
 
-    {kind==='HYBRID'||kind==='ELECTRIC'?<Card title={kind==='HYBRID'?'Hybrid system':'Battery'}>
+    {kind==='HYBRID'||kind==='ELECTRIC'?<Card title={kind==='HYBRID'?t('Hybrid system'):t('Battery')}>
      {hv!=null?<>
-      <View style={[ui.row,{justifyContent:'space-between',alignItems:'flex-end'}]}><Text style={s_.big}>{fmt(hv,0)}<Text style={ui.unit}> %</Text></Text><Text style={ui.caption}>{kind==='HYBRID'?'Hybrid battery charge':'Battery charge'}</Text></View>
+      <View style={[ui.row,{justifyContent:'space-between',alignItems:'flex-end'}]}><Text style={s_.big}>{fmt(hv,0)}<Text style={ui.unit}> %</Text></Text><Text style={ui.caption}>{kind==='HYBRID'?t('Hybrid battery charge'):t('Battery charge')}</Text></View>
       <View style={s_.track}><View style={[s_.fill,{width:`${Math.max(2,Math.min(100,hv))}%`,backgroundColor:hv<20?c.amber:c.green}]}/></View>
-     </>:<Text style={ui.body}>{report?.readAt?'This car does not share its traction battery charge over standard OBD (PID 5B). Many hybrids keep it to the manufacturer\'s own diagnostics.':'Shown after the first reading.'}</Text>}
-     {kind==='HYBRID'&&s.ENGINE_RPM!=null?<Row label="Petrol engine" value={s.ENGINE_RPM>0?`Running · ${fmt(s.ENGINE_RPM,0)} rpm`:'Off (electric or stopped)'}/>:null}
+     </>:<Text style={ui.body}>{report?.readAt?t("This car does not share its traction battery charge over standard OBD (PID 5B). Many hybrids keep it to the manufacturer's own diagnostics."):t('Shown after the first reading.')}</Text>}
+     {kind==='HYBRID'&&s.ENGINE_RPM!=null?<Row label={t('Petrol engine')} value={s.ENGINE_RPM>0?t('Running · {rpm} rpm',{rpm:fmt(s.ENGINE_RPM,0)}):t('Off (electric or stopped)')}/>:null}
     </Card>:null}
 
-    {kind==='DIESEL'?<Card title="Diesel system">
-     {s.FUEL_RAIL_PRESSURE!=null?<Row label="Fuel rail pressure" value={`${fmt(s.FUEL_RAIL_PRESSURE/1000,1)} MPa`}/>:null}
-     {b!=null?<Row label="Turbo boost" value={`${fmt(b/100,2)} bar`}/>:null}
-     {ready.filter(m=>DIESEL_MONITORS.includes(m.id)).map(m=><Row key={m.id} label={MONITOR[m.id]} value={m.complete?'Ready':'Not ready'} tone={m.complete?undefined:'warn'}/>)}
-     {s.FUEL_RAIL_PRESSURE==null&&b==null&&!ready.some(m=>DIESEL_MONITORS.includes(m.id))?<Text style={ui.body}>Shown after the first reading.</Text>:null}
+    {kind==='DIESEL'?<Card title={t('Diesel system')}>
+     {s.FUEL_RAIL_PRESSURE!=null?<Row label={t('Fuel rail pressure')} value={`${fmt(s.FUEL_RAIL_PRESSURE/1000,1)} MPa`}/>:null}
+     {b!=null?<Row label={t('Turbo boost')} value={`${fmt(b/100,2)} bar`}/>:null}
+     {ready.filter(m=>DIESEL_MONITORS.includes(m.id)).map(m=><Row key={m.id} label={t(MONITOR[m.id])} value={m.complete?t('Ready'):t('Not ready')} tone={m.complete?undefined:'warn'}/>)}
+     {s.FUEL_RAIL_PRESSURE==null&&b==null&&!ready.some(m=>DIESEL_MONITORS.includes(m.id))?<Text style={ui.body}>{t('Shown after the first reading.')}</Text>:null}
     </Card>:null}
 
-    <Card title="Batteries and power">
-     <Row label="12 V battery" value={volts!=null?`${fmt(volts,1)} V`:'—'} note={v12?.text} tone={v12?.tone}/>
-     {s.MODULE_VOLTAGE!=null?<Row label="Control module voltage" value={`${fmt(s.MODULE_VOLTAGE,1)} V`}/>:null}
+    <Card title={t('Batteries and power')}>
+     <Row label={t('12 V battery')} value={volts!=null?`${fmt(volts,1)} V`:'—'} note={v12?.text} tone={v12?.tone}/>
+     {s.MODULE_VOLTAGE!=null?<Row label={t('Control module voltage')} value={`${fmt(s.MODULE_VOLTAGE,1)} V`}/>:null}
     </Card>
 
-    <Card title="Check engine" right={<View style={[s_.lamp,{backgroundColor:p.mil?c.amber:p.mil===false?c.green:c.track}]}><Icon name={p.mil?'warning':'checkmark'} size={14} color="#fff"/></View>}>
-     <Row label="Warning light" value={p.mil==null?'—':p.mil?'On':'Off'} tone={p.mil?'warn':undefined}/>
-     {codes.length?codes.map(code=><Code key={code} code={code} kind="Stored"/>):p.stored?<Text style={[ui.body,{marginVertical:4}]}>No fault codes stored.</Text>:null}
+    <Card title={t('Check engine')} right={<View style={[s_.lamp,{backgroundColor:p.mil?c.amber:p.mil===false?c.green:c.track}]}><Icon name={p.mil?'warning':'checkmark'} size={14} color="#fff"/></View>}>
+     <Row label={t('Warning light')} value={p.mil==null?'—':p.mil?t('On'):t('Off')} tone={p.mil?'warn':undefined}/>
+     {codes.length?codes.map(code=><Code key={code} code={code} kind="Stored"/>):p.stored?<Text style={[ui.body,{marginVertical:4}]}>{t('No fault codes stored.')}</Text>:null}
      {pending.map(code=><Code key={code} code={code} kind="Pending"/>)}
      {permanent.map(code=><Code key={'p'+code} code={code} kind="Permanent"/>)}
-     {p.distanceSinceClearKm!=null?<Row label="Driven since codes were cleared" value={`${p.distanceSinceClearKm} km`}/>:null}
-     {p.warmupsSinceClear!=null?<Row label="Warm-ups since codes were cleared" value={String(p.warmupsSinceClear)}/>:null}
-     {p.distanceWithMilKm?<Row label="Driven with the light on" value={`${p.distanceWithMilKm} km`} tone="warn"/>:null}
-     <Text style={[ui.caption,{marginTop:8}]}>Read-only: Yazzy never clears codes. Pending codes are not yet confirmed; permanent ones clear only after the car re-tests the fault.</Text>
+     {p.distanceSinceClearKm!=null?<Row label={t('Driven since codes were cleared')} value={t('{n} km',{n:p.distanceSinceClearKm})}/>:null}
+     {p.warmupsSinceClear!=null?<Row label={t('Warm-ups since codes were cleared')} value={String(p.warmupsSinceClear)}/>:null}
+     {p.distanceWithMilKm?<Row label={t('Driven with the light on')} value={t('{n} km',{n:p.distanceWithMilKm})} tone="warn"/>:null}
+     <Text style={[ui.caption,{marginTop:8}]}>{t('Read-only: Yazzy never clears codes. Pending codes are not yet confirmed; permanent ones clear only after the car re-tests the fault.')}</Text>
     </Card>
 
-    {ready.length?<Card title="Emission readiness" right={<Text style={[ui.caption,notReady?{color:c.amber}:null]}>{notReady?`${notReady} not ready`:'All ready'}</Text>}>
-     {ready.map(m=><Row key={m.id} label={MONITOR[m.id]||m.id} value={m.complete?'Ready':'Not ready'} tone={m.complete?undefined:'warn'}/>)}
-     <Text style={[ui.caption,{marginTop:8}]}>Monitors run while driving. "Not ready" right after a battery change or code clear is normal; inspections may need them ready.</Text>
+    {ready.length?<Card title={t('Emission readiness')} right={<Text style={[ui.caption,notReady?{color:c.amber}:null]}>{notReady?t('{n} not ready',{n:notReady}):t('All ready')}</Text>}>
+     {ready.map(m=><Row key={m.id} label={MONITOR[m.id]?t(MONITOR[m.id]):m.id} value={m.complete?t('Ready'):t('Not ready')} tone={m.complete?undefined:'warn'}/>)}
+     <Text style={[ui.caption,{marginTop:8}]}>{t('Monitors run while driving. "Not ready" right after a battery change or code clear is normal; inspections may need them ready.')}</Text>
     </Card>:null}
 
-    {readings.length?<Card title={live?'Live readings':'Last readings'} right={p.signalsAt?<Text style={ui.caption}>{live?'now':since(p.signalsAt)}</Text>:null}>
-     <View style={s_.grid}>{readings.map(r=><View key={r[0]} style={s_.tile}><Text style={s_.tileValue} numberOfLines={1}>{readingText(r,s[r[0]])}</Text><Text style={ui.caption} numberOfLines={1}>{r[1]}</Text></View>)}</View>
+    {readings.length?<Card title={live?t('Live readings'):t('Last readings')} right={p.signalsAt?<Text style={ui.caption}>{live?t('now'):since(p.signalsAt)}</Text>:null}>
+     <View style={s_.grid}>{readings.map(r=><View key={r[0]} style={s_.tile}><Text style={s_.tileValue} numberOfLines={1}>{readingText(r,s[r[0]])}</Text><Text style={ui.caption} numberOfLines={1}>{t(r[1])}</Text></View>)}</View>
     </Card>:null}
 
-    <Card title="Identity">
-     <Row label="VIN" value={p.vin||'—'} mono/>
-     {maker?<Row label="Manufacturer (from VIN)" value={maker}/>:null}
-     {p.odometerKm!=null||s.ODOMETER!=null?<Row label="Odometer" value={`${fmt(s.ODOMETER??p.odometerKm,0)} km`}/>:null}
-     {p.obdStandard!=null?<Row label="OBD standard" value={OBD_STANDARD[p.obdStandard]||`Code ${p.obdStandard}`}/>:null}
-     {p.protocol?<Row label="Protocol" value={PROTOCOL[p.protocol]||p.protocol}/>:null}
-     {(p.ecus||[]).map((e,i)=><Row key={e} label={i?'':'Control units'} value={e}/>)}
-     {p.supported?<Row label="Readings the car offers" value={String(p.supported.length)}/>:null}
+    <Card title={t('Identity')}>
+     <Row label={t('VIN')} value={p.vin||'—'} mono/>
+     {maker?<Row label={t('Manufacturer (from VIN)')} value={maker}/>:null}
+     {p.odometerKm!=null||s.ODOMETER!=null?<Row label={t('Odometer')} value={t('{n} km',{n:fmt(s.ODOMETER??p.odometerKm,0)})}/>:null}
+     {p.obdStandard!=null?<Row label={t('OBD standard')} value={OBD_STANDARD[p.obdStandard]?t(OBD_STANDARD[p.obdStandard]):t('Code {n}',{n:p.obdStandard})}/>:null}
+     {p.protocol?<Row label={t('Protocol')} value={PROTOCOL[p.protocol]||p.protocol}/>:null}
+     {(p.ecus||[]).map((e,i)=><Row key={e} label={i?'':t('Control units')} value={e}/>)}
+     {p.supported?<Row label={t('Readings the car offers')} value={String(p.supported.length)}/>:null}
     </Card>
 
-    {car?<Card title="Use">
-     <Row label="Distance recorded" value={car.fuel?.distanceKm!=null?`${fmt(car.fuel.distanceKm,0)} km`:'—'}/>
-     <Row label="Trips" value={String(car.trips?.length??'—')}/>
-     <Row label="Average consumption" value={car.fuel?.litresPer100Km!=null?`${fmt(car.fuel.litresPer100Km,1)} L/100 km`:'—'}/>
-     <Row label="Findings to review" value={String(car.findings?.length??'—')}/>
-     <Row label="Last service" value={latest(car.service,'observedAt')?.description||'—'}/>
+    {car?<Card title={t('Use')}>
+     <Row label={t('Distance recorded')} value={car.fuel?.distanceKm!=null?t('{n} km',{n:fmt(car.fuel.distanceKm,0)}):'—'}/>
+     <Row label={t('Trips')} value={String(car.trips?.length??'—')}/>
+     <Row label={t('Average consumption')} value={car.fuel?.litresPer100Km!=null?t('{n} L/100 km',{n:fmt(car.fuel.litresPer100Km,1)}):'—'}/>
+     <Row label={t('Findings to review')} value={String(car.findings?.length??'—')}/>
+     <Row label={t('Last service')} value={latest(car.service,'observedAt')?.description||'—'}/>
     </Card>:null}
    </View>
   </ScrollView>
 
   <View style={[s_.footer,{paddingBottom:Math.max(insets.bottom,12)+4}]}>
-   <View style={{flex:1}}><Text style={s_.footTitle}>{type.label}</Text><Text style={ui.caption} numberOfLines={1}>{p.mil?`Check engine on · ${codes.length} codes`:codes.length?`${codes.length} stored codes`:p.readAt?'No stored fault codes':'Not read yet'}</Text></View>
-   <Button title={exporting?'Preparing…':'Export PDF'} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:16}}/>
+   <View style={{flex:1}}><Text style={s_.footTitle}>{type.label}</Text><Text style={ui.caption} numberOfLines={1}>{p.mil?tp(codes.length,'Check engine on · {n} code','Check engine on · {n} codes'):codes.length?tp(codes.length,'{n} stored code','{n} stored codes'):t(p.readAt?'No stored fault codes':t('Not read yet'))}</Text></View>
+   <Button title={t(exporting?'Preparing…':'Export PDF')} icon="download-outline" disabled={exporting} onPress={exportPdf} style={{marginVertical:0,paddingHorizontal:16}}/>
   </View>
  </View>;
 }
@@ -141,7 +142,7 @@ function Row({label,value,note,tone,mono:isMono}:{label:string;value:string;note
 function Code({code,kind}:{code:string;kind:string}){
  return <View style={s_.code}>
   <View style={s_.codeTag}><Text style={s_.codeText}>{code}</Text></View>
-  <View style={{flex:1}}><Text style={s_.codeTitle}>{describeCode(code)}</Text><Text style={ui.caption}>{kind}</Text></View>
+  <View style={{flex:1}}><Text style={s_.codeTitle}>{describeCode(code)}</Text><Text style={ui.caption}>{t(kind)}</Text></View>
  </View>;
 }
 
