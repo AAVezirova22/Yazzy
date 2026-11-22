@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState,type ReactNode} from 'react';
-import {KeyboardAvoidingView,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import Animated,{cancelAnimation,Extrapolation,interpolate,useAnimatedStyle,useSharedValue,withSpring,withTiming} from 'react-native-reanimated';
 import {Gesture,GestureDetector,GestureHandlerRootView} from 'react-native-gesture-handler';
 import {scheduleOnRN} from 'react-native-worklets';
@@ -20,6 +20,14 @@ const OFF=900;
 export function Sheet({open,onClose,title,children}:{open:boolean;onClose:()=>void;title:string;children:ReactNode}){
  const insets=useSafeAreaInsets(),[mounted,setMounted]=useState(open),[height,setHeight]=useState(0);
  const y=useSharedValue(OFF),start=useSharedValue(0),snapped=haptic.snap;
+ // Android does not resize an edge-to-edge modal for the keyboard, so the sheet is lifted by the keyboard's height
+ // itself; otherwise a field near the bottom (a new car's name) disappears behind the keyboard.
+ const [keyboard,setKeyboard]=useState(0);
+ useEffect(()=>{
+  if(Platform.OS!=='android'||!mounted)return;
+  const show=Keyboard.addListener('keyboardDidShow',e=>setKeyboard(e.endCoordinates.height)),hide=Keyboard.addListener('keyboardDidHide',()=>setKeyboard(0));
+  return()=>{show.remove();hide.remove();setKeyboard(0);};
+ },[mounted]);
  useEffect(()=>{
   if(open){setMounted(true);return;}
   if(!mounted)return;
@@ -42,8 +50,8 @@ export function Sheet({open,onClose,title,children}:{open:boolean;onClose:()=>vo
    <Animated.View style={[StyleSheet.absoluteFill,s.backdrop,backdrop]}>
     <Pressable accessibilityLabel={t('Close')} style={{flex:1}} onPress={onClose}/>
    </Animated.View>
-   <KeyboardAvoidingView pointerEvents="box-none" behavior={Platform.OS==='ios'?'padding':undefined} style={s.holder}>
-    <Animated.View onLayout={e=>{const h=Math.round(e.nativeEvent.layout.height);if(Math.abs(h-height)>1)setHeight(h);}} style={[s.sheet,{paddingBottom:insets.bottom+20},sheet]}>
+   <KeyboardAvoidingView pointerEvents="box-none" behavior={Platform.OS==='ios'?'padding':undefined} style={[s.holder,{paddingBottom:keyboard}]}>
+    <Animated.View onLayout={e=>{const h=Math.round(e.nativeEvent.layout.height);if(Math.abs(h-height)>1)setHeight(h);}} style={[s.sheet,{paddingBottom:(keyboard?0:insets.bottom)+20},sheet]}>
      <GestureDetector gesture={pan}>
       <View style={s.handleArea}>
        <View style={s.grabber}/>

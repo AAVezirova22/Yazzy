@@ -1148,8 +1148,12 @@ from yazzy.modules.fleet.simulation import install_routes  # noqa: E402
 
 install_routes(app)
 
+from yazzy.api.accounts import router as accounts_router  # noqa: E402
+from yazzy.api.business import router as business_router  # noqa: E402
 from yazzy.api.car_pictures import router as car_pictures_router  # noqa: E402
 from yazzy.api.releases import router as releases_router  # noqa: E402
 
 app.include_router(releases_router)
 app.include_router(car_pictures_router)
+app.include_router(accounts_router)
+app.include_router(business_router)

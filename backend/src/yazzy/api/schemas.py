@@ -14,6 +14,7 @@ class VehicleInput(Contract):
     fuel_type: Literal["PETROL", "DIESEL", "ELECTRIC", "LPG"] = "PETROL"
     powertrain: Literal["ICE", "HYBRID", "EV"] = "ICE"
     odometer_km: float | None = Field(default=None, ge=0)
+    category: Literal["PERSONAL", "BUSINESS"] = "PERSONAL"
 
 
 class VehiclePatch(Contract):
@@ -26,6 +27,7 @@ class VehiclePatch(Contract):
     powertrain: Literal["ICE", "HYBRID", "EV"] | None = None
     odometer_km: float | None = Field(default=None, ge=0, le=1e8)
     archived: bool | None = None
+    category: Literal["PERSONAL", "BUSINESS"] | None = None
     service_due_at: float | None = None
     service_due_km: float | None = Field(default=None, ge=0)
     profile: dict | None = None

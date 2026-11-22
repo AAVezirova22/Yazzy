@@ -3,16 +3,20 @@ import * as FileSystem from 'expo-file-system/legacy';
 import {t} from './i18n';
 
 /**
- * The one connection to the Yazzy server. It is remembered on the phone: once connected, the app opens straight into
- * the garage on every launch, and when the 8-hour server session lapses it signs back in by itself with the saved
- * access password. Only More › Server changes or forgets it.
+ * The one connection to the Yazzy server, remembered on the phone. People sign in to their own account with
+ * e-mail and password; the app keeps the account's token and opens straight into the garage on every launch,
+ * after fingerprint or face unlock. Only signing out (More) forgets it.
  */
 export const defaultApi=process.env.EXPO_PUBLIC_API_URL||'http://localhost:8000';
 // The Render server was shut down in November 2026 (its database ran out of free transfer). Phones that saved it
 // move to this build's server on launch, with the same access password.
 const RETIRED=['https://yazzy-api.onrender.com'];
-type Mode='demo'|'oidc';
-const st={api:defaultApi,mode:null as Mode|null,token:'',csrf:'',login:null as Promise<void>|null};
+// account: e-mail and password, with a long-lived token kept on the phone (unlocked by fingerprint or face).
+// demo: the shared garage of the app before accounts; it is only kept so the first account can take it over.
+type Mode='account'|'demo'|'oidc';
+export type Account={id:string;email:string;name:string};
+const st={api:defaultApi,mode:null as Mode|null,token:'',csrf:'',login:null as Promise<void>|null,account:null as Account|null};
+let onExpired:(()=>void)|null=null;
 
 /** Trims, adds https:// when no scheme is typed and drops trailing slashes. */
 export function normaliseApi(value:string){const v=value.trim().replace(/\/+$/,'');return /^https?:\/\//i.test(v)?v:'https://'+v;}
@@ -47,6 +51,9 @@ function relogin(){
 export const server={
  get api(){return st.api;},
  get mode(){return st.mode;},
+ get account(){return st.account;},
+ /** Called when the server no longer accepts the account's token (signed out elsewhere, expired). */
+ onExpired(fn:(()=>void)|null){onExpired=fn;},
  /** The saved connection, read once at launch. No network: the app opens at once and signs in lazily if needed. */
  async restore(){
   st.api=await SecureStore.getItemAsync('yazzy-api')||defaultApi;
@@ -55,8 +62,9 @@ export const server={
    st.api=defaultApi;await SecureStore.setItemAsync('yazzy-api',st.api);await clearCache();
    await Promise.all(['yazzy-vehicle','yazzy-configured','yazzy-csrf'].map(k=>SecureStore.deleteItemAsync(k).catch(()=>{})));
   }
-  const access=await SecureStore.getItemAsync('yazzy-access');
-  if(access){st.mode='oidc';st.token=access;}
+  const account=await SecureStore.getItemAsync('yazzy-account-token'),access=await SecureStore.getItemAsync('yazzy-access');
+  if(account){st.mode='account';st.token=account;try{st.account=JSON.parse(await SecureStore.getItemAsync('yazzy-account')||'null');}catch{st.account=null;}}
+  else if(access){st.mode='oidc';st.token=access;}
   else if(await SecureStore.getItemAsync('yazzy-sandbox')==='1'){st.mode='demo';st.token='LOCAL_DEMO';st.csrf=await SecureStore.getItemAsync('yazzy-csrf')||'';}
   return st.mode;
  },
@@ -79,6 +87,43 @@ export const server={
   if(refresh)await SecureStore.setItemAsync('yazzy-refresh',refresh);
   Object.assign(st,{api,mode:'oidc',token});
  },
+ /** Creates an account. A phone still signed in to the old shared garage asks to keep it (only the first account
+  * on the server gets it). Returns true for a new account, so the app can welcome it. */
+ async register(email:string,password:string,name:string,address?:string){
+  const api=normaliseApi(address||st.api),claim=st.mode==='demo'&&api===st.api;
+  if(claim)await relogin().catch(()=>{});
+  const r=await request(api+'/api/v1/auth/register',{method:'POST',credentials:'include',
+   headers:{'Content-Type':'application/json',...(claim?{'X-CSRF-Token':st.csrf}:{})},body:JSON.stringify({email,password,name,claim})});
+  await this.accountSignedIn(api,r);
+ },
+ async login(email:string,password:string,address?:string){
+  const api=normaliseApi(address||st.api);
+  const r=await request(api+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+  await this.accountSignedIn(api,r);
+ },
+ async accountSignedIn(api:string,r:Response){
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok){
+   const code=data?.detail?.code;
+   if(r.status===429)throw new Error(t('Too many wrong passwords. Try again in {n} min.',{n:Math.max(1,Math.ceil((Number(data?.detail?.retryAfter)||60)/60))}));
+   throw new Error(code==='INVALID_LOGIN'?t('Wrong e-mail or password.'):code==='EMAIL_TAKEN'?t('An account with this e-mail already exists. Sign in instead.')
+    :code==='INVALID_EMAIL'?t('Enter a valid e-mail address.'):r.status===422?t('The password needs at least 8 characters.'):t('The server could not sign you in (HTTP {status}).',{status:r.status}));
+  }
+  const previous=await SecureStore.getItemAsync('yazzy-api')||defaultApi;
+  // Another workspace holds other cars: start from an empty cache and pick a car again.
+  if(api!==previous||data.tenantId!==await SecureStore.getItemAsync('yazzy-tenant')){await clearCache();await Promise.all(['yazzy-vehicle','yazzy-configured'].map(k=>SecureStore.deleteItemAsync(k).catch(()=>{})));}
+  await SecureStore.setItemAsync('yazzy-api',api);await SecureStore.setItemAsync('yazzy-tenant',String(data.tenantId||''));
+  await SecureStore.setItemAsync('yazzy-account-token',data.token);await SecureStore.setItemAsync('yazzy-account',JSON.stringify(data.account));
+  if(data.new)await SecureStore.setItemAsync('yazzy-welcome','1');
+  await Promise.all(['yazzy-sandbox','yazzy-access','yazzy-refresh','yazzy-csrf','yazzy-access-password'].map(k=>SecureStore.deleteItemAsync(k).catch(()=>{})));
+  Object.assign(st,{api,mode:'account',token:data.token,csrf:'',account:data.account});
+ },
+ /** Signs this phone out of its account; the e-mail and password sign it in again. */
+ async signOut(){
+  if(st.mode==='account')request(st.api+'/api/v1/auth/sign-out',{method:'POST',headers:{Authorization:'Bearer '+st.token}},10000).catch(()=>{});
+  await Promise.all(['yazzy-account-token','yazzy-account','yazzy-sandbox','yazzy-access','yazzy-refresh','yazzy-csrf'].map(k=>SecureStore.deleteItemAsync(k).catch(()=>{})));
+  Object.assign(st,{mode:null,token:'',csrf:'',account:null});
+ },
  /** Forgets the sign-in but keeps the address, so connecting again only needs the button. */
  async disconnect(){
   if(st.mode==='demo')request(st.api+'/api/v1/auth/logout',{method:'POST',credentials:'include',headers:{'X-CSRF-Token':st.csrf}},10000).catch(()=>{});
@@ -91,6 +136,7 @@ export const server={
   let r=await send(),value=await r.json().catch(()=>({}));
   // The session cookie lasts 8 hours; after that (or after a reinstall) sign back in once and repeat the request.
   if(st.mode==='demo'&&(r.status===401||value?.detail?.code==='CSRF_FAILED')){await relogin();r=await send();value=await r.json().catch(()=>({}));}
+  if(st.mode==='account'&&r.status===401){await this.signOut();onExpired?.();throw new Error(t('Your sign-in has expired. Sign in again.'));}
   if(!r.ok)throw new Error(typeof value?.detail?.code==='string'?value.detail.code:t('Request failed (HTTP {status})',{status:r.status}));
   return value;
  },

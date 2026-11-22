@@ -6,10 +6,12 @@ import {StatusBar} from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import {TripDetail} from '../components/TripDetail';
 import {c,ui,F,mono} from '../components/theme';
-import {Button,Icon,useAction} from '../components/kit';
+import {Button,Icon,Segment,useAction} from '../components/kit';
 import {Sheet} from '../components/Sheet';
 import {NavBar,NAV_HEIGHT,TabPane,TABS,type TabKey} from '../components/Tabs';
 import {SignIn} from '../components/SignIn';
+import {canUnlock,Lock,Welcome} from '../components/AccountGate';
+import {BusinessDashboard} from '../components/BusinessDashboard';
 import {GarageTab} from '../components/tabs/Garage';
 import {TripsTab} from '../components/tabs/Trips';
 import {HealthTab} from '../components/tabs/Health';
@@ -34,7 +36,7 @@ const quiet=(message:string)=>/[.!?]$/.test(message)?message:t("Couldn't refresh
 export default function App(){
  const insets=useSafeAreaInsets(),lang=useLang();
  // undefined while the saved connection is read (a few milliseconds, no network), null when this phone never connected.
- const [mode,setMode]=useState<'demo'|'oidc'|null|undefined>(undefined),[session,setSession]=useState(0),[api,setApi]=useState(server.api);
+ const [mode,setMode]=useState<'account'|'oidc'|null|undefined>(undefined),[locked,setLocked]=useState(false),[welcome,setWelcome]=useState(false),[businessOpen,setBusinessOpen]=useState(false),[session,setSession]=useState(0),[api,setApi]=useState(server.api);
  const [vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[car,setCar]=useState<Car|null>(null);
  const [refreshing,setRefreshing]=useState(false),[pulling,setPulling]=useState(false),[offline,setOffline]=useState('');
  const [tab,setTab]=useState<TabKey>('Home'),[visited,setVisited]=useState<TabKey[]>(['Home']);
@@ -50,11 +52,24 @@ export default function App(){
   const [list,saved]=await Promise.all([readCache<any[]>('vehicles'),SecureStore.getItemAsync('yazzy-vehicle').catch(()=>null)]);
   const id=active(list).find(v=>v.id===saved)?.id||active(list)[0]?.id||saved||'';
   fresh.current={};carRef.current=null;inflight.current=null;
-  setApi(server.api);setVehicles(active(list));setCar(null);setSelected(id);setOffline('');setMode(server.mode);setSession(n=>n+1);
+  setApi(server.api);setVehicles(active(list));setCar(null);setSelected(id);setOffline('');setSession(n=>n+1);
+  // The old shared login (before accounts) counts as signed out: the person creates an account, which keeps that garage.
+  setMode(server.mode==='demo'?null:server.mode);
+  setWelcome(server.mode==='account'&&await SecureStore.getItemAsync('yazzy-welcome').catch(()=>null)==='1');
  },[]);
+ // Opening the app asks for the fingerprint or face; signing in with the password just now does not.
+ const launch=useCallback(async()=>{
+  await Promise.all([server.restore().catch(()=>null),loadLang()]);
+  if(server.mode==='account'&&await canUnlock())setLocked(true);
+  await boot();
+ },[boot]);
  // The saved language is read with the saved connection, before the first screen, so it never flashes the default.
- useEffect(()=>{Promise.all([server.restore().catch(()=>null),loadLang()]).then(boot);},[]);
- const disconnected=useCallback(()=>{setMode(null);setTab('Home');setVisited(['Home']);setVehicles([]);setSelected('');setCar(null);carRef.current=null;},[]);
+ useEffect(()=>{void launch();},[]);
+ const disconnected=useCallback(()=>{setMode(null);setLocked(false);setTab('Home');setVisited(['Home']);setVehicles([]);setSelected('');setCar(null);carRef.current=null;},[]);
+ useEffect(()=>{server.onExpired(disconnected);return()=>server.onExpired(null);},[disconnected]);
+ const openBusiness=useCallback(()=>setBusinessOpen(true),[]);
+ const signOut=useCallback(()=>{void server.signOut().then(disconnected);},[disconnected]);
+ const closeWelcome=useCallback(()=>{setWelcome(false);SecureStore.deleteItemAsync('yazzy-welcome').catch(()=>{});},[]);
 
  useEffect(()=>{
   if(!mode)return;
@@ -277,14 +292,16 @@ export default function App(){
 
  if(mode===undefined)return <View style={{flex:1,backgroundColor:c.bg}}><StatusBar style="dark"/></View>;
  if(!mode)return <View key={lang} style={{flex:1}}><StatusBar style="dark"/><SignIn api={api} onConnected={boot}/></View>;
+ if(locked)return <View key={lang} style={{flex:1}}><StatusBar style="dark"/><Lock name={server.account?.name} onUnlocked={()=>setLocked(false)} onSignOut={signOut}/></View>;
 
+ const business=vehicles.filter(v=>v.category==='BUSINESS').length;
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
-  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected}/>;
+  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected} onSignOut={signOut} business={business} onBusiness={openBusiness}/>;
  }};
 
  return <View key={lang} style={s.screen}>
@@ -336,6 +353,12 @@ export default function App(){
    {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind} onPickYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel}/>:null}
   </Modal>
 
+  <Modal visible={businessOpen} animationType="slide" onRequestClose={()=>setBusinessOpen(false)}>
+   {businessOpen?<BusinessDashboard onClose={()=>setBusinessOpen(false)}/>:null}
+  </Modal>
+
+  <Welcome open={welcome&&!locked} name={server.account?.name} onClose={closeWelcome} onConnect={()=>{closeWelcome();go('Connect');}}/>
+
   <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>
    {tripView?<TripDetail trip={tripView} vehicleId={selected} vehicleName={vehicle?.name} vinModel={report?.vinModel} call={server.call} onClose={()=>setTripView(null)}/>:null}
   </Modal>
@@ -350,17 +373,21 @@ function VehicleRow({vehicle:v,first,on,onPick,onUpdate}:{vehicle:any;first:bool
   {text:t('Cancel'),style:'cancel'},
   {text:t('Remove'),style:'destructive',onPress:()=>{void run(()=>onUpdate(v.id,{archived:true}));}},
  ]);
- if(editing)return <View style={[s.listRow,!first&&s.listRowBorder]}>
+ if(editing)return <View style={[!first&&s.listRowBorder,{paddingVertical:12,gap:10}]}>
+  <View style={[ui.row,{gap:10}]}>
   <TextInput style={[ui.input,{flex:1,marginBottom:0}]} value={name} onChangeText={setName} autoFocus maxLength={100} placeholder={t('Vehicle name')} placeholderTextColor={c.faint}
    returnKeyType="done" onSubmitEditing={()=>{if(canSave)void run(async()=>{await onUpdate(v.id,{name:trimmed});setEditing(false);});}}/>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Save')} disabled={!canSave} hitSlop={6} onPress={()=>run(async()=>{await onUpdate(v.id,{name:trimmed});setEditing(false);})} style={[s.send,!canSave&&{opacity:0.4}]}><Icon name="checkmark" size={22} color="#fff"/></Pressable>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Remove')} disabled={busy} hitSlop={6} onPress={remove} style={[s.send,{backgroundColor:c.red}]}><Icon name="trash-outline" size={20} color="#fff"/></Pressable>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Cancel')} hitSlop={6} onPress={()=>{setName(v.name);setEditing(false);}} style={s.iconButton}><Icon name="close" size={22} color={c.muted}/></Pressable>
+  </View>
+  {/* The group saves at once: Business cars appear on the Business dashboard. */}
+  <Segment items={[['PERSONAL',t('Personal')],['BUSINESS',t('Business')]]} value={v.category||'PERSONAL'} onChange={category=>{if(category!==(v.category||'PERSONAL'))void run(()=>onUpdate(v.id,{category}));}}/>
  </View>;
  return <View style={[s.listRow,!first&&s.listRowBorder]}>
   <Pressable accessibilityRole="button" accessibilityState={{selected:on}} style={({pressed})=>[{flex:1,flexDirection:'row',alignItems:'center',gap:12},pressed&&{opacity:0.7}]} onPress={()=>onPick(v.id)}>
    <View style={[s.circle,on?{backgroundColor:c.blue}:{backgroundColor:c.blue50}]}><Icon name="car-sport" size={18} color={on?'#fff':c.blue}/></View>
-   <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{carLine(v)}</Text></View>
+   <View style={{flex:1}}><Text style={s.rowTitle}>{v.name}</Text><Text style={ui.caption}>{[carLine(v),v.category==='BUSINESS'?t('Business'):null].filter(Boolean).join(' · ')}</Text></View>
    {on?<Icon name="checkmark-circle" size={22} color={c.blue}/>:<View style={s.radio}/>}
   </Pressable>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Rename or remove {name}',{name:v.name})} hitSlop={6} onPress={()=>{setName(v.name);setEditing(true);}} style={s.iconButton}><Icon name="create-outline" size={20} color={c.muted}/></Pressable>
@@ -371,10 +398,14 @@ function VehicleRow({vehicle:v,first,on,onPick,onUpdate}:{vehicle:any;first:bool
 const active=(list:any[]|null|undefined)=>(list||[]).filter(v=>!v.archived);
 
 function AddVehicle({onAdded}:{onAdded:(list:any[],id?:string)=>void}){
- const [name,setName]=useState(''),[busy,run]=useAction(),off=busy||!name.trim();
- return <View style={[ui.row,{gap:10,marginTop:12}]}>
-  <TextInput style={[ui.input,{flex:1,marginBottom:0}]} placeholder={t('New vehicle name')} placeholderTextColor={c.faint} value={name} onChangeText={setName}/>
-  <Pressable accessibilityRole="button" accessibilityLabel={t('Add vehicle')} disabled={off} onPress={()=>run(async()=>{const v=await server.call('/vehicles',{name});onAdded(await server.call('/vehicles'),v?.id);setName('');})} style={[s.send,off&&{opacity:0.4}]}><Icon name="add" size={22} color="#fff"/></Pressable>
+ const [name,setName]=useState(''),[category,setCategory]=useState('PERSONAL'),[busy,run]=useAction(),off=busy||!name.trim();
+ const add=()=>run(async()=>{const v=await server.call('/vehicles',{name:name.trim(),category});onAdded(await server.call('/vehicles'),v?.id);setName('');});
+ return <View style={{marginTop:12,gap:10}}>
+  <Segment items={[['PERSONAL',t('Personal')],['BUSINESS',t('Business')]]} value={category} onChange={setCategory}/>
+  <View style={[ui.row,{gap:10}]}>
+   <TextInput style={[ui.input,{flex:1,marginBottom:0}]} placeholder={t('New vehicle name')} placeholderTextColor={c.faint} value={name} onChangeText={setName} returnKeyType="done" onSubmitEditing={()=>{if(!off)add();}}/>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Add vehicle')} disabled={off} onPress={add} style={[s.send,off&&{opacity:0.4}]}><Icon name="add" size={22} color="#fff"/></Pressable>
+  </View>
  </View>;
 }
 

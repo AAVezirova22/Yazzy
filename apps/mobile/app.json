@@ -38,6 +38,12 @@
    "expo-router",
    "expo-secure-store",
    [
+    "expo-local-authentication",
+    {
+     "faceIDPermission": "Yazzy uses Face ID to unlock your account."
+    }
+   ],
+   [
     "expo-font",
     {
      "fonts": [

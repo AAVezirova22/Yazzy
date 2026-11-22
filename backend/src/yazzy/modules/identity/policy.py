@@ -76,14 +76,14 @@ def audit(db, ctx, action, resource_id, detail=None):
     )
 
 
-def new_session(db, membership):
+def new_session(db, membership, lifetime: float = 3600 * 8):
     token, csrf = secrets.token_urlsafe(40), secrets.token_urlsafe(24)
     db.add(
         LoginSession(
             token_hash=digest(token),
             membership_id=membership.id,
             csrf=csrf,
-            expires_at=time.time() + 3600 * 8,
+            expires_at=time.time() + lifetime,
         )
     )
     return token, csrf
@@ -105,7 +105,14 @@ def signing_keys(issuer: str):
 
 def authenticate(request: Request, db=Depends(get_db, scope="function")) -> Context:
     bearer = request.headers.get("authorization", "")
-    if bearer.startswith("Bearer ") and settings.oidc_issuer:
+    if bearer.startswith("Bearer ") and "." not in bearer[7:]:
+        # An account's app token (see yazzy.api.accounts): opaque, so never a JWT. Sent as a header, never as a
+        # cookie, so it needs no CSRF token.
+        session = db.get(LoginSession, digest(bearer[7:]))
+        if not session or session.expires_at < time.time():
+            fail("AUTHENTICATION_REQUIRED", 401)
+        member = db.get(Membership, session.membership_id)
+    elif bearer.startswith("Bearer ") and settings.oidc_issuer:
         try:
             client = signing_keys(settings.oidc_issuer)
             token = bearer[7:]

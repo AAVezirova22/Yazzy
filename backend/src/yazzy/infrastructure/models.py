@@ -35,6 +35,17 @@ class Organisation(Base):
     is_demo: Mapped[bool] = mapped_column(default=False)
 
 
+class Account(Base):
+    """A person who signs in with e-mail and password; their memberships use the subject "account:<id>"."""
+
+    __tablename__ = "accounts"
+    id: Mapped[str] = mapped_column(primary_key=True, default=uid)
+    email: Mapped[str] = mapped_column(unique=True)
+    name: Mapped[str] = mapped_column(default="")
+    password_hash: Mapped[str]
+    created_at: Mapped[float] = mapped_column(default=time.time)
+
+
 class Membership(Base):
     __tablename__ = "memberships"
     id: Mapped[str] = mapped_column(primary_key=True, default=uid)
@@ -78,6 +89,7 @@ class Vehicle(Scoped, Base):
     make: Mapped[str] = mapped_column(default="")
     model: Mapped[str] = mapped_column(default="")
     year: Mapped[int | None]
+    category: Mapped[str] = mapped_column(default="PERSONAL")  # PERSONAL or BUSINESS
     fuel_type: Mapped[str] = mapped_column(default="PETROL")
     powertrain: Mapped[str] = mapped_column(default="ICE")
     origin: Mapped[str] = mapped_column(default="REAL")
