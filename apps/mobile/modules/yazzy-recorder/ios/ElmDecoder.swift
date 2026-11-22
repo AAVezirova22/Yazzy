@@ -16,6 +16,21 @@ enum ElmDecoder {
     if full { return ["ATDPN","ATRV"]+infoPids.filter{supported.contains($0)}.map{"01"+$0}+["0902","090A","22F18B","1A8B","03","07","0A"] }
     return ["ATRV"]+["01","31","A6"].filter{supported.contains($0)}.map{"01"+$0}+["03","07"]+(needVin ? ["0902"]:[])
   }
+  /// Which live reading to ask for as the n-th poll. Fuel is worked out from air flow, fuel trims, speed and RPM, and the
+  /// server only joins readings less than 15 s apart, so those come first: speed, RPM, air flow and the car's own fuel rate every cycle, the
+  /// trims every other spare slot. The readings that are only shown on screen share what is left.
+  static func nextPoll(supported:Set<String>,index n:Int)->String? {
+    func have(_ list:[String])->[String]{list.filter{supported.contains($0)}}
+    let fast=have(fastPids),maf=have(["10","5E"]),trims=have(["06","07"])
+    let others=have(["05","0B","0F","11","04","2F","42","46"]),extras=have(["5B","5C","0E","33","0A","23","1F"])
+    let cycle=fast.count+maf.count+1,slot=n%cycle,k=n/cycle
+    if slot<fast.count{return fast[slot]}
+    if slot<fast.count+maf.count{return maf[slot-fast.count]}
+    let m=k%6
+    let order:[([String],Int)] = m==5 ? [(extras,k/6),(others,k),(trims,k)] : m%2==0 ? [(trims,k/6*3+m/2),(others,k),(extras,k)] : [(others,k/6*2+m/2),(trims,k),(extras,k)]
+    for (list,i) in order where !list.isEmpty {return list[i%list.count]}
+    return fast.first ?? maf.first
+  }
   static func isReport(_ command:String)->Bool { reads.contains(command) || (command.hasPrefix("01") && command.count==4 && infoPids.contains(String(command.suffix(2)))) }
   /// Readings the server accepts. The others are shown live and kept in the car report but never uploaded.
   static let uploaded:Set<String> = ["ENGINE_RPM","VEHICLE_SPEED","COOLANT_TEMP","SHORT_FUEL_TRIM","LONG_FUEL_TRIM","INTAKE_PRESSURE","INTAKE_TEMP","MAF","THROTTLE","ENGINE_LOAD","FUEL_LEVEL","MODULE_VOLTAGE","AMBIENT_TEMP","FUEL_RATE"]

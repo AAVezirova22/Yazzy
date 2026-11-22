@@ -54,6 +54,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   private var supported=Set<String>()
   // The car report: identification and diagnostics read once per connection, refreshed every 3 minutes, kept across restarts.
   private var identify=[String]()
+  private var afterReport=false
   private var nextReportAt=Date.distantPast
   private let profileKey="yazzy.car-profile",parkedKey="yazzy.car-parked"
   private var profile:[String:Any]
@@ -182,16 +183,11 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     if inFlight != nil {if Date().timeIntervalSince(sentAt)>8{inFlight=nil;buffer="";failures+=1;error="Diagnostic timeout; capture gap";if failures>=3{central.cancelPeripheralConnection(p)}};return}
     if setup.isEmpty && identify.isEmpty && !supported.isEmpty && Date()>=nextReportAt {let needVin=(profile["vin"] as? String)==nil;identify=ElmDecoder.identify(supported:supported,full:nextReportAt==Date.distantPast,needVin:needVin);nextReportAt=Date().addingTimeInterval(needVin ? 45:180)}
     let command:String
-    if !setup.isEmpty{command=setup.removeFirst()}else if !identify.isEmpty{command=identify.removeFirst()}else{
-      let polls=ElmDecoder.pids.filter{supported.contains($0)}
-      guard !polls.isEmpty else{error="No supported PIDs detected";return}
-      // Speed and RPM drive trip detection, so they are polled every cycle; the remaining PIDs rotate in between.
-      let fast=ElmDecoder.fastPids.filter{supported.contains($0)},slow=polls.filter{!fast.contains($0)}
-      let n=pollIndex;pollIndex+=1
-      let slot=n%(fast.count+1)
-      let pid:String
-      if !fast.isEmpty && (slot<fast.count || slow.isEmpty){pid=fast[slot % fast.count]}else{pid=slow[(n/(fast.count+1)) % slow.count]}
-      command="01"+pid
+    if !setup.isEmpty{command=setup.removeFirst()}else if !identify.isEmpty && !afterReport{command=identify.removeFirst();afterReport=true}else{
+      // Between two report requests one live reading is polled, so fuel and trip data never go quiet while the report refreshes.
+      afterReport=false
+      guard let pid=ElmDecoder.nextPoll(supported:supported,index:pollIndex) else{error="No supported PIDs detected";return}
+      pollIndex+=1;command="01"+pid
     }
     guard ElmDecoder.allowed(command) else{return};inFlight=command;sentAt=Date()
     p.writeValue(Data((command+"\r").utf8),for:write,type:write.properties.contains(.write) ? .withResponse:.withoutResponse)
@@ -235,7 +231,13 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
       URLSession.shared.dataTask(with:request){data,response,err in DispatchQueue.main.async{
         self.syncing=false
         let accepted=data.flatMap{try? JSONSerialization.jsonObject(with:$0) as? [String:Any]}?["accepted"] as? Bool
-        if err==nil,(response as? HTTPURLResponse)?.statusCode==202,accepted==true{do{try self.store.acknowledge(id);self.syncFailures=0;self.nextSync=Date();self.sync()}catch{self.error="Acknowledgement persistence failed; batch retained"}}
+        let httpStatus=(response as? HTTPURLResponse)?.statusCode
+        if err==nil,httpStatus==202,accepted==true{do{try self.store.acknowledge(id);self.syncFailures=0;self.nextSync=Date();self.sync()}catch{self.error="Acknowledgement persistence failed; batch retained"}}
+        // 409 and 422 are final for this exact batch: resending it can never succeed and would block every reading queued behind it.
+        else if err==nil,httpStatus==409||httpStatus==422{
+          let n=((try? JSONSerialization.jsonObject(with:payload) as? [String:Any])?["samples"] as? [Any])?.count ?? 0
+          do{try self.store.acknowledge(id);self.syncFailures=0;self.nextSync=Date();self.error="Skipped \(n) readings the server cannot accept (HTTP \(httpStatus!))";self.sync()}catch{self.error="Acknowledgement persistence failed; batch retained"}
+        }
         else{self.syncFailures+=1;self.nextSync=Date().addingTimeInterval(min(300,pow(2,Double(min(self.syncFailures,8)))));
           let status=(response as? HTTPURLResponse)?.statusCode
           let code=((data.flatMap{try? JSONSerialization.jsonObject(with:$0) as? [String:Any]}?["detail"]) as? [String:Any])?["code"] as? String
