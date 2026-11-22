@@ -22,7 +22,7 @@ import {readCache,server,writeCache} from '../components/server';
 import {carLine} from '../components/format';
 import {available,Recorder,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
 import {loadLang,t,useLang} from '../components/i18n';
-import {decodeVin,hasImageKey,imageFound} from '../components/vinCar';
+import {lookupVin} from '../components/vinCar';
 
 const empty:RecorderSnapshot={recording:false,connected:false,queued:0,error:null,signals:{},qualification:'PENDING_DEVICE_TEST'};
 // Fetched one after another: the free server has a tenth of a CPU, and trips come first because Home and Trips show them.
@@ -194,7 +194,7 @@ export default function App(){
   if(type.kind)Object.assign(fields,serverType(type.kind,next));
   if(odo!=null)fields.odometerKm=Math.round(odo*10)/10;
   // The VIN names the car exactly, so its make, model and year replace whatever was there.
-  const vm=next.vinModel;if(vm&&vm.vin===next.vin){fields.make=vm.make;fields.model=vm.model;if(vm.year!=null)fields.year=vm.year;}
+  const vm=next.vinModel;if(vm&&vm.vin===next.vin&&vm.make){fields.make=vm.make;fields.model=vm.model;if(vm.year!=null)fields.year=vm.year;}
   const save=(version:number)=>server.call(`/vehicles/${id}`,{...fields,version},'PATCH');
   try{
    let v=vehiclesRef.current.find(x=>x.id===id);if(!v)return;
@@ -223,13 +223,12 @@ export default function App(){
  useEffect(()=>{
   const id=selected,vin=(report?.vin||'').trim().toUpperCase(),known=report?.vinModel;
   if(!mode||!id||vin.length!==17)return;
-  const need=known?.vin!==vin||(hasImageKey&&known.year!=null&&known.found===undefined);
+  const need=known?.vin!==vin||!known.status||known.status==='PENDING';
   if(!need||vinTried.current[id+vin])return;
   vinTried.current[id+vin]=true;
   void(async()=>{
    try{
-    const decoded=known?.vin===vin?known:await decodeVin(vin);if(!decoded)return;
-    const vinModel={...decoded,found:hasImageKey&&decoded.year!=null?await imageFound(decoded).catch(()=>undefined):undefined};
+    const vinModel=await lookupVin(vin);
     storeReport(id,{...(reports.current[id]||{}),vinModel},true);
    }catch{delete vinTried.current[id+vin];/* offline: try again next time the report changes */}
   })();

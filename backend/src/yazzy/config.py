@@ -37,6 +37,8 @@ class Settings:
     ).rstrip("/")
     # While a car drives, trip rebuilds for its uploads wait this long and share one pass.
     rebuild_delay_seconds: float = float(os.getenv("YAZZY_REBUILD_DELAY_SECONDS", "300"))
+    # carimage.dev key for VIN decoding and car pictures (yazzy.modules.garage.car_picture); off when empty.
+    car_image_api_key: str = os.getenv("CAR_IMAGE_API_KEY", "")
 
     @property
     def allowed_web_origins(self) -> tuple[str, ...]:

@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    LargeBinary,
     String,
     UniqueConstraint,
 )
@@ -51,6 +52,19 @@ class LoginSession(Base):
     membership_id: Mapped[str] = mapped_column(ForeignKey("memberships.id"))
     csrf: Mapped[str]
     expires_at: Mapped[float]
+
+
+class CarPicture(Base):
+    """A carimage.dev render of one catalog vehicle (yazzy.modules.garage.car_picture). Shared, not tenant data."""
+
+    __tablename__ = "car_pictures"
+    id: Mapped[str] = mapped_column(primary_key=True)  # the catalog vehicle id, veh_...
+    make: Mapped[str]
+    model: Mapped[str]
+    year: Mapped[int]
+    status: Mapped[str]  # PENDING, READY, NONE (not in the catalog), FAILED (try again later)
+    image: Mapped[bytes | None] = mapped_column(LargeBinary)
+    updated_at: Mapped[float]
 
 
 class Scoped:
