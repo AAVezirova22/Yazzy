@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState,type ReactNode} from 'react';
-import {Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {Dimensions,Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import Animated,{cancelAnimation,Extrapolation,interpolate,useAnimatedStyle,useSharedValue,withSpring,withTiming} from 'react-native-reanimated';
 import {Gesture,GestureDetector,GestureHandlerRootView} from 'react-native-gesture-handler';
 import {scheduleOnRN} from 'react-native-worklets';
@@ -25,7 +25,9 @@ export function Sheet({open,onClose,title,children}:{open:boolean;onClose:()=>vo
  const [keyboard,setKeyboard]=useState(0);
  useEffect(()=>{
   if(Platform.OS!=='android'||!mounted)return;
-  const show=Keyboard.addListener('keyboardDidShow',e=>setKeyboard(e.endCoordinates.height)),hide=Keyboard.addListener('keyboardDidHide',()=>setKeyboard(0));
+  // Measured from the keyboard's top edge to the bottom of the screen: the reported height leaves out the
+  // navigation bar under it, which would leave the field half hidden behind the suggestion strip.
+  const show=Keyboard.addListener('keyboardDidShow',e=>setKeyboard(Math.max(e.endCoordinates.height,Dimensions.get('screen').height-e.endCoordinates.screenY))),hide=Keyboard.addListener('keyboardDidHide',()=>setKeyboard(0));
   return()=>{show.remove();hide.remove();setKeyboard(0);};
  },[mounted]);
  useEffect(()=>{
