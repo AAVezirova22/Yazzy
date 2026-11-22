@@ -61,7 +61,7 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
    {vehicle&&vinModel?.needsYear&&vinModel.years?.length?<PressableScale accessibilityRole="button" onPress={onSetYear} style={{alignSelf:'flex-start',minHeight:40,justifyContent:'center'}}>
     <Chip icon="calendar-outline" tone="blue" label={t('Set the model year to show your {model}',{model:vinModel.model})}/>
    </PressableScale>:null}
-   {vehicle&&vinModel?.needsModel?<PressableScale accessibilityRole="button" onPress={onPickModel} style={{alignSelf:'flex-start',minHeight:40,justifyContent:'center'}}>
+   {vehicle&&carInfo.hasVin&&!vinModel?.model?<PressableScale accessibilityRole="button" onPress={onPickModel} style={{alignSelf:'flex-start',minHeight:40,justifyContent:'center'}}>
     <Chip icon="car-sport-outline" tone="blue" label={t('Choose your model to show your car')}/>
    </PressableScale>:null}
    {vehicle&&carInfo.read&&!carInfo.hasVin?<PressableScale accessibilityRole="button" onPress={onEnterVin} style={{alignSelf:'flex-start',minHeight:40,justifyContent:'center'}}>
