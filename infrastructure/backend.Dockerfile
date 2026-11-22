@@ -7,6 +7,8 @@ RUN cd /app/backend && uv sync --frozen --no-dev --no-install-project
 COPY backend /app/backend
 COPY simulator /app/simulator
 COPY scripts /app/scripts
+# The app runs as an ordinary user: files copied from a machine that keeps them owner-only must stay readable.
+RUN chmod -R a+rX /app/backend /app/simulator /app/scripts
 RUN cd /app/backend && uv sync --frozen --no-dev && useradd --create-home --uid 10001 yazzy && mkdir /state && chown yazzy /state
 USER yazzy
 EXPOSE 8000
