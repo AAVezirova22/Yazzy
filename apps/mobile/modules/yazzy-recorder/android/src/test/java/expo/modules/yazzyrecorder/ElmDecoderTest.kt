@@ -14,6 +14,16 @@ class ElmDecoderTest {
   val p=report("0902" to "49 02 01 00 00 00 4A\r49 02 02 54 44 4B 42\r49 02 03 32 30 55 34\r49 02 04 30 33 31 32\r49 02 05 33 34 35 36\r")
   assertEquals("JTDKB20U403123456",p.getString("vin"))
  }
+ @Test fun productionYearFromTheEcuManufacturingDate(){
+  assertEquals(2009,report("22F18B" to "62 F1 8B 09 03 17\r").getInt("ecuYear"))
+  assertEquals(2011,report("22F18B" to "62 F1 8B 20 11 05 30\r").getInt("ecuYear"))
+  assertEquals(2014,report("22F18B" to "62 F1 8B 31 34 30 36 31 32\r").getInt("ecuYear"))
+  assertEquals(2008,report("1A8B" to "5A 8B 08 11 02\r").getInt("ecuYear"))
+  assertFalse(report("22F18B" to "7F 22 31\r").has("ecuYear"))
+  assertFalse(report("22F18B" to "NO DATA\r").has("ecuYear"))
+  assertFalse(report("22F18B" to "62 F1 8B 99 13 01\r").has("ecuYear"))
+  assertTrue(ElmDecoder.allowed("22F18B")&&ElmDecoder.allowed("1A8B")&&!ElmDecoder.allowed("2EF18B"))
+ }
  @Test fun faultCodesOnCanAndOlderProtocols(){
   assertEquals(listOf("P0133","P0A80"),list(report("03" to "43 02 01 33 0A 80\r"),"stored"))
   assertEquals(listOf("P0133"),list(report("03" to "43 01 33 00 00 00 00\r"),"stored"))

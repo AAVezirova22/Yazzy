@@ -9,12 +9,13 @@ object ElmDecoder {
  val setup=listOf("ATZ","ATE0","ATL0","ATS1","ATH0","ATSP0","0100","0120","0140","0160","0180","01A0")
  /** Mode 01 PIDs that describe the car rather than the moment: monitor status, fuel type, OBD standard, distances, odometer. */
  val infoPids=listOf("01","51","1C","21","30","31","4D","4E","A6")
- private val reads=listOf("03","07","0A","0902","090A","ATRV","ATI","ATDP","ATDPN")
+ // 22F18B (UDS) and 1A8B (KWP2000) only read the engine ECU's manufacturing date, the car's production year.
+ private val reads=listOf("03","07","0A","0902","090A","22F18B","1A8B","ATRV","ATI","ATDP","ATDPN")
  // Read-only by construction: only these exact requests can ever be sent. Never 04 (clear codes) or any write service.
  fun allowed(command:String)=command in setup||command in (pids+infoPids).map{"01$it"}||command in reads
  /** The car-report requests: everything once per connection, then a light refresh of what can change while driving. */
  fun identify(supported:Set<String>,full:Boolean):List<String> =
-  if(full)listOf("ATDPN","ATRV")+infoPids.filter{it in supported}.map{"01$it"}+listOf("0902","090A","03","07","0A")
+  if(full)listOf("ATDPN","ATRV")+infoPids.filter{it in supported}.map{"01$it"}+listOf("0902","090A","22F18B","1A8B","03","07","0A")
   else listOf("ATRV")+listOf("01","31","A6").filter{it in supported}.map{"01$it"}+listOf("03","07")
  fun isReport(command:String)=command in reads||(command.startsWith("01")&&command.length==4&&command.substring(2) in infoPids)
  /** Readings the server accepts. The others are shown live and kept in the car report but never uploaded. */
@@ -47,6 +48,19 @@ object ElmDecoder {
    else{multi=null;hex(line)?.let{out.add(it.toMutableList())}}
   }
   return out.filter{it.isNotEmpty()}
+ }
+ /** The year of a manufacturing date written as ASCII digits (YYMMDD, YYYYMMDD) or BCD (YY MM DD, YYYY MM DD). */
+ fun ecuYear(b:List<Int>,now:Int=java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)):Int?{
+  fun bcd(x:Int)=if(x shr 4<=9&&x and 15<=9)(x shr 4)*10+(x and 15) else null
+  val digits=if(b.isNotEmpty()&&b.all{it in 0x30..0x39})b.map{it-0x30}.joinToString("") else null
+  val (year,month)=when{
+   digits!=null&&digits.length>=8&&digits.startsWith("19")||digits!=null&&digits.length>=8&&digits.startsWith("20")->digits.take(4).toInt() to digits.substring(4,6).toInt()
+   digits!=null&&digits.length>=6->2000+digits.take(2).toInt() to digits.substring(2,4).toInt()
+   b.size>=3&&(bcd(b[0])==19||bcd(b[0])==20)&&bcd(b[1])!=null&&bcd(b[2]) in 1..12->bcd(b[0])!!*100+bcd(b[1])!! to bcd(b[2])!!
+   b.size>=2&&bcd(b[0])!=null&&bcd(b[1]) in 1..12->2000+bcd(b[0])!! to bcd(b[1])!!
+   else->return null
+  }
+  return year.takeIf{it in 1990..now+1&&month in 1..12}
  }
  private fun hex(text:String):List<Int>?{val t=text.replace(" ","");if(t.isEmpty()||t.length%2!=0||!t.matches(Regex("[0-9A-F]+")))return null;return t.chunked(2).map{it.toInt(16)}}
  private fun dtc(a:Int,b:Int)="${"PCBU"[a shr 6]}${(a shr 4) and 3}${"%X".format(a and 15)}${"%02X".format(b)}"
@@ -91,6 +105,12 @@ object ElmDecoder {
     val groups=if(parts.isNotEmpty()&&parts.all{it.size==7})listOf(parts.sortedBy{it[2]}.flatMap{it.drop(3)}) else parts.map{it.drop(3)}
     val names=groups.map{g->g.filter{it in 0x20..0x7E}.map{it.toChar()}.joinToString("").trim()}.filter{it.length>=3}.distinct()
     if(names.isNotEmpty())p.put("ecus",JSONArray(names))
+   }
+   // Most European VINs carry no model year, so the ECU's own manufacturing date stands in for it.
+   "22F18B","1A8B"->{
+    val body=if(command=="22F18B")all.firstOrNull{it.size>=5&&it[0]==0x62&&it[1]==0xF1&&it[2]==0x8B}?.drop(3)
+     else all.firstOrNull{it.size>=4&&it[0]==0x5A&&it[1]==0x8B}?.drop(2)
+    body?.let{ecuYear(it)}?.let{if(!p.has("ecuYear"))p.put("ecuYear",it)}
    }
    "03","07","0A"->{
     val mode=command.toInt(16)+0x40

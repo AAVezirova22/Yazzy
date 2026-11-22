@@ -602,6 +602,7 @@ export const RU:Record<string,string>={
  "Change the model year":"Изменить модельный год",
  "Set the model year to show your {model}":"Укажите год, чтобы увидеть свой {model}",
  "This VIN does not say the year. Pick the model year from the registration document to show your car.":"В этом VIN нет года. Выберите модельный год из техпаспорта, чтобы показать свой автомобиль.",
+ "Built (engine ECU date)":"Выпущен (дата ЭБУ двигателя)",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

@@ -10,6 +10,8 @@ export type CarProfile={
  mil?:boolean;dtcCount?:number;readiness?:Monitor[];stored?:string[];pending?:string[];permanent?:string[];
  distanceSinceClearKm?:number;distanceWithMilKm?:number;warmupsSinceClear?:number;minutesWithMil?:number;minutesSinceClear?:number;
  odometerKm?:number;batteryVoltage?:number;supported?:string[];
+ /** Production year from the engine ECU's manufacturing date (UDS 22 F18B / KWP 1A 8B), when the ECU tells it. */
+ ecuYear?:number;
  /** Latest live values and when they were seen; added by the app. */
  signals?:Record<string,number>;signalsAt?:number;
  /** Where the car is: the last GPS fix taken while it moved or ran. */

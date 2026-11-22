@@ -221,19 +221,21 @@ export default function App(){
  // Once the car has told us its VIN, look up its make, model and year, and whether there is a picture of that model.
  const vinTried=useRef<Record<string,boolean>>({});
  useEffect(()=>{
-  const id=selected,vin=(report?.vin||'').trim().toUpperCase(),known=report?.vinModel;
+  const id=selected,vin=(report?.vin||'').trim().toUpperCase(),known=report?.vinModel,ecuYear=report?.ecuYear;
   if(!mode||!id||vin.length!==17)return;
   // Build 59 saved a European VIN's answer without asking for the year: ask again once.
-  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.year==null&&known.needsYear===undefined);
-  if(!need||vinTried.current[id+vin])return;
-  vinTried.current[id+vin]=true;
+  // A VIN without a year (European cars) takes the year the engine ECU was made, once the car has told it.
+  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.year==null&&(known.needsYear===undefined||!!ecuYear));
+  const tried=id+vin+(ecuYear||'');
+  if(!need||vinTried.current[tried])return;
+  vinTried.current[tried]=true;
   void(async()=>{
    try{
-    const vinModel=await lookupVin(vin,known?.vin===vin?known.year:null);
+    const vinModel=await lookupVin(vin,(known?.vin===vin?known.year:null)||ecuYear);
     storeReport(id,{...(reports.current[id]||{}),vinModel:{...vinModel,years:vinModel.years||(known?.vin===vin?known.years:undefined)}},true);
-   }catch{delete vinTried.current[id+vin];/* offline: try again next time the report changes */}
+   }catch{delete vinTried.current[tried];/* offline: try again next time the report changes */}
   })();
- },[mode,selected,report?.vin,report?.vinModel]);
+ },[mode,selected,report?.vin,report?.vinModel,report?.ecuYear]);
  // The owner's model year, for a VIN that has none: fetches that year's picture and saves the year on the car.
  const [yearOpen,setYearOpen]=useState(false),[yearBusy,runYear]=useAction();
  const pickYear=useCallback(()=>{setCarOpen(false);setYearOpen(true);},[]);
