@@ -55,6 +55,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   // The car report: identification and diagnostics read once per connection, refreshed every 3 minutes, kept across restarts.
   private var identify=[String]()
   private var afterReport=false
+  private var headerSet=false
   private var nextReportAt=Date.distantPast
   private let profileKey="yazzy.car-profile",parkedKey="yazzy.car-parked"
   private var profile:[String:Any]
@@ -173,17 +174,32 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   }
   func peripheral(_ peripheral:CBPeripheral,didUpdateNotificationStateFor characteristic:CBCharacteristic,error:Error?){
     if error != nil || !characteristic.isNotifying{self.error="Adapter does not accept the selected notification characteristic";return}
-    connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;identify=[];nextReportAt=Date.distantPast;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
+    connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;identify=[];afterReport=false;headerSet=false;nextReportAt=Date.distantPast;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
   }
   private func tick(){guard recording else{return};sync();pump()}
+  /// The next car-report request. The VIN reads that need the car to lack a VIN, or a CAN bus to address its engine ECU, are skipped otherwise.
+  private func nextReport()->String?{
+    while !identify.isEmpty{
+      let command=identify.removeFirst(),haveVin=(profile["vin"] as? String) != nil
+      if command=="22F190"||command=="1A90"{if haveVin{continue}}
+      if command=="ATSH7E0"&&(haveVin || !["6","8"].contains(profile["protocol"] as? String ?? "")){
+        while let x=identify.first{identify.removeFirst();if x=="ATSH7DF"{break}}
+        continue
+      }
+      return command
+    }
+    return nil
+  }
   /// Sends the next command only when none is in flight. Called by the 0.5 s watchdog timer and immediately after each reply, so polling is limited by the adapter instead of a fixed delay.
   private func pump(){
     guard recording,connected,let p=peripheral else{return}
     guard let write=writeCharacteristic else{error="Write characteristic not found on the adapter; re-select it on the Connect tab";return}
     if inFlight != nil {if Date().timeIntervalSince(sentAt)>8{inFlight=nil;buffer="";failures+=1;error="Diagnostic timeout; capture gap";if failures>=3{central.cancelPeripheralConnection(p)}};return}
-    if setup.isEmpty && identify.isEmpty && !supported.isEmpty && Date()>=nextReportAt {let needVin=(profile["vin"] as? String)==nil;identify=ElmDecoder.identify(supported:supported,full:nextReportAt==Date.distantPast,needVin:needVin);nextReportAt=Date().addingTimeInterval(needVin ? 45:180)}
+    if setup.isEmpty && identify.isEmpty && !supported.isEmpty && Date()>=nextReportAt {// The car says in 0900 which VIN requests it offers: asking one it lacks only wastes a second each time.
+      let offered=(profile["mode09"] as? [String]).map{$0.contains("02")} ?? true
+      let needVin=(profile["vin"] as? String)==nil && offered;identify=ElmDecoder.identify(supported:supported,full:nextReportAt==Date.distantPast,needVin:needVin);nextReportAt=Date().addingTimeInterval(needVin ? 45:180)}
     let command:String
-    if !setup.isEmpty{command=setup.removeFirst()}else if !identify.isEmpty && !afterReport{command=identify.removeFirst();afterReport=true}else{
+    if !setup.isEmpty{command=setup.removeFirst()}else if !identify.isEmpty && (!afterReport || headerSet),let next=nextReport(){command=next;afterReport=true;if command=="ATSH7E0"{headerSet=true}else if command=="ATSH7DF"{headerSet=false}}else{
       // Between two report requests one live reading is polled, so fuel and trip data never go quiet while the report refreshes.
       afterReport=false
       guard let pid=ElmDecoder.nextPoll(supported:supported,index:pollIndex) else{error="No supported PIDs detected";return}

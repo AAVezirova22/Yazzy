@@ -8,12 +8,14 @@ enum ElmDecoder {
   /// Mode 01 PIDs that describe the car rather than the moment: monitor status, fuel type, OBD standard, distances, odometer.
   static let infoPids = ["01","51","1C","21","30","31","4D","4E","A6"]
   // 22F18B (UDS) and 1A8B (KWP2000) only read the engine ECU's manufacturing date, the car's production year.
-  private static let reads = ["03","07","0A","0902","090A","22F18B","1A8B","ATRV","ATI","ATDP","ATDPN"]
+  // 0900 lists which mode 09 requests the car offers. 22F190 (UDS) and 1A90 (KWP2000) read the engine ECU's own VIN record, for
+  // cars that do not answer 0902; ATSH7E0 / ATSH7DF only address that one ECU for the request and then restore the default.
+  private static let reads = ["03","07","0A","0900","0902","090A","22F18B","1A8B","22F190","1A90","ATSH7E0","ATSH7DF","ATRV","ATI","ATDP","ATDPN"]
   /// Read-only by construction: only these exact requests can ever be sent. Never 04 (clear codes) or any write service.
   static func allowed(_ command:String)->Bool { setup.contains(command) || (pids+infoPids).contains{ "01"+$0==command } || reads.contains(command) }
   /// The car-report requests: everything once per connection, then a light refresh of what can change while driving.
   static func identify(supported:Set<String>,full:Bool,needVin:Bool=false)->[String] {
-    if full { return ["ATDPN","ATRV"]+infoPids.filter{supported.contains($0)}.map{"01"+$0}+["0902","090A","22F18B","1A8B","03","07","0A"] }
+    if full { return ["ATDPN","ATRV"]+infoPids.filter{supported.contains($0)}.map{"01"+$0}+["0900","0902","090A","22F18B","1A8B","ATSH7E0","22F190","ATSH7DF","1A90","03","07","0A"] }
     return ["ATRV"]+["01","31","A6"].filter{supported.contains($0)}.map{"01"+$0}+["03","07"]+(needVin ? ["0902"]:[])
   }
   /// Which live reading to ask for as the n-th poll. Fuel is worked out from air flow, fuel trims, speed and RPM, and the
@@ -123,6 +125,18 @@ enum ElmDecoder {
   private static let compression:[String?] = ["NMHC_CATALYST","NOX_SCR",nil,"BOOST_PRESSURE",nil,"EXHAUST_SENSOR","PM_FILTER","EGR"]
   private static func distinct<T:Hashable>(_ list:[T])->[T] { var seen=Set<T>();return list.filter{seen.insert($0).inserted} }
 
+  static func vinValid(_ c:Character)->Bool { c.isASCII && (c.isNumber || c.isUppercase) && !"IOQ".contains(c) }
+  /// The last 17 printable characters when they form a VIN.
+  static func vinStrict(_ bytes:[Int])->String? {
+    let text=String(bytes.filter{(0x30...0x5A).contains($0)}.compactMap{UnicodeScalar($0)}.map{Character($0)})
+    guard text.count>=17 else{return nil}
+    let last=String(text.suffix(17));return last.allSatisfy(vinValid) ? last : nil
+  }
+  /// Some adapters or ECUs frame the reply differently: the first run of 17 VIN characters anywhere in it.
+  static func vinRun(_ bytes:[Int])->String? {
+    let ascii=bytes.map{b -> Character in let ch=Character(UnicodeScalar(b) ?? " ");return (0x30...0x5A).contains(b) && vinValid(ch) ? ch : " "}
+    return String(ascii).split(separator:" ").map(String.init).first{$0.count>=17}.map{String($0.suffix(17))}
+  }
   /// Folds one car-report reply into the profile. Codes, names and labels are resolved in the app.
   static func profile(_ reply:String,command:String,into p:inout [String:Any]) {
     let all=messages(reply)
@@ -162,17 +176,19 @@ enum ElmDecoder {
       // CAN sends 49 02 01 + 17 characters; older protocols send five numbered lines of four bytes each.
       let parts=all.enumerated().filter{$0.element.count>3 && $0.element[0]==0x49 && $0.element[1]==0x02}
         .sorted{let l=$0.element.count==7 ? $0.element[2]:0,r=$1.element.count==7 ? $1.element[2]:0;return l != r ? l<r : $0.offset<$1.offset}.map{$0.element}
-      let text=String(parts.flatMap{$0.dropFirst(3)}.filter{(0x30...0x5A).contains($0)}.compactMap{UnicodeScalar($0)}.map{Character($0)})
-      func valid(_ c:Character)->Bool{c.isASCII && (c.isNumber || c.isUppercase) && !"IOQ".contains(c)}
-      var vin:String?
-      if text.count>=17{let last=String(text.suffix(17));if last.allSatisfy(valid){vin=last}}
-      // Some adapters or ECUs frame the reply differently: take the first run of 17 VIN characters anywhere in it.
-      if vin==nil{
-        let ascii=all.flatMap{$0}.map{b -> Character in let ch=Character(UnicodeScalar(b) ?? " ");return (0x30...0x5A).contains(b) && valid(ch) ? ch : " "}
-        vin=String(ascii).split(separator:" ").map(String.init).first{$0.count>=17 && $0.allSatisfy(valid)}.map{String($0.suffix(17))}
-      }
+      let vin=vinStrict(parts.flatMap{Array($0.dropFirst(3))}) ?? vinRun(all.flatMap{$0})
       if let v=vin{p["vin"]=v;p["vinReply"]=nil}
       else if p["vin"]==nil{p["vinReply"]=String(reply.replacingOccurrences(of:"\r",with:" ").replacingOccurrences(of:"\n",with:" ").split(separator:" ",omittingEmptySubsequences:true).joined(separator:" ").prefix(60))}
+    case "0900":
+      // Four bytes after 49 00: one bit per mode 09 request 01…20, the first request in the top bit.
+      if let m=all.first(where:{$0.count>=6 && $0[0]==0x49 && $0[1]==0x00}){
+        let mask=(m[2]<<24)+(m[3]<<16)+(m[4]<<8)+m[5]
+        p["mode09"]=(0..<32).filter{mask & (1<<(31-$0)) != 0}.map{String(format:"%02X",$0+1)}
+      }
+    case "22F190","1A90":
+      let body:[Int]? = command=="22F190" ? all.first(where:{$0.count>=20 && $0[0]==0x62 && $0[1]==0xF1 && $0[2]==0x90}).map{Array($0.dropFirst(3))}
+        : all.first(where:{$0.count>=19 && $0[0]==0x5A && $0[1]==0x90}).map{Array($0.dropFirst(2))}
+      if p["vin"]==nil,let b=body,let v=vinStrict(b) ?? vinRun(b){p["vin"]=v;p["vinReply"]=nil}
     case "090A":
       let parts=all.enumerated().filter{$0.element.count>3 && $0.element[0]==0x49 && $0.element[1]==0x0A}
       let oneMessage = !parts.isEmpty && parts.allSatisfy({$0.element.count==7})

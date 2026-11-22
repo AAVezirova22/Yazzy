@@ -108,8 +108,9 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear,
 
     <Card title={t('Identity')}>
      <Row label={t('VIN')} value={p.vin||'—'} mono/>
-     {!p.vin&&p.readAt?<Text style={[ui.caption,{paddingBottom:4}]}>{p.vinReply?t('The car answered the VIN request with: {reply}',{reply:p.vinReply}):t('The car has not given its VIN yet.')}</Text>:null}
-     <Pressable accessibilityRole="button" onPress={onEnterVin} hitSlop={8} style={{paddingVertical:8}}><Text style={s_.link}>{p.vin?t('Change the VIN'):t('Enter the VIN')}</Text></Pressable>
+     {!p.vin&&p.readAt?<Text style={[ui.caption,{paddingBottom:8}]}>{p.mode09&&!p.mode09.includes('02')?t('This car does not give its VIN over the standard OBD request, so Yazzy cannot read it. Enter it from the registration document to show your car.'):p.vinReply?t('The car answered the VIN request with: {reply}',{reply:p.vinReply}):t('The car has not given its VIN yet.')}</Text>:null}
+     {p.vin?<Pressable accessibilityRole="button" onPress={onEnterVin} hitSlop={8} style={{paddingVertical:8}}><Text style={s_.link}>{t('Change the VIN')}</Text></Pressable>
+      :<Button kind="light" icon="create-outline" title={t('Enter the VIN')} onPress={onEnterVin}/>}
      {maker?<Row label={t('Manufacturer (from VIN)')} value={maker}/>:null}
      {p.odometerKm!=null||s.ODOMETER!=null?<Row label={t('Odometer')} value={t('{n} km',{n:fmt(s.ODOMETER??p.odometerKm,0)})}/>:null}
      {p.obdStandard!=null?<Row label={t('OBD standard')} value={OBD_STANDARD[p.obdStandard]?t(OBD_STANDARD[p.obdStandard]):t('Code {n}',{n:p.obdStandard})}/>:null}

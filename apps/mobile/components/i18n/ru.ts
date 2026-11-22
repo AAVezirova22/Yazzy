@@ -609,6 +609,8 @@ export const RU:Record<string,string>={
  "Vehicle identification number":"VIN-номер автомобиля",
  "Type the 17-character VIN from the registration document or the base of the windshield.":"Введите 17-значный VIN из свидетельства о регистрации или с основания лобового стекла.",
  "A VIN has 17 letters and digits, without I, O or Q.":"В VIN 17 букв и цифр, без I, O и Q.",
+ "This car does not give its VIN over the standard OBD request, so Yazzy cannot read it. Enter it from the registration document to show your car.":"Этот автомобиль не отдаёт VIN по стандартному запросу OBD, поэтому Yazzy не может его считать. Введите VIN из свидетельства о регистрации, чтобы показать ваш автомобиль.",
+ "Enter the VIN to show your car":"Введите VIN, чтобы показать ваш автомобиль",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */
