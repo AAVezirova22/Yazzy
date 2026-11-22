@@ -22,10 +22,15 @@ def carimage(monkeypatch):
             return httpx.Response(200, json={"data": {"make": "VOLKSWAGEN", "model": "Golf", "year": 2008, "vehicle": vehicle}})
         if request.url.path == "/api/v1/vin/WVWZZZ1KZ8W000002":
             return httpx.Response(200, json={"data": {"make": "VOLKSWAGEN", "model": "Rare", "year": 2008, "vehicle": None}})
+        if request.url.path == "/api/v1/vin/VNKKBAC390A160510":  # European: no model year in the VIN
+            return httpx.Response(200, json={"data": {"make": "Toyota", "model": "Yaris", "year": None, "vehicle": None}})
+        if request.url.path == "/api/v1/vehicles":
+            assert request.url.params["make"] == "Toyota" and request.url.params["model"] == "Yaris"
+            return httpx.Response(200, json={"data": {"vehicles": [{"year": 2008, "id": "veh_yaris2008"}, {"year": 2009, "id": "veh_yaris2009"}]}})
         if request.url.path.startswith("/api/v1/vin/"):
             return httpx.Response(404, json={"error": "not recognized"})
         if request.url.path == "/api/v1/images/car":
-            assert request.url.params["vehicle"] == "veh_golf2008"
+            assert request.url.params["vehicle"] in ("veh_golf2008", "veh_yaris2009")
             assert request.url.params["background"] == "transparent"
             return httpx.Response(200, content=b"RIFFwebp", headers={"content-type": "image/webp"})
         return httpx.Response(500)
@@ -78,3 +83,13 @@ def test_needs_sign_in():
 
     with TestClient(app) as anonymous:
         assert anonymous.get(f"/api/v1/car-picture/{VIN}").status_code == 401
+
+
+def test_european_vin_asks_for_the_year_then_shows_that_year(client, carimage):
+    vin = "VNKKBAC390A160510"
+    ask = client.get(f"/api/v1/car-picture/{vin}").json()
+    assert ask == {"make": "Toyota", "model": "Yaris", "year": None, "status": "NONE", "needsYear": True, "years": [2009, 2008]}
+    assert client.get(f"/api/v1/car-picture/{vin}?year=2009").json()["status"] == "PENDING"
+    ready = client.get(f"/api/v1/car-picture/{vin}?year=2009").json()
+    assert ready == {"make": "Toyota", "model": "Yaris", "year": 2009, "status": "READY", "url": "/api/v1/car-pictures/veh_yaris2009.webp"}
+    assert client.get(f"/api/v1/car-picture/{vin}?year=1995").json()["needsYear"] is True

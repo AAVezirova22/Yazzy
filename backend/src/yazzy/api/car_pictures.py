@@ -3,7 +3,7 @@
 import re
 
 import httpx
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 
 from yazzy.modules.garage import car_picture
 from yazzy.modules.identity.policy import authenticate, fail
@@ -12,13 +12,14 @@ router = APIRouter(prefix="/api/v1")
 
 
 @router.get("/car-picture/{vin}")
-def car_from_vin(vin: str, ctx=Depends(authenticate)):
-    """READY with a url, PENDING while the picture is fetched (ask again shortly), or NONE."""
+def car_from_vin(vin: str, year: int | None = Query(None, ge=1950, le=2100), ctx=Depends(authenticate)):
+    """READY with a url, PENDING while the picture is fetched (ask again shortly), or NONE; needsYear asks the
+    owner for the model year when the VIN has none."""
     vin = vin.strip().upper()
     if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
         fail("INVALID_VIN", 422)
     try:
-        return car_picture.lookup(vin)
+        return car_picture.lookup(vin, year)
     except httpx.HTTPError:
         fail("CAR_IMAGE_UNAVAILABLE", 502)
 

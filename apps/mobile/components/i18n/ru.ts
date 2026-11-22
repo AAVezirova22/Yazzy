@@ -596,6 +596,12 @@ export const RU:Record<string,string>={
  "Save":"Сохранить",
  "The car leaves your garage on every phone. Its trips and readings stay saved on the server.":"Автомобиль исчезнет из гаража на всех телефонах. Его поездки и показания останутся на сервере.",
  "Vehicle name":"Название автомобиля",
+ "Model":"Модель",
+ "Model year":"Модельный год",
+ "Set the model year":"Указать модельный год",
+ "Change the model year":"Изменить модельный год",
+ "Set the model year to show your {model}":"Укажите год, чтобы увидеть свой {model}",
+ "This VIN does not say the year. Pick the model year from the registration document to show your car.":"В этом VIN нет года. Выберите модельный год из техпаспорта, чтобы показать свой автомобиль.",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

@@ -223,16 +223,25 @@ export default function App(){
  useEffect(()=>{
   const id=selected,vin=(report?.vin||'').trim().toUpperCase(),known=report?.vinModel;
   if(!mode||!id||vin.length!==17)return;
-  const need=known?.vin!==vin||!known.status||known.status==='PENDING';
+  // Build 59 saved a European VIN's answer without asking for the year: ask again once.
+  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.year==null&&known.needsYear===undefined);
   if(!need||vinTried.current[id+vin])return;
   vinTried.current[id+vin]=true;
   void(async()=>{
    try{
-    const vinModel=await lookupVin(vin);
-    storeReport(id,{...(reports.current[id]||{}),vinModel},true);
+    const vinModel=await lookupVin(vin,known?.vin===vin?known.year:null);
+    storeReport(id,{...(reports.current[id]||{}),vinModel:{...vinModel,years:vinModel.years||(known?.vin===vin?known.years:undefined)}},true);
    }catch{delete vinTried.current[id+vin];/* offline: try again next time the report changes */}
   })();
  },[mode,selected,report?.vin,report?.vinModel]);
+ // The owner's model year, for a VIN that has none: fetches that year's picture and saves the year on the car.
+ const [yearOpen,setYearOpen]=useState(false),[yearBusy,runYear]=useAction();
+ const pickYear=useCallback(()=>{setCarOpen(false);setYearOpen(true);},[]);
+ const chooseYear=(year:number)=>runYear(async()=>{
+  const id=selectedRef.current,vin=reports.current[id]?.vin;if(!id||!vin)return;
+  const prev=reports.current[id]?.vinModel,vinModel=await lookupVin(vin.trim().toUpperCase(),year);
+  storeReport(id,{...(reports.current[id]||{}),vinModel:{...vinModel,years:vinModel.years||prev?.years}},true);setYearOpen(false);
+ });
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
  const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report,lang]);
@@ -245,7 +254,7 @@ export default function App(){
 
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
@@ -267,8 +276,15 @@ export default function App(){
    <AddVehicle onAdded={vehicleAdded}/>
   </Sheet>
 
+  <Sheet open={yearOpen} onClose={()=>setYearOpen(false)} title={t('Model year')}>
+   <Text style={[ui.body,{marginBottom:12}]}>{t('This VIN does not say the year. Pick the model year from the registration document to show your car.')}</Text>
+   <ScrollView style={{maxHeight:300}} contentContainerStyle={s.years}>
+    {(report?.vinModel?.years||[]).map(y=>{const on=report?.vinModel?.year===y;return <Pressable key={y} accessibilityRole="button" accessibilityState={{selected:on}} disabled={yearBusy} onPress={()=>chooseYear(y)} style={({pressed})=>[s.year,on&&s.yearOn,(pressed||yearBusy)&&{opacity:0.6}]}><Text style={[s.yearText,on&&{color:'#fff'}]}>{y}</Text></Pressable>;})}
+   </ScrollView>
+  </Sheet>
+
   <Modal visible={carOpen} animationType="slide" onRequestClose={()=>setCarOpen(false)}>
-   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind}/>:null}
+   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind} onPickYear={pickYear}/>:null}
   </Modal>
 
   <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>
@@ -322,4 +338,8 @@ const s=StyleSheet.create({
  radio:{width:22,height:22,borderRadius:11,borderWidth:1.5,borderColor:c.faint},
  send:{width:48,height:48,borderRadius:3,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
  iconButton:{width:44,height:44,alignItems:'center',justifyContent:'center'},
+ years:{flexDirection:'row',flexWrap:'wrap',gap:8,paddingBottom:8},
+ year:{width:76,height:44,borderRadius:3,borderWidth:1,borderColor:c.line,alignItems:'center',justifyContent:'center',backgroundColor:c.surface},
+ yearOn:{backgroundColor:c.blue,borderColor:c.blue},
+ yearText:{fontFamily:F[700],fontSize:15,color:c.ink,fontVariant:['tabular-nums']},
 });

@@ -5,6 +5,8 @@ catalog vehicle for that make, model and year. The render (transparent backgroun
 is fetched once per vehicle and kept in the database, so each model uses one image of the plan's allowance
 and phones load it from this API. The key (CAR_IMAGE_API_KEY) never leaves the server.
 
+Most European VINs do not encode the model year (position 10 is 0). Then the answer says needsYear with the
+years the catalog has for that model, the owner picks one in the app, and the phone asks again with ?year=.
 Nothing is guessed: a VIN the decoder does not know, or a vehicle the catalog does not carry, answers NONE and
 the app keeps its own car.
 """
@@ -54,6 +56,16 @@ def decode(vin: str) -> dict | None:
     }
 
 
+def catalog(make: str, model: str) -> dict[int, str]:
+    """{year: catalog vehicle id} of every year the catalog carries for this make and model (free, public)."""
+    with client() as http:
+        response = http.get(f"{BASE}/vehicles", params={"make": make, "model": model})
+    if response.status_code in (400, 404):
+        return {}
+    response.raise_for_status()
+    return {int(v["year"]): v["id"] for v in response.json()["data"].get("vehicles", []) if v.get("id")}
+
+
 def fetch(vehicle_id: str):
     status, image = "FAILED", None
     try:
@@ -89,15 +101,24 @@ def _state(vehicle_id: str, car: dict) -> tuple[str, bool]:
         return row.status, False
 
 
-def lookup(vin: str) -> dict:
-    """What the VIN says and the picture's state: READY (with url), PENDING (ask again shortly) or NONE."""
+def lookup(vin: str, year: int | None = None) -> dict:
+    """What the VIN says and the picture's state: READY (with url), PENDING (ask again shortly) or NONE.
+
+    `year` is the owner's model year, used only when the VIN itself carries none."""
     if not settings.car_image_api_key:
         return {"status": "NONE"}
     car = decode(vin)
     if car is None:
         return {"status": "NONE"}
-    result = {"make": car["make"], "model": car["model"], "year": car["year"], "status": "NONE"}
     vid = car["vehicle_id"]
+    if car["year"] is None:
+        years = catalog(car["make"], car["model"])
+        if year in years:
+            car["year"], vid = year, years[year]
+        else:
+            return {"make": car["make"], "model": car["model"], "year": None, "status": "NONE",
+                    "needsYear": True, "years": sorted(years, reverse=True)}
+    result = {"make": car["make"], "model": car["model"], "year": car["year"], "status": "NONE"}
     if not vid:
         return result
     try:

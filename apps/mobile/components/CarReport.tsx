@@ -14,11 +14,11 @@ import {carLine,fmt,latest} from './format';
 import type {Car} from './tabs/types';
 import {t,tp} from './i18n';
 
-type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void};
+type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void;onPickYear:()=>void};
 const DIESEL_MONITORS=['PM_FILTER','NOX_SCR','EGR','BOOST_PRESSURE','EXHAUST_SENSOR','NMHC_CATALYST'];
 
 /** Everything the car reports about itself: type, hybrid or diesel specifics, fault codes, readiness and identity. */
-export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
+export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear}:Props){
  const insets=useSafeAreaInsets(),[exporting,setExporting]=useState(false),[picking,setPicking]=useState(false);
  const p=report||{},type=detect(report),s=p.signals||{},kind=type.kind;
  const maker=makerFromVin(p.vin),codes=[...(p.stored||[])],pending=(p.pending||[]).filter(x=>!codes.includes(x)),permanent=p.permanent||[];
@@ -55,6 +55,8 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind}:Props){
 
     <Card title={t('Type')} right={<Pressable accessibilityRole="button" onPress={()=>setPicking(v=>!v)} hitSlop={8}><Text style={s_.link}>{picking?t('Done'):t('Not right?')}</Text></Pressable>}>
      <Row label={t('Detected as')} value={type.label}/>
+     {p.vinModel?.vin===p.vin&&p.vinModel?.make?<Row label={t('Model')} value={[p.vinModel.make,p.vinModel.model,p.vinModel.year].filter(Boolean).join(' ')}/>:null}
+     {p.vinModel?.vin===p.vin&&p.vinModel?.years?.length?<Pressable accessibilityRole="button" onPress={onPickYear} hitSlop={8} style={{paddingVertical:8}}><Text style={s_.link}>{p.vinModel.year?t('Change the model year'):t('Set the model year')}</Text></Pressable>:null}
      {p.fuelType!=null?<Row label={t('Fuel type reading')} value={t('Code {n}',{n:p.fuelType})}/>:null}
      {p.ignition?<Row label={t('Engine')} value={p.ignition==='COMPRESSION'?t('Compression ignition (diesel)'):t('Spark ignition (petrol or hybrid)')}/>:null}
      {picking?<View style={s_.chips}>

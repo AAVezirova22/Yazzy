@@ -596,6 +596,12 @@ export const BG:Record<string,string>={
  "Save":"Запази",
  "The car leaves your garage on every phone. Its trips and readings stay saved on the server.":"Колата изчезва от гаража ви на всички телефони. Пътуванията и показанията ѝ остават запазени на сървъра.",
  "Vehicle name":"Име на автомобила",
+ "Model":"Модел",
+ "Model year":"Година на модела",
+ "Set the model year":"Задай годината на модела",
+ "Change the model year":"Смени годината на модела",
+ "Set the model year to show your {model}":"Задай годината, за да видиш своя {model}",
+ "This VIN does not say the year. Pick the model year from the registration document to show your car.":"Този VIN не съдържа годината. Изберете годината на модела от талона, за да се покаже колата ви.",
 };
 
 /** Counted texts: [one, other]. */
