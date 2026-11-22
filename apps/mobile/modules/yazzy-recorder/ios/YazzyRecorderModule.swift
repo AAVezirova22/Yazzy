@@ -180,7 +180,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     guard recording,connected,let p=peripheral else{return}
     guard let write=writeCharacteristic else{error="Write characteristic not found on the adapter; re-select it on the Connect tab";return}
     if inFlight != nil {if Date().timeIntervalSince(sentAt)>8{inFlight=nil;buffer="";failures+=1;error="Diagnostic timeout; capture gap";if failures>=3{central.cancelPeripheralConnection(p)}};return}
-    if setup.isEmpty && identify.isEmpty && !supported.isEmpty && Date()>=nextReportAt {identify=ElmDecoder.identify(supported:supported,full:nextReportAt==Date.distantPast);nextReportAt=Date().addingTimeInterval(180)}
+    if setup.isEmpty && identify.isEmpty && !supported.isEmpty && Date()>=nextReportAt {let needVin=(profile["vin"] as? String)==nil;identify=ElmDecoder.identify(supported:supported,full:nextReportAt==Date.distantPast,needVin:needVin);nextReportAt=Date().addingTimeInterval(needVin ? 45:180)}
     let command:String
     if !setup.isEmpty{command=setup.removeFirst()}else if !identify.isEmpty{command=identify.removeFirst()}else{
       let polls=ElmDecoder.pids.filter{supported.contains($0)}

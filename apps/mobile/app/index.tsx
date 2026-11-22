@@ -5,8 +5,8 @@ import {ScreenContainer} from 'react-native-screens';
 import {StatusBar} from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import {TripDetail} from '../components/TripDetail';
-import {c,ui,F} from '../components/theme';
-import {Icon,useAction} from '../components/kit';
+import {c,ui,F,mono} from '../components/theme';
+import {Button,Icon,useAction} from '../components/kit';
 import {Sheet} from '../components/Sheet';
 import {NavBar,NAV_HEIGHT,TabPane,TABS,type TabKey} from '../components/Tabs';
 import {SignIn} from '../components/SignIn';
@@ -244,6 +244,11 @@ export default function App(){
   const prev=reports.current[id]?.vinModel,vinModel=await lookupVin(vin.trim().toUpperCase(),year);
   storeReport(id,{...(reports.current[id]||{}),vinModel:{...vinModel,years:vinModel.years||prev?.years}},true);setYearOpen(false);
  });
+ // A car that never gives its VIN over OBD: the owner types it; its model and picture are then looked up like any other VIN.
+ const [vinOpen,setVinOpen]=useState(false),[vinText,setVinText]=useState('');
+ const enterVin=useCallback(()=>{setVinText(reports.current[selectedRef.current]?.vin||'');setCarOpen(false);setVinOpen(true);},[]);
+ const vinClean=vinText.replace(/\s/g,'').toUpperCase(),vinOk=/^[A-HJ-NPR-Z0-9]{17}$/.test(vinClean);
+ const saveVin=()=>{const id=selectedRef.current;if(!id||!vinOk)return;storeReport(id,{...(reports.current[id]||{}),vin:vinClean,vinManual:true,vinModel:null},true);setVinOpen(false);};
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
  const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt};},[report,lang]);
@@ -285,8 +290,15 @@ export default function App(){
    </ScrollView>
   </Sheet>
 
+  <Sheet open={vinOpen} onClose={()=>setVinOpen(false)} title={t('Vehicle identification number')}>
+   <Text style={[ui.body,{marginBottom:12}]}>{t('Type the 17-character VIN from the registration document or the base of the windshield.')}</Text>
+   <TextInput accessibilityLabel={t('VIN')} style={[ui.input,{fontFamily:mono,letterSpacing:1}]} value={vinText} onChangeText={setVinText} autoCapitalize="characters" autoCorrect={false} maxLength={20} placeholder="WVWZZZ1KZAM000000" placeholderTextColor={c.faint}/>
+   {vinClean.length>0&&!vinOk?<Text style={[ui.caption,{marginBottom:10,color:c.amber}]}>{t('A VIN has 17 letters and digits, without I, O or Q.')}</Text>:null}
+   <Button title={t('Save')} onPress={saveVin} disabled={!vinOk}/>
+  </Sheet>
+
   <Modal visible={carOpen} animationType="slide" onRequestClose={()=>setCarOpen(false)}>
-   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind} onPickYear={pickYear}/>:null}
+   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind} onPickYear={pickYear} onEnterVin={enterVin}/>:null}
   </Modal>
 
   <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>

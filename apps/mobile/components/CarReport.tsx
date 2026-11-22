@@ -14,11 +14,11 @@ import {carLine,fmt,latest} from './format';
 import type {Car} from './tabs/types';
 import {t,tp} from './i18n';
 
-type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void;onPickYear:()=>void};
+type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void;onPickYear:()=>void;onEnterVin:()=>void};
 const DIESEL_MONITORS=['PM_FILTER','NOX_SCR','EGR','BOOST_PRESSURE','EXHAUST_SENSOR','NMHC_CATALYST'];
 
 /** Everything the car reports about itself: type, hybrid or diesel specifics, fault codes, readiness and identity. */
-export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear}:Props){
+export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear,onEnterVin}:Props){
  const insets=useSafeAreaInsets(),[exporting,setExporting]=useState(false),[picking,setPicking]=useState(false);
  const p=report||{},type=detect(report),s=p.signals||{},kind=type.kind;
  const maker=makerFromVin(p.vin),codes=[...(p.stored||[])],pending=(p.pending||[]).filter(x=>!codes.includes(x)),permanent=p.permanent||[];
@@ -108,6 +108,8 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear}
 
     <Card title={t('Identity')}>
      <Row label={t('VIN')} value={p.vin||'—'} mono/>
+     {!p.vin&&p.readAt?<Text style={[ui.caption,{paddingBottom:4}]}>{p.vinReply?t('The car answered the VIN request with: {reply}',{reply:p.vinReply}):t('The car has not given its VIN yet.')}</Text>:null}
+     <Pressable accessibilityRole="button" onPress={onEnterVin} hitSlop={8} style={{paddingVertical:8}}><Text style={s_.link}>{p.vin?t('Change the VIN'):t('Enter the VIN')}</Text></Pressable>
      {maker?<Row label={t('Manufacturer (from VIN)')} value={maker}/>:null}
      {p.odometerKm!=null||s.ODOMETER!=null?<Row label={t('Odometer')} value={t('{n} km',{n:fmt(s.ODOMETER??p.odometerKm,0)})}/>:null}
      {p.obdStandard!=null?<Row label={t('OBD standard')} value={OBD_STANDARD[p.obdStandard]?t(OBD_STANDARD[p.obdStandard]):t('Code {n}',{n:p.obdStandard})}/>:null}

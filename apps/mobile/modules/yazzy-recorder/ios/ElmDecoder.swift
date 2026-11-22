@@ -4,7 +4,7 @@ import Foundation
 enum ElmDecoder {
   static let pids = ["0C","0D","05","06","07","0B","0F","10","11","04","2F","42","46","5E","5B","5C","0E","33","0A","23","1F"]
   static let fastPids = ["0D","0C"]
-  static let setup = ["ATZ","ATE0","ATL0","ATS1","ATH0","ATSP0","0100","0120","0140","0160","0180","01A0"]
+  static let setup = ["ATZ","ATE0","ATL0","ATS1","ATH0","ATSTFF","ATSP0","0100","0120","0140","0160","0180","01A0"]
   /// Mode 01 PIDs that describe the car rather than the moment: monitor status, fuel type, OBD standard, distances, odometer.
   static let infoPids = ["01","51","1C","21","30","31","4D","4E","A6"]
   // 22F18B (UDS) and 1A8B (KWP2000) only read the engine ECU's manufacturing date, the car's production year.
@@ -12,9 +12,9 @@ enum ElmDecoder {
   /// Read-only by construction: only these exact requests can ever be sent. Never 04 (clear codes) or any write service.
   static func allowed(_ command:String)->Bool { setup.contains(command) || (pids+infoPids).contains{ "01"+$0==command } || reads.contains(command) }
   /// The car-report requests: everything once per connection, then a light refresh of what can change while driving.
-  static func identify(supported:Set<String>,full:Bool)->[String] {
+  static func identify(supported:Set<String>,full:Bool,needVin:Bool=false)->[String] {
     if full { return ["ATDPN","ATRV"]+infoPids.filter{supported.contains($0)}.map{"01"+$0}+["0902","090A","22F18B","1A8B","03","07","0A"] }
-    return ["ATRV"]+["01","31","A6"].filter{supported.contains($0)}.map{"01"+$0}+["03","07"]
+    return ["ATRV"]+["01","31","A6"].filter{supported.contains($0)}.map{"01"+$0}+["03","07"]+(needVin ? ["0902"]:[])
   }
   static func isReport(_ command:String)->Bool { reads.contains(command) || (command.hasPrefix("01") && command.count==4 && infoPids.contains(String(command.suffix(2)))) }
   /// Readings the server accepts. The others are shown live and kept in the car report but never uploaded.
@@ -82,6 +82,7 @@ enum ElmDecoder {
       let line=raw.trimmingCharacters(in:.whitespaces).uppercased();if line.isEmpty{continue}
       let chars=Array(line)
       if chars.count==3,chars.allSatisfy({$0.isHexDigit && $0.isASCII}){size=Int(line,radix:16) ?? 0;out.append([]);multi=out.count-1}
+      else if chars.count>=2,chars[0]=="0",chars[1]==":",multi==nil {out.append(hexBytes(String(chars.dropFirst(2)).trimmingCharacters(in:.whitespaces)) ?? []);multi=out.count-1;size=0}
       else if chars.count>=2,chars[0].isHexDigit,chars[1]==":",let m=multi {
         out[m]+=hexBytes(String(chars.dropFirst(2)).trimmingCharacters(in:.whitespaces)) ?? []
         while size>0 && out[m].count>size{out[m].removeLast()}
@@ -147,7 +148,16 @@ enum ElmDecoder {
       let parts=all.enumerated().filter{$0.element.count>3 && $0.element[0]==0x49 && $0.element[1]==0x02}
         .sorted{let l=$0.element.count==7 ? $0.element[2]:0,r=$1.element.count==7 ? $1.element[2]:0;return l != r ? l<r : $0.offset<$1.offset}.map{$0.element}
       let text=String(parts.flatMap{$0.dropFirst(3)}.filter{(0x30...0x5A).contains($0)}.compactMap{UnicodeScalar($0)}.map{Character($0)})
-      if text.count>=17{let vin=String(text.suffix(17));if vin.allSatisfy({($0.isASCII && ($0.isNumber || $0.isUppercase)) && !"IOQ".contains($0)}){p["vin"]=vin}}
+      func valid(_ c:Character)->Bool{c.isASCII && (c.isNumber || c.isUppercase) && !"IOQ".contains(c)}
+      var vin:String?
+      if text.count>=17{let last=String(text.suffix(17));if last.allSatisfy(valid){vin=last}}
+      // Some adapters or ECUs frame the reply differently: take the first run of 17 VIN characters anywhere in it.
+      if vin==nil{
+        let ascii=all.flatMap{$0}.map{b -> Character in let ch=Character(UnicodeScalar(b) ?? " ");return (0x30...0x5A).contains(b) && valid(ch) ? ch : " "}
+        vin=String(ascii).split(separator:" ").map(String.init).first{$0.count>=17 && $0.allSatisfy(valid)}.map{String($0.suffix(17))}
+      }
+      if let v=vin{p["vin"]=v;p["vinReply"]=nil}
+      else if p["vin"]==nil{p["vinReply"]=String(reply.replacingOccurrences(of:"\r",with:" ").replacingOccurrences(of:"\n",with:" ").split(separator:" ",omittingEmptySubsequences:true).joined(separator:" ").prefix(60))}
     case "090A":
       let parts=all.enumerated().filter{$0.element.count>3 && $0.element[0]==0x49 && $0.element[1]==0x0A}
       let oneMessage = !parts.isEmpty && parts.allSatisfy({$0.element.count==7})

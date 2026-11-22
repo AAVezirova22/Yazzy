@@ -602,6 +602,13 @@ export const RU:Record<string,string>={
  "Set the model year to show your {model}":"Укажите год, чтобы увидеть свой {model}",
  "This VIN does not say the year. Pick the model year from the registration document to show your car.":"В этом VIN нет года. Выберите модельный год из техпаспорта, чтобы показать свой автомобиль.",
  "Built (engine ECU date)":"Выпущен (дата ЭБУ двигателя)",
+ "Enter the VIN":"Ввести VIN",
+ "Change the VIN":"Изменить VIN",
+ "The car answered the VIN request with: {reply}":"Автомобиль ответил на запрос VIN: {reply}",
+ "The car has not given its VIN yet.":"Автомобиль пока не сообщил свой VIN.",
+ "Vehicle identification number":"VIN-номер автомобиля",
+ "Type the 17-character VIN from the registration document or the base of the windshield.":"Введите 17-значный VIN из свидетельства о регистрации или с основания лобового стекла.",
+ "A VIN has 17 letters and digits, without I, O or Q.":"В VIN 17 букв и цифр, без I, O и Q.",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

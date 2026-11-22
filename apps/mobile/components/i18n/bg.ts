@@ -602,6 +602,13 @@ export const BG:Record<string,string>={
  "Set the model year to show your {model}":"Задай годината, за да видиш своя {model}",
  "This VIN does not say the year. Pick the model year from the registration document to show your car.":"Този VIN не съдържа годината. Изберете годината на модела от талона, за да се покаже колата ви.",
  "Built (engine ECU date)":"Произведена (дата на ECU на двигателя)",
+ "Enter the VIN":"Въведи VIN",
+ "Change the VIN":"Промени VIN",
+ "The car answered the VIN request with: {reply}":"Колата отговори на заявката за VIN: {reply}",
+ "The car has not given its VIN yet.":"Колата още не е съобщила своя VIN.",
+ "Vehicle identification number":"VIN номер на автомобила",
+ "Type the 17-character VIN from the registration document or the base of the windshield.":"Въведете 17-знаковия VIN от талона или от основата на предното стъкло.",
+ "A VIN has 17 letters and digits, without I, O or Q.":"VIN съдържа 17 букви и цифри, без I, O и Q.",
 };
 
 /** Counted texts: [one, other]. */

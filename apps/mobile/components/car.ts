@@ -6,7 +6,7 @@ import {t,tp} from './i18n';
  */
 export type Monitor={id:string;complete:boolean};
 export type CarProfile={
- readAt?:number;vin?:string;ecus?:string[];protocol?:string;obdStandard?:number;fuelType?:number;ignition?:'SPARK'|'COMPRESSION';
+ readAt?:number;vin?:string;/** The car's own answer when it gave no VIN (for example NO DATA). */vinReply?:string;/** The owner typed the VIN. */vinManual?:boolean;ecus?:string[];protocol?:string;obdStandard?:number;fuelType?:number;ignition?:'SPARK'|'COMPRESSION';
  mil?:boolean;dtcCount?:number;readiness?:Monitor[];stored?:string[];pending?:string[];permanent?:string[];
  distanceSinceClearKm?:number;distanceWithMilKm?:number;warmupsSinceClear?:number;minutesWithMil?:number;minutesSinceClear?:number;
  odometerKm?:number;batteryVoltage?:number;supported?:string[];
