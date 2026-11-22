@@ -358,7 +358,6 @@ export const BG:Record<string,string>={
  "Read-only diagnostics. Yazzy never clears codes or controls anything in your car.":"Диагностика само за четене. Yazzy никога не изтрива кодове и не управлява нищо в колата ви.",
  "Read-only: Yazzy never clears codes. Pending codes are not yet confirmed; permanent ones clear only after the car re-tests the fault.":"Само за четене: Yazzy никога не изтрива кодове. Чакащите кодове още не са потвърдени; постоянните се изтриват само след като колата провери повредата отново.",
  "Readiness":"Готовност",
- "Reading the car report needs the Android app for now; reports read there show here too.":"Засега отчетът за колата се чете с Android приложението; прочетените там отчети се виждат и тук.",
  "Readings":"Показания",
  "Readings the car offers":"Показания, които колата предлага",
  "Ready":"Готов",

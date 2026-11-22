@@ -358,7 +358,6 @@ export const RU:Record<string,string>={
  "Read-only diagnostics. Yazzy never clears codes or controls anything in your car.":"Диагностика только для чтения. Yazzy никогда не сбрасывает коды и ничем не управляет в вашем автомобиле.",
  "Read-only: Yazzy never clears codes. Pending codes are not yet confirmed; permanent ones clear only after the car re-tests the fault.":"Только чтение: Yazzy никогда не сбрасывает коды. Ожидающие коды ещё не подтверждены; постоянные сбрасываются только после повторной проверки неисправности автомобилем.",
  "Readiness":"Готовность",
- "Reading the car report needs the Android app for now; reports read there show here too.":"Пока отчёт об автомобиле считывается только в Android-приложении; считанные там отчёты видны и здесь.",
  "Readings":"Показания",
  "Readings the car offers":"Показания, доступные в автомобиле",
  "Ready":"Готов",

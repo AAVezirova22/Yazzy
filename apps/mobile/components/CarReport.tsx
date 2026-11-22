@@ -1,5 +1,5 @@
 import {useState,type ReactNode} from 'react';
-import {Alert,Platform,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {Alert,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {StatusBar} from 'expo-status-bar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {c,F,floatShadow,mono,radius,ui} from './theme';
@@ -51,7 +51,7 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear}
    <View style={s_.body}>
     {/* No saved spot, no map. */}
     {spot?<CarLocation spot={spot} live={live&&spot.source==='recorder'}/>:null}
-    {!report?.readAt?<Notice icon="bluetooth">{t('Turn the car on and start recording on the Drive tab. Within a minute the recorder reads the fuel type, VIN, fault codes and readiness, and this page fills in.')}{Platform.OS==='ios'?' '+t('Reading the car report needs the Android app for now; reports read there show here too.'):''}</Notice>:null}
+    {!report?.readAt?<Notice icon="bluetooth">{t('Turn the car on and start recording on the Drive tab. Within a minute the recorder reads the fuel type, VIN, fault codes and readiness, and this page fills in.')}</Notice>:null}
 
     <Card title={t('Type')} right={<Pressable accessibilityRole="button" onPress={()=>setPicking(v=>!v)} hitSlop={8}><Text style={s_.link}>{picking?t('Done'):t('Not right?')}</Text></Pressable>}>
      <Row label={t('Detected as')} value={type.label}/>

@@ -15,7 +15,8 @@ public class YazzyRecorderModule: Module {
         guard let data=json.data(using:.utf8),let config=(try JSONSerialization.jsonObject(with:data)) as? [String:String] else {throw NSError(domain:"Configuration",code:1)}
         for key in ["apiUrl","deviceId","assignmentId","deviceToken","peripheralId","serviceUuid","writeUuid","notifyUuid"] {guard let value=config[key],!value.isEmpty else {throw NSError(domain:"MissingConfiguration",code:1)}}
         guard let url=URL(string:config["apiUrl"]!),url.scheme=="https" || ["localhost","127.0.0.1"].contains(url.host ?? "") else {throw NSError(domain:"UseHTTPS",code:1)}
-        try RecorderSecret.save(data);promise.resolve(nil)
+        let previous=RecorderSecret.read(),sameAssignment=previous != nil && ["apiUrl","deviceId","assignmentId","deviceToken"].allSatisfy{previous?[$0]==config[$0]}
+        try RecorderSecret.save(data);if !sameAssignment{self.recorder.resetProfile()};promise.resolve(nil)
       } catch {promise.reject("RECORDER_CONFIGURE",error.localizedDescription)}
     } }
     AsyncFunction("start") { (promise:Promise) in DispatchQueue.main.async { do{try self.recorder.start();promise.resolve(nil)}catch{promise.reject("RECORDER_START",error.localizedDescription)} } }
@@ -51,6 +52,15 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   private var sentAt=Date.distantPast
   private var setup=[String]()
   private var supported=Set<String>()
+  // The car report: identification and diagnostics read once per connection, refreshed every 3 minutes, kept across restarts.
+  private var identify=[String]()
+  private var nextReportAt=Date.distantPast
+  private let profileKey="yazzy.car-profile",parkedKey="yazzy.car-parked"
+  private var profile:[String:Any]
+  private var profileJson:String?
+  // Where the car is: the last GPS fix taken while the car was moving or its engine ran, so the phone is still inside it.
+  private var parkedJson:String?
+  private var lastMovingAt=Date.distantPast
   private var pollIndex=0
   private var failures=0
   private var lastObdAt=Date.distantPast
@@ -59,9 +69,14 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   private var syncing=false
   private var syncFailures=0
   private var nextSync=Date.distantPast
-  override init(){super.init();central=CBCentralManager(delegate:self,queue:.main,options:[CBCentralManagerOptionRestoreIdentifierKey:"yazzy.obd.central"]);location.delegate=self;location.desiredAccuracy=kCLLocationAccuracyBest;location.distanceFilter=5;location.activityType = .automotiveNavigation}
+  override init(){
+    let saved=UserDefaults.standard.string(forKey:profileKey)
+    profileJson=saved;profile=saved.flatMap{$0.data(using:.utf8)}.flatMap{try? JSONSerialization.jsonObject(with:$0) as? [String:Any]} ?? [:]
+    parkedJson=UserDefaults.standard.string(forKey:parkedKey)
+    super.init();central=CBCentralManager(delegate:self,queue:.main,options:[CBCentralManagerOptionRestoreIdentifierKey:"yazzy.obd.central"]);location.delegate=self;location.desiredAccuracy=kCLLocationAccuracyBest;location.distanceFilter=5;location.activityType = .automotiveNavigation}
   var hasPendingCapture:Bool { recording || store.count>0 }
-  func snapshot()->[String:Any]{["recording":recording,"connected":connected,"configured":RecorderSecret.read() != nil,"waitingForAdapter":recording && !connected,"queued":store.count,"error":error as Any? ?? NSNull(),"signals":signals,"qualification":"PENDING_DEVICE_TEST","tripState":trip.snapshot(now:Date().timeIntervalSince1970)]}
+  func snapshot()->[String:Any]{["recording":recording,"connected":connected,"configured":RecorderSecret.read() != nil,"waitingForAdapter":recording && !connected,"queued":store.count,"error":error as Any? ?? NSNull(),"signals":signals,"qualification":"PENDING_DEVICE_TEST","tripState":trip.snapshot(now:Date().timeIntervalSince1970),"profile":profileJson as Any? ?? NSNull(),"parked":parkedJson as Any? ?? NSNull()]}
+  func resetProfile(){profile=[:];profileJson=nil;parkedJson=nil;UserDefaults.standard.removeObject(forKey:profileKey);UserDefaults.standard.removeObject(forKey:parkedKey)}
   func discover(_ done:@escaping ([[String:Any]])->Void){
     guard !recording,central.state == .poweredOn else{error="Stop recording and enable Bluetooth before scanning";done([]);return}
     found.removeAll();rssi.removeAll();names.removeAll()
@@ -120,7 +135,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     if let p=peripheral{central.cancelPeripheralConnection(p)};peripheral=nil
     trip.stop(time:Date().timeIntervalSince1970);trip.save()
     try store.clear();RecorderSecret.clear()
-    error=nil;signals=[:];syncFailures=0;nextSync=Date()
+    error=nil;signals=[:];syncFailures=0;nextSync=Date();resetProfile()
   }
   func centralManagerDidUpdateState(_ central:CBCentralManager){
     if central.state != .poweredOn{connected=false;error="Bluetooth unavailable";return}
@@ -157,7 +172,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   }
   func peripheral(_ peripheral:CBPeripheral,didUpdateNotificationStateFor characteristic:CBCharacteristic,error:Error?){
     if error != nil || !characteristic.isNotifying{self.error="Adapter does not accept the selected notification characteristic";return}
-    connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
+    connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;identify=[];nextReportAt=Date.distantPast;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
   }
   private func tick(){guard recording else{return};sync();pump()}
   /// Sends the next command only when none is in flight. Called by the 0.5 s watchdog timer and immediately after each reply, so polling is limited by the adapter instead of a fixed delay.
@@ -165,8 +180,9 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     guard recording,connected,let p=peripheral else{return}
     guard let write=writeCharacteristic else{error="Write characteristic not found on the adapter; re-select it on the Connect tab";return}
     if inFlight != nil {if Date().timeIntervalSince(sentAt)>8{inFlight=nil;buffer="";failures+=1;error="Diagnostic timeout; capture gap";if failures>=3{central.cancelPeripheralConnection(p)}};return}
+    if setup.isEmpty && identify.isEmpty && !supported.isEmpty && Date()>=nextReportAt {identify=ElmDecoder.identify(supported:supported,full:nextReportAt==Date.distantPast);nextReportAt=Date().addingTimeInterval(180)}
     let command:String
-    if !setup.isEmpty{command=setup.removeFirst()}else{
+    if !setup.isEmpty{command=setup.removeFirst()}else if !identify.isEmpty{command=identify.removeFirst()}else{
       let polls=ElmDecoder.pids.filter{supported.contains($0)}
       guard !polls.isEmpty else{error="No supported PIDs detected";return}
       // Speed and RPM drive trip detection, so they are polled every cycle; the remaining PIDs rotate in between.
@@ -185,13 +201,28 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     buffer+=String(data:bytes,encoding:.ascii) ?? ""
     guard buffer.count<=8192 else{buffer="";inFlight=nil;self.error="Malformed adapter response";return}
     guard buffer.contains(">") else{return};lastObdAt=Date();let frame=buffer.components(separatedBy:">")[0];buffer="";inFlight=nil;failures=0
-    if ["0100","0120","0140"].contains(command){supported.formUnion(ElmDecoder.supported(frame,command:command))}
-    for (signal,value,unit) in ElmDecoder.decode(frame,command:command){signals[signal]=value;if signal=="VEHICLE_SPEED"{trip.observe(time:Date().timeIntervalSince1970,speed:value,ignition:nil);trip.save()};do{try store.enqueue(signal:signal,value:value,unit:unit)}catch{self.error="Durable queue unavailable or full; recording stopped";stop();return}}
+    if ElmDecoder.setup.contains(command),command.hasPrefix("01"){supported.formUnion(ElmDecoder.supported(frame,command:command))}
+    if ElmDecoder.isReport(command){
+      ElmDecoder.profile(frame,command:command,into:&profile)
+      if command=="ATRV",let volts=profile["batteryVoltage"] as? Double{signals["ADAPTER_VOLTAGE"]=volts}
+      profile["readAt"]=Date().timeIntervalSince1970;profile["supported"]=supported.sorted()
+      if let data=try? JSONSerialization.data(withJSONObject:profile),let json=String(data:data,encoding:.utf8){profileJson=json;UserDefaults.standard.set(json,forKey:profileKey)}
+    }
+    for (signal,value,unit) in ElmDecoder.decode(frame,command:command){
+      signals[signal]=value
+      if (signal=="VEHICLE_SPEED"||signal=="ENGINE_RPM")&&value>0{lastMovingAt=Date()}
+      guard ElmDecoder.uploaded.contains(signal) else{continue}
+      if signal=="VEHICLE_SPEED"{trip.observe(time:Date().timeIntervalSince1970,speed:value,ignition:nil);trip.save()}
+      do{try store.enqueue(signal:signal,value:value,unit:unit)}catch{self.error="Durable queue unavailable or full; recording stopped";stop();return}
+    }
     DispatchQueue.main.asyncAfter(deadline:.now()+0.02){self.pump()}
   }
   func locationManager(_ manager:CLLocationManager,didUpdateLocations locations:[CLLocation]){
     // Only keep positions while the adapter is answering, so waiting for the car never records the phone wandering around.
     guard recording,connected || Date().timeIntervalSince(lastObdAt)<=20,let fix=locations.last else{return};let age=max(0,Date().timeIntervalSince(fix.timestamp))
+    // The car's spot is the last fix taken while it moved or its engine ran; fixes after it (you walking away) never move it.
+    if age<=10,fix.horizontalAccuracy>=0,fix.horizontalAccuracy<=100,Date().timeIntervalSince(lastMovingAt)<=15,
+       let data=try? JSONSerialization.data(withJSONObject:["latitude":fix.coordinate.latitude,"longitude":fix.coordinate.longitude,"accuracy":fix.horizontalAccuracy,"at":Date().timeIntervalSince1970]),let json=String(data:data,encoding:.utf8){parkedJson=json;UserDefaults.standard.set(json,forKey:parkedKey)}
     let value:[String:Any]=["latitude":fix.coordinate.latitude,"longitude":fix.coordinate.longitude,"accuracy":max(0,fix.horizontalAccuracy),"fixAge":age,"validFix":fix.horizontalAccuracy>=0 && age<=10,"provider":"PHONE"]
       do{try store.enqueue(signal:"GPS",value:value,unit:"deg")}catch{self.error="Queue full; GPS capture stopped";stop()}
   }
