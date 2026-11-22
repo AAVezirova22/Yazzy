@@ -226,7 +226,7 @@ export default function App(){
   if(!mode||!id||vin.length!==17)return;
   // Build 59 saved a European VIN's answer without asking for the year: ask again once.
   // A VIN without a year (European cars) takes the year the engine ECU was made, once the car has told it.
-  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.year==null&&!known.needsModel&&(known.needsYear===undefined||!!ecuYear));
+  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.manual&&known.status==='NONE')||(known.year==null&&!known.needsModel&&(known.needsYear===undefined||!!ecuYear));
   const tried=id+vin+(ecuYear||'');
   if(!need||vinTried.current[tried])return;
   vinTried.current[tried]=true;
@@ -263,7 +263,9 @@ export default function App(){
  },[modelOpen,modelMake,modelYear]);
  const chooseModel=(model:string)=>runModel(async()=>{
   const id=selectedRef.current,vin=reports.current[id]?.vin;if(!id||!vin||!model.trim())return;
-  const vinModel=await lookupVin(vin.trim().toUpperCase(),modelYear,{make:modelMake,model:model.trim()});
+  const answer=await lookupVin(vin.trim().toUpperCase(),modelYear,{make:modelMake,model:model.trim()});
+  // What the owner picked always stands, whatever the picture service knows: the car is named by it even with no picture.
+  const vinModel={...answer,make:answer.make||modelMake,model:answer.model||model.trim(),year:answer.year??modelYear,needsModel:false,manual:true};
   storeReport(id,{...(reports.current[id]||{}),vinModel},true);setModelOpen(false);
  });
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
