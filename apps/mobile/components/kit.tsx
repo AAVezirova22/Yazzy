@@ -65,13 +65,12 @@ export function Section({title,action,onAction}:{title:string;action?:string;onA
 export function Segment({items,value,onChange}:{items:[string,string][];value:string;onChange:(v:string)=>void}){
  const [width,setWidth]=useState(0),index=Math.max(0,items.findIndex(([k])=>k===value)),item=width/items.length,x=useSharedValue(0),placed=useRef(false);
  useEffect(()=>{
-  if(!item)return;
-  // The first placement jumps; only real changes travel.
-  if(!placed.current){placed.current=true;x.set(index*item);return;}
+  // The first placement happens in onLayout, before the bar is drawn; only real changes travel.
+  if(!item||!placed.current)return;
   x.set(withTiming(index*item,{duration:220,easing:EASE_IN_OUT}));
  },[index,item]);
  const bar=useAnimatedStyle(()=>({transform:[{translateX:x.get()}]}));
- return <View style={s.segment} accessibilityRole="tablist" onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
+ return <View style={s.segment} accessibilityRole="tablist" onLayout={e=>{const w=e.nativeEvent.layout.width;if(!placed.current&&w){placed.current=true;x.set(index*w/items.length);}setWidth(w);}}>
   {items.map(([key,label])=>{const on=value===key;return <Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:on}} onPress={()=>{if(!on){haptic.step();onChange(key);}}} style={s.segmentItem}>
    <Text style={[s.segmentText,on&&{color:c.ink}]}>{label}</Text>
   </Pressable>;})}
