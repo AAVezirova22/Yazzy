@@ -611,6 +611,14 @@ export const RU:Record<string,string>={
  "A VIN has 17 letters and digits, without I, O or Q.":"В VIN 17 букв и цифр, без I, O и Q.",
  "This car does not give its VIN over the standard OBD request, so Yazzy cannot read it. Enter it from the registration document to show your car.":"Этот автомобиль не отдаёт VIN по стандартному запросу OBD, поэтому Yazzy не может его считать. Введите VIN из свидетельства о регистрации, чтобы показать ваш автомобиль.",
  "Enter the VIN to show your car":"Введите VIN, чтобы показать ваш автомобиль",
+ "Choose your model to show your car":"Выберите модель, чтобы показать ваш автомобиль",
+ "Choose the model":"Выбрать модель",
+ "Change the model":"Изменить модель",
+ "Your model":"Ваша модель",
+ "This VIN does not say which {make} you have. Pick the year, then the model, from the registration document.":"По этому VIN нельзя определить модель {make}. Выберите год, затем модель из свидетельства о регистрации.",
+ "The catalog has no list for this year. Type the model instead.":"Для этого года в каталоге нет списка. Введите модель вручную.",
+ "For example Jazz":"Например, Jazz",
+ "Loading models…":"Загрузка моделей…",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

@@ -17,7 +17,7 @@ import {DriveTab} from '../components/tabs/Drive';
 import {MoreTab} from '../components/tabs/More';
 import type {Car} from '../components/tabs/types';
 import {CarReport} from '../components/CarReport';
-import {detect,serverType,type CarProfile,type Kind} from '../components/car';
+import {detect,makerFromVin,serverType,type CarProfile,type Kind} from '../components/car';
 import {readCache,server,writeCache} from '../components/server';
 import {carLine} from '../components/format';
 import {available,Recorder,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
@@ -194,7 +194,8 @@ export default function App(){
   if(type.kind)Object.assign(fields,serverType(type.kind,next));
   if(odo!=null)fields.odometerKm=Math.round(odo*10)/10;
   // The VIN names the car exactly, so its make, model and year replace whatever was there.
-  const vm=next.vinModel;if(vm&&vm.vin===next.vin&&vm.make){fields.make=vm.make;fields.model=vm.model;if(vm.year!=null)fields.year=vm.year;}
+  const vm=next.vinModel,maker=makerFromVin(next.vin);if(vm&&vm.vin===next.vin&&vm.make){fields.make=vm.make;fields.model=vm.model;if(vm.year!=null)fields.year=vm.year;}
+  else if(maker&&!vehiclesRef.current.find(x=>x.id===id)?.make)fields.make=maker;
   const save=(version:number)=>server.call(`/vehicles/${id}`,{...fields,version},'PATCH');
   try{
    let v=vehiclesRef.current.find(x=>x.id===id);if(!v)return;
@@ -225,13 +226,14 @@ export default function App(){
   if(!mode||!id||vin.length!==17)return;
   // Build 59 saved a European VIN's answer without asking for the year: ask again once.
   // A VIN without a year (European cars) takes the year the engine ECU was made, once the car has told it.
-  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.year==null&&(known.needsYear===undefined||!!ecuYear));
+  const need=known?.vin!==vin||!known.status||known.status==='PENDING'||(known.year==null&&!known.needsModel&&(known.needsYear===undefined||!!ecuYear));
   const tried=id+vin+(ecuYear||'');
   if(!need||vinTried.current[tried])return;
   vinTried.current[tried]=true;
   void(async()=>{
    try{
-    const vinModel=await lookupVin(vin,(known?.vin===vin?known.year:null)||ecuYear);
+    const mine=known?.vin===vin&&known.manual?{make:known.make,model:known.model}:null;
+    const vinModel=await lookupVin(vin,(known?.vin===vin?known.year:null)||ecuYear,mine);
     storeReport(id,{...(reports.current[id]||{}),vinModel:{...vinModel,years:vinModel.years||(known?.vin===vin?known.years:undefined)}},true);
    }catch{delete vinTried.current[tried];/* offline: try again next time the report changes */}
   })();
@@ -249,9 +251,24 @@ export default function App(){
  const enterVin=useCallback(()=>{setVinText(reports.current[selectedRef.current]?.vin||'');setCarOpen(false);setVinOpen(true);},[]);
  const vinClean=vinText.replace(/\s/g,'').toUpperCase(),vinOk=/^[A-HJ-NPR-Z0-9]{17}$/.test(vinClean);
  const saveVin=()=>{const id=selectedRef.current;if(!id||!vinOk)return;storeReport(id,{...(reports.current[id]||{}),vin:vinClean,vinManual:true,vinModel:null},true);setVinOpen(false);};
+ // A VIN that names no model (most cars not sold in America): the owner picks the year and then the model from the catalog.
+ const thisYear=new Date().getFullYear(),[modelOpen,setModelOpen]=useState(false),[modelYear,setModelYear]=useState(thisYear-5),[models,setModels]=useState<string[]|null>(null),[modelText,setModelText]=useState(''),[modelBusy,runModel]=useAction();
+ const modelMake=report?.vinModel?.make||makerFromVin(report?.vin)||'';
+ const pickModel=useCallback(()=>{const r=reports.current[selectedRef.current];setModelYear(r?.vinModel?.year||r?.ecuYear||new Date().getFullYear()-5);setModelText('');setCarOpen(false);setModelOpen(true);},[]);
+ useEffect(()=>{
+  if(!modelOpen||!modelMake){setModels(null);return;}
+  let active=true;setModels(null);
+  server.call(`/car-models?make=${encodeURIComponent(modelMake)}&year=${modelYear}`).then(r=>{if(active)setModels(Array.isArray(r?.models)?r.models:[]);}).catch(()=>{if(active)setModels([]);});
+  return()=>{active=false;};
+ },[modelOpen,modelMake,modelYear]);
+ const chooseModel=(model:string)=>runModel(async()=>{
+  const id=selectedRef.current,vin=reports.current[id]?.vin;if(!id||!vin||!model.trim())return;
+  const vinModel=await lookupVin(vin.trim().toUpperCase(),modelYear,{make:modelMake,model:model.trim()});
+  storeReport(id,{...(reports.current[id]||{}),vinModel},true);setModelOpen(false);
+ });
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
- const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt,hasVin:!!report?.vin};},[report,lang]);
+ const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt,hasVin:!!report?.vin,maker:makerFromVin(report?.vin)};},[report,lang]);
 
  const live=snapshot.recording&&snapshot.connected,speed=snapshot.signals.VEHICLE_SPEED;
  const recorder=useMemo(()=>({label:live?t('Recording')+(speed!=null?' · '+t('{n} km/h',{n:speed}):''):t(snapshot.recording?'Waiting for your car':'Not recording'),live,recording:snapshot.recording}),[live,speed,snapshot.recording,lang]);
@@ -261,7 +278,7 @@ export default function App(){
 
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
@@ -297,8 +314,24 @@ export default function App(){
    <Button title={t('Save')} onPress={saveVin} disabled={!vinOk}/>
   </Sheet>
 
+  <Sheet open={modelOpen} onClose={()=>setModelOpen(false)} title={t('Your model')}>
+   <Text style={[ui.body,{marginBottom:12}]}>{t('This VIN does not say which {make} you have. Pick the year, then the model, from the registration document.',{make:modelMake})}</Text>
+   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingBottom:12}}>
+    {Array.from({length:35},(_,i)=>thisYear-i).map(y=>{const on=modelYear===y;return <Pressable key={y} accessibilityRole="button" accessibilityState={{selected:on}} onPress={()=>setModelYear(y)} style={[s.year,on&&s.yearOn]}><Text style={[s.yearText,on&&{color:'#fff'}]}>{y}</Text></Pressable>;})}
+   </ScrollView>
+   {models&&models.length?<ScrollView style={{maxHeight:260}}>
+    {models.map(m=><Pressable key={m} accessibilityRole="button" disabled={modelBusy} onPress={()=>chooseModel(m)} style={({pressed})=>[s.modelRow,(pressed||modelBusy)&&{opacity:0.6}]}><Text style={ui.body}>{m}</Text><Icon name="chevron-forward" size={16} color={c.faint}/></Pressable>)}
+   </ScrollView>
+   :models?<View>
+    <Text style={[ui.caption,{marginBottom:8}]}>{t('The catalog has no list for this year. Type the model instead.')}</Text>
+    <TextInput accessibilityLabel={t('Model')} style={ui.input} value={modelText} onChangeText={setModelText} autoCorrect={false} placeholder={t('For example Jazz')} placeholderTextColor={c.faint}/>
+    <Button title={t('Save')} onPress={()=>chooseModel(modelText)} disabled={modelBusy||!modelText.trim()}/>
+   </View>
+   :<Text style={ui.caption}>{t('Loading models…')}</Text>}
+  </Sheet>
+
   <Modal visible={carOpen} animationType="slide" onRequestClose={()=>setCarOpen(false)}>
-   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind} onPickYear={pickYear} onEnterVin={enterVin}/>:null}
+   {carOpen?<CarReport vehicle={vehicle} report={report} live={snapshot.connected&&recorderVehicle===selected} car={car} onClose={()=>setCarOpen(false)} onSetKind={setKind} onPickYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel}/>:null}
   </Modal>
 
   <Modal visible={!!tripView} animationType="slide" onRequestClose={()=>setTripView(null)}>
@@ -353,6 +386,7 @@ const s=StyleSheet.create({
  send:{width:48,height:48,borderRadius:3,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},
  iconButton:{width:44,height:44,alignItems:'center',justifyContent:'center'},
  years:{flexDirection:'row',flexWrap:'wrap',gap:8,paddingBottom:8},
+ modelRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingVertical:12,borderBottomWidth:1,borderBottomColor:c.line2},
  year:{width:76,height:44,borderRadius:3,borderWidth:1,borderColor:c.line,alignItems:'center',justifyContent:'center',backgroundColor:c.surface},
  yearOn:{backgroundColor:c.blue,borderColor:c.blue},
  yearText:{fontFamily:F[700],fontSize:15,color:c.ink,fontVariant:['tabular-nums']},

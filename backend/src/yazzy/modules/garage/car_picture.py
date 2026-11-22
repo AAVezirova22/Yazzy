@@ -7,11 +7,14 @@ and phones load it from this API. The key (CAR_IMAGE_API_KEY) never leaves the s
 
 Most European VINs do not encode the model year (position 10 is 0). Then the answer says needsYear with the
 years the catalog has for that model, the owner picks one in the app, and the phone asks again with ?year=.
-Nothing is guessed: a VIN the decoder does not know, or a vehicle the catalog does not carry, answers NONE and
-the app keeps its own car.
+Many non-American VINs name the make but no model, or are not known to the decoder at all. Then the answer says
+needsModel, the owner picks the model (models() lists the catalog's models for that make and year) and the phone
+asks again with ?make=&model=&year=. Nothing is guessed: a vehicle the catalog does not carry answers NONE and the
+app keeps its own car.
 """
 
 import logging
+import re
 import threading
 import time
 
@@ -37,33 +40,70 @@ def client() -> httpx.Client:
 
 
 def decode(vin: str) -> dict | None:
-    """{make, model, year, vehicle_id} for a VIN; vehicle_id is None when the catalog lacks the car."""
+    """{make, model, year, vehicle_id} for a VIN; vehicle_id is None when the catalog lacks the car.
+    model is "" when the decoder knows the make only. None when the VIN is not known at all."""
     with client() as http:
         response = http.get(f"{BASE}/vin/{vin}")
     if response.status_code in (400, 404):
         return None
     response.raise_for_status()
     data = response.json()["data"]
-    if not data.get("make") or not data.get("model"):
+    if not data.get("make"):
         return None
     vehicle = data.get("vehicle") or {}
     year = data.get("year")
     return {
         "make": str(data["make"]).strip()[:60],
-        "model": str(data["model"]).strip()[:60],
+        "model": str(data.get("model") or "").strip()[:60],
         "year": int(year) if year else None,
         "vehicle_id": vehicle.get("id"),
     }
 
 
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
 def catalog(make: str, model: str) -> dict[int, str]:
-    """{year: catalog vehicle id} of every year the catalog carries for this make and model (free, public)."""
+    """{year: catalog vehicle id} of every year the catalog carries for this make and model (free, public).
+    Tries the names as given, then as the catalog's slugs (lower case, hyphens)."""
+    for names in ((make, model), (slug(make), slug(model))):
+        with client() as http:
+            response = http.get(f"{BASE}/vehicles", params={"make": names[0], "model": names[1]})
+        if response.status_code in (400, 404):
+            continue
+        response.raise_for_status()
+        found = {int(v["year"]): v["id"] for v in response.json()["data"].get("vehicles", []) if v.get("id")}
+        if found:
+            return found
+    return {}
+
+
+_models: dict[tuple[str, int], tuple[float, list[str]]] = {}
+
+
+def models(make: str, year: int) -> list[str]:
+    """Every model the catalog has for this make in this year (free, public). Empty when the make is not known."""
+    key = (re.sub(r"[^a-z0-9]", "", make.lower()), year)
+    hit = _models.get(key)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
     with client() as http:
-        response = http.get(f"{BASE}/vehicles", params={"make": make, "model": model})
+        listed = http.get(f"{BASE}/vehicles", params={"year": year})
+        if listed.status_code in (400, 404):
+            return []
+        listed.raise_for_status()
+        makes = listed.json()["data"].get("makes", [])
+        found = next((m for m in makes if re.sub(r"[^a-z0-9]", "", str(m.get("makeName", "")).lower()) == key[0]), None)
+        if not found:
+            return []
+        response = http.get(f"{BASE}/vehicles", params={"year": year, "makeId": found["makeId"]})
     if response.status_code in (400, 404):
-        return {}
+        return []
     response.raise_for_status()
-    return {int(v["year"]): v["id"] for v in response.json()["data"].get("vehicles", []) if v.get("id")}
+    names = sorted({str(m["name"]).strip() for m in response.json()["data"].get("models", []) if m.get("name")}, key=str.lower)
+    _models[key] = (time.time(), names)
+    return names
 
 
 def fetch(vehicle_id: str):
@@ -101,15 +141,29 @@ def _state(vehicle_id: str, car: dict) -> tuple[str, bool]:
         return row.status, False
 
 
-def lookup(vin: str, year: int | None = None) -> dict:
+def lookup(vin: str, year: int | None = None, make: str | None = None, model: str | None = None) -> dict:
     """What the VIN says and the picture's state: READY (with url), PENDING (ask again shortly) or NONE.
 
-    `year` is the owner's model year, used only when the VIN itself carries none."""
+    `year` is the owner's model year, used only when the VIN itself carries none. `make` and `model` are the owner's
+    pick, used only when the VIN names no model."""
     if not settings.car_image_api_key:
         return {"status": "NONE"}
     car = decode(vin)
-    if car is None:
-        return {"status": "NONE"}
+    if car is None or not car["model"]:
+        picked = (model or "").strip()[:60]
+        brand = ((make or "").strip() or (car or {}).get("make") or "")[:60]
+        if not picked or not brand:
+            return {**({"make": car["make"]} if car else {}), "status": "NONE", "needsModel": True}
+        years = catalog(brand, picked)
+        wanted = year or (car or {}).get("year")
+        result = {"make": brand, "model": picked, "year": wanted, "status": "NONE"}
+        if not years:
+            return result
+        # The catalog may not carry the owner's exact year: show the nearest year it has.
+        nearest = min(years, key=lambda y: abs(y - (wanted or max(years))))
+        car = {"make": brand, "model": picked, "year": nearest, "vehicle_id": years[nearest]}
+        result["year"] = wanted or nearest
+        return picture(car, result)
     vid = car["vehicle_id"]
     if car["year"] is None:
         years = catalog(car["make"], car["model"])
@@ -118,7 +172,12 @@ def lookup(vin: str, year: int | None = None) -> dict:
         else:
             return {"make": car["make"], "model": car["model"], "year": None, "status": "NONE",
                     "needsYear": True, "years": sorted(years, reverse=True)}
-    result = {"make": car["make"], "model": car["model"], "year": car["year"], "status": "NONE"}
+    return picture({**car, "vehicle_id": vid}, {"make": car["make"], "model": car["model"], "year": car["year"], "status": "NONE"})
+
+
+def picture(car: dict, result: dict) -> dict:
+    """The picture of a catalog vehicle: start fetching it on first use and say where it stands."""
+    vid = car["vehicle_id"]
     if not vid:
         return result
     try:

@@ -9,7 +9,7 @@ export const latest=(list:any[]|null|undefined,key:string)=>(list||[]).reduce((a
 export const greeting=()=>{const h=new Date().getHours();return t(h<12?'Good morning':h<18?'Good afternoon':'Good evening');};
 export const routeOf=(trip:any)=>(trip?.status==='STATIONARY'||(trip?.metrics?.route||[]).length<2?[]:trip.metrics.route) as {latitude:number;longitude:number}[];
 export const pretty=(v:unknown)=>String(v||'').replaceAll('_',' ').toLowerCase();
-export const carLine=(v:any)=>[v.make,v.model,v.year].filter(Boolean).join(' ')||(v.origin==='REAL'?t('Personal vehicle'):pretty(v.origin));
+export const carLine=(v:any)=>[v.make,v.model,v.year].filter(Boolean).join(' ')||(v.origin==='REAL'?'':pretty(v.origin));
 /** Kilometres driven on each of the last seven days, today last. */
 export function lastWeek(trips:any[]|null|undefined){
  const out=new Array(7).fill(0),today=new Date();today.setHours(0,0,0,0);

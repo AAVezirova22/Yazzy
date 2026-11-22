@@ -611,6 +611,14 @@ export const BG:Record<string,string>={
  "A VIN has 17 letters and digits, without I, O or Q.":"VIN съдържа 17 букви и цифри, без I, O и Q.",
  "This car does not give its VIN over the standard OBD request, so Yazzy cannot read it. Enter it from the registration document to show your car.":"Тази кола не предава VIN чрез стандартната OBD заявка, затова Yazzy не може да го прочете. Въведете го от талона, за да се покаже колата ви.",
  "Enter the VIN to show your car":"Въведете VIN, за да се покаже колата ви",
+ "Choose your model to show your car":"Изберете модел, за да се покаже колата ви",
+ "Choose the model":"Избери модел",
+ "Change the model":"Промени модела",
+ "Your model":"Вашият модел",
+ "This VIN does not say which {make} you have. Pick the year, then the model, from the registration document.":"Този VIN не показва кой {make} имате. Изберете годината, после модела, от талона.",
+ "The catalog has no list for this year. Type the model instead.":"Каталогът няма списък за тази година. Въведете модела ръчно.",
+ "For example Jazz":"Например Jazz",
+ "Loading models…":"Зареждане на модели…",
 };
 
 /** Counted texts: [one, other]. */

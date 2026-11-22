@@ -55,7 +55,7 @@ export function buildCarHtml({vehicle,report,car}:Input){
 
  ${spot?`<h2>${esc(t('Last known location'))}</h2><table>${row(t(spot.source==='trip'?'Where the last trip ended':'Where the car was parked'),`${spot.latitude.toFixed(6)}, ${spot.longitude.toFixed(6)}${spot.accuracy?` (±${Math.round(spot.accuracy)} m)`:''}`)}${row(t('Seen at'),when(spot.at))}</table>`:''}
  <h2>${esc(t('Identity'))}</h2><table>
-  ${row('VIN',p.vin||'—')}${maker?row(t('Manufacturer (from VIN)'),maker):''}${row(t('Make / model / year'),vehicle?carLine(vehicle):'—')}
+  ${row('VIN',p.vin||'—')}${maker?row(t('Manufacturer (from VIN)'),maker):''}${row(t('Make / model / year'),(vehicle&&carLine(vehicle))||maker||'—')}
   ${p.obdStandard!=null?row(t('OBD standard'),OBD_STANDARD[p.obdStandard]?t(OBD_STANDARD[p.obdStandard]):t('Code {n}',{n:p.obdStandard})):''}${p.protocol?row(t('Protocol'),PROTOCOL[p.protocol]||p.protocol):''}
   ${(p.ecus||[]).map((e,i)=>row(i?'':t('Control units'),e)).join('')}${p.fuelType!=null?row(t('Fuel type code (PID 51)'),String(p.fuelType)):''}${p.ignition?row(t('Ignition'),t(p.ignition==='COMPRESSION'?'Compression (diesel)':'Spark')):''}
   ${p.supported?row(t('Supported mode 01 readings'),p.supported.join(' ')):''}
