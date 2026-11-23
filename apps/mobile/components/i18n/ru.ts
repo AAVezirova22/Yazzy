@@ -674,6 +674,10 @@ export const RU:Record<string,string>={
  "Your name":"Ваше имя",
  "Your sign-in has expired. Sign in again.":"Срок входа истёк. Войдите снова.",
  "live locations, kilometres":"местоположение, километры",
+ "Mileage":"Пробег",
+ "Copy VIN":"Скопировать VIN",
+ "Copied":"Скопировано",
+ "Read from the car {when}":"Считано с автомобиля {when}",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

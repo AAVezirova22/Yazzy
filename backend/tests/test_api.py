@@ -410,8 +410,9 @@ def test_long_phone_uptime_does_not_fail_upload(client, enrolled):
         assert set(stored) == {None}
 
 
-def drive(enrol, start, batch, seq0, session="day", seconds=20):
-    """A short drive: standing, then 40 km/h, then standing, one reading pair per second."""
+def drive(enrol, start, batch, seq0, session="day", seconds=20, switch_off=False):
+    """A short drive: standing, then 40 km/h, then standing, one reading pair per second; switch_off adds the
+    phone's ignition-off marker after the last reading."""
     samples = []
     for i in range(seconds):
         speed = 0 if i in (0, seconds - 1) else 40
@@ -425,6 +426,9 @@ def drive(enrol, start, batch, seq0, session="day", seconds=20):
                     "unit": unit,
                 }
             )
+    if switch_off:
+        samples.append({"sequence": seq0 + len(samples), "observedAt": stamp(start + seconds), "signal": "IGNITION",
+                        "value": 0, "unit": "bool"})
     base = payload(enrol, session=session, batch=batch)
     return {**base, "sequenceStart": seq0, "samples": samples}
 
@@ -439,7 +443,7 @@ def test_each_upload_rebuilds_only_its_own_journey(client, enrolled):
 
     v, e = enrolled
     t0 = e["validFrom"]
-    assert upload(client, e, drive(e, t0 - 115, "j1", 0)).status_code == 202
+    assert upload(client, e, drive(e, t0 - 115, "j1", 0, switch_off=True)).status_code == 202
     drain()
     second = upload(client, e, drive(e, t0 + 35, "j2", 1000))
     assert second.status_code == 202, second.text
@@ -448,7 +452,9 @@ def test_each_upload_rebuilds_only_its_own_journey(client, enrolled):
     assert len(trips) == 2
     assert trips[0]["status"] == "CLOSED"
     with transaction() as db:
-        assert db.get(Job, second.json()["jobId"]).result["sampleCount"] == 40
+        # The window reaches back across silences shorter than BRIDGE_SECONDS (a journey may continue over
+        # them), so the earlier journey is read again; the trips themselves stay apart (switched off between).
+        assert db.get(Job, second.json()["jobId"]).result["sampleCount"] == 81
 
 
 def test_large_backlogs_continue_in_a_follow_up_job(client, enrolled, monkeypatch):

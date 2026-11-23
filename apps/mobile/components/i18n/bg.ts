@@ -674,6 +674,10 @@ export const BG:Record<string,string>={
  "Your name":"Вашето име",
  "Your sign-in has expired. Sign in again.":"Входът ви е изтекъл. Влезте отново.",
  "live locations, kilometres":"позиции на живо, километри",
+ "Mileage":"Пробег",
+ "Copy VIN":"Копирай VIN",
+ "Copied":"Копирано",
+ "Read from the car {when}":"Прочетено от колата {when}",
 };
 
 /** Counted texts: [one, other]. */

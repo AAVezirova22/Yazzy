@@ -1,11 +1,12 @@
-import {memo,useMemo} from 'react';
+import {memo,useMemo,useState} from 'react';
+import * as Clipboard from 'expo-clipboard';
 import {ActivityIndicator,RefreshControl,StyleSheet,Text,useWindowDimensions,View} from 'react-native';
 import Animated,{Extrapolation,interpolate,useAnimatedScrollHandler,useAnimatedStyle,useReducedMotion,useSharedValue} from 'react-native-reanimated';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Updater} from '../Updater';
 import {c,F,radius,type,ui} from '../theme';
 import {Button,Chip,Icon,ListRow,Notice,QuickAction,RoundButton,Section,Tile} from '../kit';
-import {PressableScale} from '../motion';
+import {haptic,PressableScale} from '../motion';
 import {RouteArt,WeekBars} from '../art';
 import {LightSurface} from '../LightSurface';
 import {CarImage} from '../CarImage';
@@ -13,12 +14,12 @@ import type {VinModel} from '../vinCar';
 import {distance,minutes} from '../TripDetail';
 import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,smoothDriving,weekday} from '../format';
 import type {Car} from './types';
-import {kindIcon,type Kind} from '../car';
-import {t,tp} from '../i18n';
+import {kindIcon,since,type Kind} from '../car';
+import {locale,t,tp} from '../i18n';
 
 type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:string;recorder:{label:string;live:boolean;recording:boolean};padBottom:number;
  onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
- carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean;hasVin:boolean;maker?:string|null};onOpenCar:()=>void;vinModel?:VinModel|null;onSetYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void;business:number;onBusiness:()=>void};
+ carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean;hasVin:boolean;maker?:string|null;vin?:string|null;odometerKm?:number|null;fuelPct?:number|null;readingsAt?:number|null};onOpenCar:()=>void;vinModel?:VinModel|null;onSetYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void;business:number;onBusiness:()=>void};
 
 /**
  * Home. A realistic, illustrative car sits on a light studio wash with square quick actions; as you scroll, the
@@ -58,6 +59,7 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
     <CarImage vinModel={vinModel} width={carWidth}/>
    </Animated.View>:<View style={{height:24}}/>}
    <Text style={s.line} numberOfLines={1}>{vehicle?(carLine(vehicle)||carInfo.maker||vehicle.name||''):t('Add your first vehicle to begin')}</Text>
+   {vehicle?<CarReadings odometerKm={carInfo.odometerKm??vehicle.odometerKm??null} fuelPct={carInfo.fuelPct??null} at={carInfo.readingsAt??null} vin={carInfo.vin??null}/>:null}
    {vehicle&&vinModel?.needsYear&&vinModel.years?.length?<PressableScale accessibilityRole="button" onPress={onSetYear} style={{alignSelf:'flex-start',minHeight:40,justifyContent:'center'}}>
     <Chip icon="calendar-outline" tone="blue" label={t('Set the model year to show your {model}',{model:vinModel.model})}/>
    </PressableScale>:null}
@@ -136,7 +138,36 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
  </Animated.ScrollView>;
 });
 
+/** Mileage and fuel as the car last reported them, and its VIN, which a tap copies. */
+function CarReadings({odometerKm,fuelPct,at,vin}:{odometerKm:number|null;fuelPct:number|null;at:number|null;vin:string|null}){
+ const [copied,setCopied]=useState(false);
+ const copy=async()=>{if(!vin)return;await Clipboard.setStringAsync(vin);haptic.snap();setCopied(true);setTimeout(()=>setCopied(false),1800);};
+ return <View style={s.readings}>
+  <View style={s.readingRow}>
+   <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{odometerKm!=null?Math.round(odometerKm).toLocaleString(locale())+' '+t('km'):'—'}</Text><Text style={s.readingLabel}>{t('Mileage')}</Text></View>
+   <View style={s.readingDivider}/>
+   <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{fuelPct!=null?Math.round(fuelPct)+'%':'—'}</Text><Text style={s.readingLabel}>{t('Fuel')}</Text></View>
+  </View>
+  {at?<Text style={s.readingAt}>{t('Read from the car {when}',{when:since(at)})}</Text>:null}
+  {vin?<PressableScale accessibilityRole="button" accessibilityLabel={t('Copy VIN')} onPress={()=>{void copy();}} style={s.vin}>
+   <Text style={s.vinLabel}>VIN</Text><Text style={s.vinValue} numberOfLines={1} selectable>{vin}</Text>
+   <Icon name={copied?'checkmark':'copy-outline'} size={16} color={copied?c.green:c.blue}/>
+   {copied?<Text style={[s.vinLabel,{color:c.green}]}>{t('Copied')}</Text>:null}
+  </PressableScale>:null}
+ </View>;
+}
+
 const s=StyleSheet.create({
+ readings:{marginTop:12,gap:8},
+ readingRow:{flexDirection:'row',alignItems:'center',backgroundColor:c.surface,borderRadius:radius.md,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,paddingVertical:12},
+ reading:{flex:1,alignItems:'center'},
+ readingDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.line},
+ readingValue:{fontFamily:F[600],fontSize:20,color:c.ink,fontVariant:['tabular-nums'],letterSpacing:-0.4},
+ readingLabel:{fontFamily:F[500],fontSize:12.5,color:c.muted,marginTop:2},
+ readingAt:{fontFamily:F[500],fontSize:12,color:c.muted,textAlign:'center'},
+ vin:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:c.surface,borderRadius:radius.pill,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,paddingVertical:8,paddingHorizontal:12,minHeight:40},
+ vinLabel:{fontFamily:F[700],fontSize:11,letterSpacing:1.2,color:c.muted},
+ vinValue:{fontFamily:F[600],fontSize:13.5,color:c.ink,letterSpacing:0.6,fontVariant:['tabular-nums']},
  // Match the canvas while pulling down to refresh.
  overscroll:{position:'absolute',left:0,right:0,top:-1000,height:1000,backgroundColor:c.surface},
  hero:{paddingHorizontal:20,paddingBottom:18,overflow:'hidden',backgroundColor:c.surface},

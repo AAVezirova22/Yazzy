@@ -285,7 +285,8 @@ export default function App(){
  });
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
- const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt,hasVin:!!report?.vin,maker:makerFromVin(report?.vin)};},[report,lang]);
+ const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt,hasVin:!!report?.vin,maker:makerFromVin(report?.vin),
+  vin:report?.vin||null,odometerKm:report?.signals?.ODOMETER??report?.odometerKm??null,fuelPct:report?.signals?.FUEL_LEVEL??null,readingsAt:report?.signalsAt??report?.readAt??null};},[report,lang]);
 
  const live=snapshot.recording&&snapshot.connected,speed=snapshot.signals.VEHICLE_SPEED;
  const recorder=useMemo(()=>({label:live?t('Recording')+(speed!=null?' · '+t('{n} km/h',{n:speed}):''):t(snapshot.recording?'Waiting for your car':'Not recording'),live,recording:snapshot.recording}),[live,speed,snapshot.recording,lang]);

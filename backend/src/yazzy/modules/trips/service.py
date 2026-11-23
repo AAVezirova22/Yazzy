@@ -20,18 +20,41 @@ def stable_id(*parts):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, ":".join(map(str, parts))))
 
 
-# A recording that goes silent this long (adapter unpowered after the engine is switched
-# off) ends one journey; the next readings begin a new one. Polling normally produces
-# several readings per second, so shorter silences are ordinary Bluetooth hiccups.
+# A recording goes quiet for many reasons while the car is still being driven: the Bluetooth link to the adapter
+# drops, Android pauses the phone, the network is lost. Only switching the car off ends a journey, so a silence
+# splits the recording only when the car was switched off before it:
+# - an IGNITION 0 marker (the car stopped answering while standing still) or a USER_STOP after the last speed;
+# - or the car stood still and stayed silent for SHUTDOWN_GAP_SECONDS (an adapter that sleeps with the car).
+# A car that was moving when the readings stopped is still on the same trip when they resume; silences longer
+# than BRIDGE_SECONDS always split, since nothing is known about that time.
 JOURNEY_GAP_SECONDS = 120.0
+SHUTDOWN_GAP_SECONDS = 600.0
+BRIDGE_SECONDS = 1800.0
+
+
+def switched_off(chunk):
+    """Whether the readings before a silence show the car being switched off (or recording stopped)."""
+    last_speed, last_speed_at = None, None
+    for o in chunk:
+        if o.signal == "VEHICLE_SPEED" and o.value is not None:
+            last_speed, last_speed_at = o.value, o.time
+    marked = any(
+        (o.signal == "IGNITION" and o.value == 0 or o.signal == "USER_STOP" and o.value == 1)
+        and (last_speed_at is None or o.time >= last_speed_at)
+        for o in chunk
+    )
+    return marked, last_speed is None or last_speed <= 1
 
 
 def split_on_gaps(observations, gap=JOURNEY_GAP_SECONDS):
     chunks, current, previous = [], [], None
     for o in sorted(observations, key=lambda o: o.time):
         if previous is not None and o.time - previous > gap:
-            chunks.append(current)
-            current = []
+            silence = o.time - previous
+            marked, standing = switched_off(current)
+            if marked or silence > BRIDGE_SECONDS or (standing and silence >= SHUTDOWN_GAP_SECONDS):
+                chunks.append(current)
+                current = []
         current.append(o)
         previous = o.time
     if current:
@@ -78,7 +101,7 @@ def merge_ranges(ranges):
 
 
 def journey_bounds(db, scope, start, end):
-    """Widens [start, end] to the silences longer than JOURNEY_GAP_SECONDS around it."""
+    """Widens [start, end] to the silences longer than BRIDGE_SECONDS around it: no journey crosses those."""
     previous = func.lag(Sample.observed_at).over(order_by=Sample.observed_at)
     before = (
         select(Sample.observed_at.label("t"), previous.label("p"))
@@ -87,7 +110,7 @@ def journey_bounds(db, scope, start, end):
     )
     first = db.scalar(
         select(func.max(before.c.t)).where(
-            or_(before.c.p.is_(None), before.c.t - before.c.p > JOURNEY_GAP_SECONDS)
+            or_(before.c.p.is_(None), before.c.t - before.c.p > BRIDGE_SECONDS)
         )
     )
     following = func.lead(Sample.observed_at).over(order_by=Sample.observed_at)
@@ -98,7 +121,7 @@ def journey_bounds(db, scope, start, end):
     )
     last = db.scalar(
         select(func.min(after.c.t)).where(
-            or_(after.c.n.is_(None), after.c.n - after.c.t > JOURNEY_GAP_SECONDS)
+            or_(after.c.n.is_(None), after.c.n - after.c.t > BRIDGE_SECONDS)
         )
     )
     return (start if first is None else min(first, start)), (

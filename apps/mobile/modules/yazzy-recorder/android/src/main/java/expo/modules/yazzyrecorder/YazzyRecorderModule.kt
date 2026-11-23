@@ -104,6 +104,10 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  private var ignitionOn=false
  private var lastEcuAt=0L
  private var lastSpeed=0.0
+ // A dropped Bluetooth link is not the car being switched off (it drops at red lights too), so it writes no
+ // ignition-off marker: the server would end the trip there. Readings resume on reconnect; a car that really was
+ // switched off shows as a long silence while standing.
+ private fun linkLost(){ignitionOn=false;sync(true)}
  private fun ignitionOff(){if(!ignitionOn)return;ignitionOn=false;if(lastSpeed<=1)try{store.enqueue("IGNITION",0,"bool")}catch(_:Exception){};sync(true)}
  fun resetProfile(){handler.post{profile=JSONObject();profileJson=null;parkedJson=null;reportPrefs.edit().clear().apply()}}
  private var supported=mutableSetOf<String>()
@@ -173,7 +177,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   *  nothing is uploaded first: this is for readings no server can take any more, e.g. after moving to a new server. */
  fun reset(){ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();RecorderSecret.clear(context);store.clear();resetProfile()}
  fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
- override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;ignitionOff();connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
+ override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;linkLost();connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{
   if(status!=BluetoothGatt.GATT_SUCCESS){error="Service discovery failed";inspecting?.completeExceptionally(IllegalStateException("Service discovery failed (Bluetooth status $status)"));return@post}
   discovered=g.services.flatMap{s->s.characteristics.map{c->mapOf("service" to s.uuid.toString(),"uuid" to c.uuid.toString(),"write" to (c.properties and (BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)!=0),"notify" to (c.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE)!=0))}}
