@@ -59,7 +59,7 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
     <CarImage vinModel={vinModel} width={carWidth}/>
    </Animated.View>:<View style={{height:24}}/>}
    <Text style={s.line} numberOfLines={1}>{vehicle?(carLine(vehicle)||carInfo.maker||vehicle.name||''):t('Add your first vehicle to begin')}</Text>
-   {vehicle?<CarReadings odometerKm={carInfo.odometerKm??vehicle.odometerKm??null} fuelPct={carInfo.fuelPct??null} at={carInfo.readingsAt??null} vin={carInfo.vin??null}/>:null}
+   {vehicle?<CarReadings odometerKm={carInfo.odometerKm??vehicle.odometerKm??null} fuelPct={carInfo.fuelPct??null} avgUse={fuel?.litresPer100Km??null} at={carInfo.readingsAt??null} vin={carInfo.vin??null}/>:null}
    {vehicle&&vinModel?.needsYear&&vinModel.years?.length?<PressableScale accessibilityRole="button" onPress={onSetYear} style={{alignSelf:'flex-start',minHeight:40,justifyContent:'center'}}>
     <Chip icon="calendar-outline" tone="blue" label={t('Set the model year to show your {model}',{model:vinModel.model})}/>
    </PressableScale>:null}
@@ -138,36 +138,38 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
  </Animated.ScrollView>;
 });
 
-/** Mileage and fuel as the car last reported them, and its VIN, which a tap copies. */
-function CarReadings({odometerKm,fuelPct,at,vin}:{odometerKm:number|null;fuelPct:number|null;at:number|null;vin:string|null}){
+/**
+ * Mileage and fuel as the car last reported them, quietly under the car like a dashboard readout. Many cars
+ * (Toyota hybrids among them) never report the fuel level over OBD; then the average use of recent trips is shown.
+ * The VIN sits below in small type and a tap copies it.
+ */
+function CarReadings({odometerKm,fuelPct,avgUse,at,vin}:{odometerKm:number|null;fuelPct:number|null;avgUse:number|null;at:number|null;vin:string|null}){
  const [copied,setCopied]=useState(false);
  const copy=async()=>{if(!vin)return;await Clipboard.setStringAsync(vin);haptic.snap();setCopied(true);setTimeout(()=>setCopied(false),1800);};
+ const fuel=fuelPct!=null?[Math.round(fuelPct)+'%',t('Fuel')]:avgUse!=null?[fmt(avgUse)+' '+t('L/100'),t('Average use')]:['—',t('Fuel')];
  return <View style={s.readings}>
   <View style={s.readingRow}>
    <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{odometerKm!=null?Math.round(odometerKm).toLocaleString(locale())+' '+t('km'):'—'}</Text><Text style={s.readingLabel}>{t('Mileage')}</Text></View>
-   <View style={s.readingDivider}/>
-   <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{fuelPct!=null?Math.round(fuelPct)+'%':'—'}</Text><Text style={s.readingLabel}>{t('Fuel')}</Text></View>
+   <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{fuel[0]}</Text><Text style={s.readingLabel}>{fuel[1]}</Text></View>
   </View>
   {at?<Text style={s.readingAt}>{t('Read from the car {when}',{when:since(at)})}</Text>:null}
   {vin?<PressableScale accessibilityRole="button" accessibilityLabel={t('Copy VIN')} onPress={()=>{void copy();}} style={s.vin}>
-   <Text style={s.vinLabel}>VIN</Text><Text style={s.vinValue} numberOfLines={1} selectable>{vin}</Text>
-   <Icon name={copied?'checkmark':'copy-outline'} size={16} color={copied?c.green:c.blue}/>
-   {copied?<Text style={[s.vinLabel,{color:c.green}]}>{t('Copied')}</Text>:null}
+   <Text style={s.vinText} numberOfLines={1}>VIN {vin}</Text>
+   <Icon name={copied?'checkmark':'copy-outline'} size={13} color={copied?c.green:c.muted}/>
+   {copied?<Text style={[s.vinText,{color:c.green}]}>{t('Copied')}</Text>:null}
   </PressableScale>:null}
  </View>;
 }
 
 const s=StyleSheet.create({
- readings:{marginTop:12,gap:8},
- readingRow:{flexDirection:'row',alignItems:'center',backgroundColor:c.surface,borderRadius:radius.md,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,paddingVertical:12},
+ readings:{marginTop:10,marginBottom:2},
+ readingRow:{flexDirection:'row'},
  reading:{flex:1,alignItems:'center'},
- readingDivider:{width:StyleSheet.hairlineWidth,alignSelf:'stretch',backgroundColor:c.line},
- readingValue:{fontFamily:F[600],fontSize:20,color:c.ink,fontVariant:['tabular-nums'],letterSpacing:-0.4},
- readingLabel:{fontFamily:F[500],fontSize:12.5,color:c.muted,marginTop:2},
- readingAt:{fontFamily:F[500],fontSize:12,color:c.muted,textAlign:'center'},
- vin:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',backgroundColor:c.surface,borderRadius:radius.pill,borderWidth:StyleSheet.hairlineWidth,borderColor:c.line,paddingVertical:8,paddingHorizontal:12,minHeight:40},
- vinLabel:{fontFamily:F[700],fontSize:11,letterSpacing:1.2,color:c.muted},
- vinValue:{fontFamily:F[600],fontSize:13.5,color:c.ink,letterSpacing:0.6,fontVariant:['tabular-nums']},
+ readingValue:{fontFamily:F[500],fontSize:16.5,color:c.ink,fontVariant:['tabular-nums']},
+ readingLabel:{fontFamily:F[500],fontSize:12.5,color:c.muted,marginTop:1},
+ readingAt:{fontFamily:F[500],fontSize:12,color:c.muted,textAlign:'center',marginTop:8},
+ vin:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5,alignSelf:'center',minHeight:32,paddingHorizontal:8},
+ vinText:{fontFamily:F[500],fontSize:12,color:c.muted,letterSpacing:0.4,fontVariant:['tabular-nums']},
  // Match the canvas while pulling down to refresh.
  overscroll:{position:'absolute',left:0,right:0,top:-1000,height:1000,backgroundColor:c.surface},
  hero:{paddingHorizontal:20,paddingBottom:18,overflow:'hidden',backgroundColor:c.surface},
