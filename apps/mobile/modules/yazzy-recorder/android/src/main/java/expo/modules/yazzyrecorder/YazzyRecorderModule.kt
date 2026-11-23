@@ -41,6 +41,10 @@ class YazzyRecorderModule:Module(){
   // startService returns a ComponentName, which cannot cross to JS; return nothing so the call resolves.
   AsyncFunction("start"){val c=appContext.reactContext!!;val intent=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(intent)else c.startService(intent);Unit}
   AsyncFunction("reconnect") Coroutine { -> RecorderManager.get(appContext.reactContext!!).reconnect()}
+  // Opens Android's package installer for a downloaded update without waiting for a result: an installer that never
+  // answers (closed from recents, a parse error) can then never block the next attempt.
+  AsyncFunction("openInstaller"){uri:String->val c=appContext.reactContext!!
+   c.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(android.net.Uri.parse(uri),"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))}
   AsyncFunction("lastLocation"){RecorderManager.get(appContext.reactContext!!).lastLocation()}
   AsyncFunction("stop"){val c=appContext.reactContext!!;RecorderManager.get(c).stop();c.stopService(Intent(c,RecordingService::class.java));Unit}
   AsyncFunction("sync"){RecorderManager.get(appContext.reactContext!!).sync(true)}

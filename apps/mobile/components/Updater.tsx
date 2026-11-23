@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
+import {Recorder} from '../modules/yazzy-recorder/src';
 import {c,ui,F} from './theme';
 import {t} from './i18n';
 
@@ -64,8 +65,10 @@ export function Updater(){
     if(!info.exists||info.md5!==latest.md5){await FileSystem.deleteAsync(target,{idempotent:true});throw new Error(t('The download was incomplete. Tap Update to try again.'));}
    }
    const uri=await FileSystem.getContentUriAsync(result.uri);
-   // FLAG_GRANT_READ_URI_PERMISSION so the system installer can read the file.
-   await IntentLauncher.startActivityAsync('android.intent.action.VIEW',{data:uri,flags:1,type:'application/vnd.android.package-archive'});
+   // The installer opens on its own; nothing waits for it, so it can never leave the next attempt "already started".
+   if(!await Recorder.openInstaller(uri))
+    // FLAG_GRANT_READ_URI_PERMISSION so the system installer can read the file.
+    await IntentLauncher.startActivityAsync('android.intent.action.VIEW',{data:uri,flags:1,type:'application/vnd.android.package-archive'});
   }catch(e){Alert.alert(t('Yazzy update'),(e as Error).message+'\n\n'+t('If Android blocked it, allow "Install unknown apps" for Yazzy and tap Update again.'));}
   finally{installing=false;setProgress(null);setChecking(false);}
  }
