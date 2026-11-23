@@ -678,6 +678,7 @@ export const RU:Record<string,string>={
  "Copy VIN":"Скопировать VIN",
  "Copied":"Скопировано",
  "Read from the car {when}":"Считано с автомобиля {when}",
+ "The installer is already open. Finish or close it, then tap Update again.":"Установщик уже открыт. Завершите установку или закройте его, затем снова нажмите «Обновить».",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

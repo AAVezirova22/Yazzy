@@ -678,6 +678,7 @@ export const BG:Record<string,string>={
  "Copy VIN":"Копирай VIN",
  "Copied":"Копирано",
  "Read from the car {when}":"Прочетено от колата {when}",
+ "The installer is already open. Finish or close it, then tap Update again.":"Инсталаторът вече е отворен. Довършете или го затворете, после докоснете „Обнови“ отново.",
 };
 
 /** Counted texts: [one, other]. */

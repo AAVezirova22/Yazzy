@@ -15,6 +15,10 @@ const installed=Number(extra?.versionCode)||0;
 const releases:string=typeof extra?.updatesUrl==='string'?extra.updatesUrl:'';
 // The recorder keeps the app alive for days, so look again when it comes back to the screen, at most hourly.
 const RECHECK_MS=3600_000;
+// Survives the card being redrawn (a tab or language change): while Android's installer is open, a second tap must
+// not start another download, which would rewrite the very file the installer is reading.
+let installing=false;
+const PREFIX='Yazzy-update-';
 
 /** The newest published build, read straight from GitHub: updates no longer pass through the Yazzy server. */
 async function newest():Promise<Build|null>{
@@ -40,12 +44,17 @@ export function Updater(){
  },[]);
  if(!build||build.versionCode<=installed)return null;
  async function update(){
+  if(installing){Alert.alert(t('Yazzy update'),t('The installer is already open. Finish or close it, then tap Update again.'));return;}
+  installing=true;
   try{
    setProgress(0);
    // A newer build may have been published while the card sat open.
    const latest=(await newest().catch(()=>null))||build!;
-   const target=FileSystem.cacheDirectory+'Yazzy-update.apk';
-   await FileSystem.deleteAsync(target,{idempotent:true});
+   // A new file for every attempt: an installer still reading an earlier download never sees it change.
+   const dir=FileSystem.cacheDirectory||'';
+   for(const name of await FileSystem.readDirectoryAsync(dir).catch(()=>[] as string[]))
+    if(name.startsWith(PREFIX)||name==='Yazzy-update.apk')await FileSystem.deleteAsync(dir+name,{idempotent:true});
+   const target=dir+PREFIX+latest.versionCode+'-'+Date.now()+'.apk';
    const download=FileSystem.createDownloadResumable(`${releases}/${latest.apk}`,target,{},p=>setProgress(p.totalBytesExpectedToWrite>0?p.totalBytesWritten/p.totalBytesExpectedToWrite:0));
    const result=await download.downloadAsync();
    if(!result||result.status!==200)throw new Error(t('Download failed ({status})',{status:result?.status??t('no response')}));
@@ -58,7 +67,7 @@ export function Updater(){
    // FLAG_GRANT_READ_URI_PERMISSION so the system installer can read the file.
    await IntentLauncher.startActivityAsync('android.intent.action.VIEW',{data:uri,flags:1,type:'application/vnd.android.package-archive'});
   }catch(e){Alert.alert(t('Yazzy update'),(e as Error).message+'\n\n'+t('If Android blocked it, allow "Install unknown apps" for Yazzy and tap Update again.'));}
-  finally{setProgress(null);setChecking(false);}
+  finally{installing=false;setProgress(null);setChecking(false);}
  }
  const mb=build.size?` · ${Math.round(build.size/1048576)} MB`:'';
  const status=progress===null?t('Build {n}',{n:build.versionCode})+mb:checking?t('Checking the download…'):t('Downloading… {p}%',{p:Math.round(progress*100)});
