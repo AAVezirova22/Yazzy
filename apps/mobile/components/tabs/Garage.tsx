@@ -139,37 +139,30 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
 });
 
 /**
- * Mileage and fuel as the car last reported them, quietly under the car like a dashboard readout. Many cars
- * (Toyota hybrids among them) never report the fuel level over OBD; then the average use of recent trips is shown.
- * The VIN sits below in small type and a tap copies it.
+ * One quiet line under the car: mileage, fuel (the average use when the car does not report a fuel level, as many
+ * Toyota hybrids do not) and the VIN's last digits, which a tap copies whole.
  */
-function CarReadings({odometerKm,fuelPct,avgUse,at,vin}:{odometerKm:number|null;fuelPct:number|null;avgUse:number|null;at:number|null;vin:string|null}){
+function CarReadings({odometerKm,fuelPct,avgUse,vin}:{odometerKm:number|null;fuelPct:number|null;avgUse:number|null;at?:number|null;vin:string|null}){
  const [copied,setCopied]=useState(false);
  const copy=async()=>{if(!vin)return;await Clipboard.setStringAsync(vin);haptic.snap();setCopied(true);setTimeout(()=>setCopied(false),1800);};
- const fuel=fuelPct!=null?[Math.round(fuelPct)+'%',t('Fuel')]:avgUse!=null?[fmt(avgUse)+' '+t('L/100'),t('Average use')]:['—',t('Fuel')];
+ const parts=[
+  odometerKm!=null?Math.round(odometerKm).toLocaleString(locale())+' '+t('km'):null,
+  fuelPct!=null?t('Fuel')+' '+Math.round(fuelPct)+'%':avgUse!=null?fmt(avgUse)+' '+t('L/100'):null,
+ ].filter(Boolean) as string[];
+ if(!parts.length&&!vin)return null;
  return <View style={s.readings}>
-  <View style={s.readingRow}>
-   <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{odometerKm!=null?Math.round(odometerKm).toLocaleString(locale())+' '+t('km'):'—'}</Text><Text style={s.readingLabel}>{t('Mileage')}</Text></View>
-   <View style={s.reading}><Text style={s.readingValue} numberOfLines={1}>{fuel[0]}</Text><Text style={s.readingLabel}>{fuel[1]}</Text></View>
-  </View>
-  {at?<Text style={s.readingAt}>{t('Read from the car {when}',{when:since(at)})}</Text>:null}
-  {vin?<PressableScale accessibilityRole="button" accessibilityLabel={t('Copy VIN')} onPress={()=>{void copy();}} style={s.vin}>
-   <Text style={s.vinText} numberOfLines={1}>VIN {vin}</Text>
-   <Icon name={copied?'checkmark':'copy-outline'} size={13} color={copied?c.green:c.muted}/>
-   {copied?<Text style={[s.vinText,{color:c.green}]}>{t('Copied')}</Text>:null}
+  {parts.map((p,i)=><Text key={i} style={s.reading}>{i?'·  ':''}{p}</Text>)}
+  {vin?<PressableScale accessibilityRole="button" accessibilityLabel={t('Copy VIN')} onPress={()=>{void copy();}} hitSlop={10} style={s.vin}>
+   <Text style={s.reading}>{parts.length?'·  ':''}{copied?t('Copied'):'VIN …'+vin.slice(-6)}</Text>
+   <Icon name={copied?'checkmark':'copy-outline'} size={12} color={copied?c.green:c.faint}/>
   </PressableScale>:null}
  </View>;
 }
 
 const s=StyleSheet.create({
- readings:{marginTop:10,marginBottom:2},
- readingRow:{flexDirection:'row'},
- reading:{flex:1,alignItems:'center'},
- readingValue:{fontFamily:F[500],fontSize:16.5,color:c.ink,fontVariant:['tabular-nums']},
- readingLabel:{fontFamily:F[500],fontSize:12.5,color:c.muted,marginTop:1},
- readingAt:{fontFamily:F[500],fontSize:12,color:c.muted,textAlign:'center',marginTop:8},
- vin:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5,alignSelf:'center',minHeight:32,paddingHorizontal:8},
- vinText:{fontFamily:F[500],fontSize:12,color:c.muted,letterSpacing:0.4,fontVariant:['tabular-nums']},
+ readings:{flexDirection:'row',flexWrap:'wrap',alignItems:'center',columnGap:8,marginTop:3},
+ reading:{fontFamily:F[500],fontSize:12.5,color:c.muted,fontVariant:['tabular-nums']},
+ vin:{flexDirection:'row',alignItems:'center',gap:4},
  // Match the canvas while pulling down to refresh.
  overscroll:{position:'absolute',left:0,right:0,top:-1000,height:1000,backgroundColor:c.surface},
  hero:{paddingHorizontal:20,paddingBottom:18,overflow:'hidden',backgroundColor:c.surface},
