@@ -12,6 +12,8 @@ import {NavBar,NAV_HEIGHT,TabPane,TABS,type TabKey} from '../components/Tabs';
 import {SignIn} from '../components/SignIn';
 import {canUnlock,Lock,Welcome} from '../components/AccountGate';
 import {BusinessDashboard} from '../components/BusinessDashboard';
+import {CarLook} from '../components/CarLook';
+import {loadLooks} from '../components/lookStore';
 import {GarageTab} from '../components/tabs/Garage';
 import {TripsTab} from '../components/tabs/Trips';
 import {HealthTab} from '../components/tabs/Health';
@@ -36,7 +38,7 @@ const quiet=(message:string)=>/[.!?]$/.test(message)?message:t("Couldn't refresh
 export default function App(){
  const insets=useSafeAreaInsets(),lang=useLang();
  // undefined while the saved connection is read (a few milliseconds, no network), null when this phone never connected.
- const [mode,setMode]=useState<'account'|'oidc'|null|undefined>(undefined),[locked,setLocked]=useState(false),[welcome,setWelcome]=useState(false),[businessOpen,setBusinessOpen]=useState(false),[session,setSession]=useState(0),[api,setApi]=useState(server.api);
+ const [mode,setMode]=useState<'account'|'oidc'|null|undefined>(undefined),[locked,setLocked]=useState(false),[welcome,setWelcome]=useState(false),[businessOpen,setBusinessOpen]=useState(false),[lookOpen,setLookOpen]=useState(false),[session,setSession]=useState(0),[api,setApi]=useState(server.api);
  const [vehicles,setVehicles]=useState<any[]>([]),[selected,setSelected]=useState(''),[car,setCar]=useState<Car|null>(null);
  const [refreshing,setRefreshing]=useState(false),[pulling,setPulling]=useState(false),[offline,setOffline]=useState('');
  const [tab,setTab]=useState<TabKey>('Home'),[visited,setVisited]=useState<TabKey[]>(['Home']);
@@ -59,7 +61,7 @@ export default function App(){
  },[]);
  // Opening the app asks for the fingerprint or face; signing in with the password just now does not.
  const launch=useCallback(async()=>{
-  await Promise.all([server.restore().catch(()=>null),loadLang()]);
+  await Promise.all([server.restore().catch(()=>null),loadLang(),loadLooks()]);
   if(server.mode==='account'&&await canUnlock())setLocked(true);
   await boot();
  },[boot]);
@@ -67,7 +69,7 @@ export default function App(){
  useEffect(()=>{void launch();},[]);
  const disconnected=useCallback(()=>{setMode(null);setLocked(false);setTab('Home');setVisited(['Home']);setVehicles([]);setSelected('');setCar(null);carRef.current=null;},[]);
  useEffect(()=>{server.onExpired(disconnected);return()=>server.onExpired(null);},[disconnected]);
- const openBusiness=useCallback(()=>setBusinessOpen(true),[]);
+ const openBusiness=useCallback(()=>setBusinessOpen(true),[]),openLook=useCallback(()=>setLookOpen(true),[]);
  const signOut=useCallback(()=>{void server.signOut().then(disconnected);},[disconnected]);
  const closeWelcome=useCallback(()=>{setWelcome(false);SecureStore.deleteItemAsync('yazzy-welcome').catch(()=>{});},[]);
 
@@ -298,7 +300,7 @@ export default function App(){
  const business=vehicles.filter(v=>v.category==='BUSINESS').length;
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
@@ -357,6 +359,8 @@ export default function App(){
   <Modal visible={businessOpen} animationType="slide" onRequestClose={()=>setBusinessOpen(false)}>
    {businessOpen?<BusinessDashboard onClose={()=>setBusinessOpen(false)}/>:null}
   </Modal>
+
+  <CarLook open={lookOpen} vinModel={report?.vinModel} onClose={()=>setLookOpen(false)}/>
 
   <Welcome open={welcome&&!locked} name={server.account?.name} onClose={closeWelcome} onConnect={()=>{closeWelcome();go('Connect');}}/>
 

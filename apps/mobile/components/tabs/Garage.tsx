@@ -19,7 +19,7 @@ import {locale,t,tp} from '../i18n';
 
 type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:string;recorder:{label:string;live:boolean;recording:boolean};padBottom:number;
  onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
- carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean;hasVin:boolean;maker?:string|null;vin?:string|null;odometerKm?:number|null;fuelPct?:number|null;readingsAt?:number|null};onOpenCar:()=>void;vinModel?:VinModel|null;onSetYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void;business:number;onBusiness:()=>void};
+ carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean;hasVin:boolean;maker?:string|null;vin?:string|null;odometerKm?:number|null;fuelPct?:number|null;readingsAt?:number|null};onOpenCar:()=>void;vinModel?:VinModel|null;onSetYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void;business:number;onBusiness:()=>void;onLook:()=>void};
 
 /**
  * Home. A realistic, illustrative car sits on a light studio wash with square quick actions; as you scroll, the
@@ -27,7 +27,7 @@ type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:str
  * dropped with Reduce Motion). Below: live status
  * tiles, the last trip, smooth driving and reminders, each one card you can read at a glance.
  */
-export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar,vinModel,onSetYear,onEnterVin,onPickModel,business,onBusiness}:Props){
+export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar,vinModel,onSetYear,onEnterVin,onPickModel,business,onBusiness,onLook}:Props){
  const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-24,430),reduced=useReducedMotion();
  const lastTrip=latest(car?.trips,'startAt'),lastService=latest(car?.service,'observedAt'),findingCount=car?.findings?.length??0;
  const week=useMemo(()=>lastWeek(car?.trips),[car?.trips]),weekKm=week.reduce((a,b)=>a+b,0),fuel=car?.fuel;
@@ -55,8 +55,11 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
     {busy&&!refreshing?<ActivityIndicator color={c.muted} style={{marginTop:12}}/>:null}
     <RoundButton icon="swap-horizontal" label={t('Switch or add vehicle')} onPress={onSwitch}/>
    </View>
-   {vehicle?<Animated.View style={[s.car,carStyle]} pointerEvents="none" accessible={false}>
-    <CarImage vinModel={vinModel} width={carWidth}/>
+   {vehicle?<Animated.View style={[s.car,carStyle]}>
+    {/* Tapping the car's own picture opens its colour and view picker. */}
+    <PressableScale accessibilityRole="button" accessibilityLabel={t('Change colour and view')} disabled={vinModel?.status!=='READY'} scale={0.98} onPress={onLook}>
+     <CarImage vinModel={vinModel} width={carWidth}/>
+    </PressableScale>
    </Animated.View>:<View style={{height:24}}/>}
    <Text style={s.line} numberOfLines={1}>{vehicle?(carLine(vehicle)||carInfo.maker||vehicle.name||''):t('Add your first vehicle to begin')}</Text>
    {vehicle?<CarReadings odometerKm={carInfo.odometerKm??vehicle.odometerKm??null} fuelPct={carInfo.fuelPct??null} avgUse={fuel?.litresPer100Km??null} at={carInfo.readingsAt??null} vin={carInfo.vin??null}/>:null}
