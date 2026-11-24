@@ -286,8 +286,8 @@ def _rgb(h, s, v):
 
 
 def repaint(data: bytes, color: str | None, flip: bool) -> bytes:
-    """The stored picture with its body in `color` (hex) and/or mirrored. Glass, tyres, chrome and lamps are not
-    the paint's hue, so they stay as rendered; the paint keeps its shading and reflections."""
+    """The stored picture with its body in `color` (hex) as metallic paint, and/or mirrored. Glass, tyres, chrome and
+    lamps are not the paint's hue, so they stay as rendered; the paint keeps its shading and reflections."""
     import io
 
     import numpy as np
@@ -304,8 +304,13 @@ def repaint(data: bytes, color: str | None, flip: bool) -> bytes:
         th, ts, tv = (x.item() for x in _hsv(goal))
         near = np.abs(((h - bh) + 0.5) % 1 - 0.5)
         paint = np.clip((s - 0.10) / 0.15, 0, 1) * np.clip((0.10 - near) / 0.04, 0, 1) * (alpha > 0)
-        sat = np.clip(s * ts / bs, 0, 1) if ts > 0.12 else np.full_like(s, ts)
-        new = _rgb(np.full_like(h, th), sat, np.clip(v * tv / bv, 0, 1))
+        # Metallic paint: deeper shade, a sharper falloff and a bright, whiter sheen where the light hits. Dark paints
+        # get the strongest sheen (that is what makes black and dark blue read as metallic), light ones less contrast.
+        rel = v / bv  # 1.0 is the paint's own tone; above it is lit, below it is in shade
+        tone = np.clip(tv * np.power(np.clip(rel, 0, 3), 1.2 + 0.45 * (1 - tv)), 0, 1)
+        sheen = np.clip((rel - 1.05) / 0.55, 0, 1) ** 1.4 * (0.35 + 0.45 * (1 - tv))
+        sat = (np.clip(s * ts / bs, 0, 1) if ts > 0.12 else np.full_like(s, ts)) * (1 - sheen * 0.85)
+        new = _rgb(np.full_like(h, th), sat, np.clip(tone + (1 - tone) * sheen, 0, 1))
         rgb = rgb * (1 - paint[..., None]) + new * paint[..., None]
         picture = Image.fromarray((np.concatenate([rgb, alpha[..., None]], -1) * 255).astype(np.uint8), "RGBA")
     if flip:
