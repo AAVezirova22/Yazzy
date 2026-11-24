@@ -61,11 +61,17 @@ class RecordingService:Service(){
   if(Build.VERSION.SDK_INT>=26)getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(channel,"Vehicle recording",NotificationManager.IMPORTANCE_LOW))
   val stop=PendingIntent.getService(this,1,Intent(this,RecordingService::class.java).setAction("STOP"),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
   val notification=Notification.Builder(this,channel).setContentTitle("Yazzy is recording your vehicle").setContentText("Read-only diagnostics. Tap Stop to end recording.").setSmallIcon(android.R.drawable.ic_menu_mylocation).setOngoing(true).addAction(Notification.Action.Builder(null,"Stop",stop).build()).build()
-  startForeground(42,notification)
+  // Started at boot or after an update, Android may refuse the location type until the app is opened again; record
+  // over Bluetooth meanwhile rather than crash.
+  if(Build.VERSION.SDK_INT>=29){try{startForeground(42,notification,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)}
+   catch(e:SecurityException){startForeground(42,notification,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)}}
+  else startForeground(42,notification)
   try{RecorderManager.get(this).start()}catch(e:Exception){RecorderManager.get(this).error="Start failed: check Bluetooth and location permissions";stopSelf()}
   return START_STICKY
  }
- override fun onDestroy(){RecorderManager.get(this).stop();super.onDestroy()}
+ // Android ends the service on its own too (an app update, memory pressure): that pauses recording but keeps it
+ // armed, so it resumes by itself (START_STICKY, RestartReceiver, the next app launch). Only Stop disarms it.
+ override fun onDestroy(){RecorderManager.get(this).suspend();super.onDestroy()}
 }
 
 @Suppress("MissingPermission","DEPRECATION")
@@ -180,6 +186,8 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  /** Forgets the pairing and drops the readings that were never uploaded, as after a fresh install. Unlike stop(),
   *  nothing is uploaded first: this is for readings no server can take any more, e.g. after moving to a new server. */
  fun reset(){ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();RecorderSecret.clear(context);store.clear();resetProfile()}
+ /** Lets go of the adapter without ending the trip or disarming: recording picks up where it left off on restart. */
+ fun suspend(){ignitionOn=false;recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;sync(true)}
  fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
  override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;linkLost();connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{
@@ -274,5 +282,14 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   val name=(detail as? JSONObject)?.optString("code").orEmpty().ifEmpty{if(detail is org.json.JSONArray)"INVALID_READINGS" else ""}
   val why=(detail as? JSONObject)?.optString("reason").orEmpty()
   return listOf(name,why,"HTTP $code").filter{it.isNotEmpty()}.joinToString(", ")
+ }
+}
+
+/** Restarts armed recording after the phone boots or the app is updated, without the app being opened. */
+class RestartReceiver:android.content.BroadcastReceiver(){
+ override fun onReceive(c:Context,i:Intent){
+  if(i.action!=Intent.ACTION_BOOT_COMPLETED&&i.action!=Intent.ACTION_MY_PACKAGE_REPLACED)return
+  if(!RecorderManager.isArmed(c)||RecorderSecret.read(c)==null)return
+  try{val s=Intent(c,RecordingService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(s) else c.startService(s)}catch(_:Exception){/* the next app launch starts it */}
  }
 }
