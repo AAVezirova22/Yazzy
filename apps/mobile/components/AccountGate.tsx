@@ -57,6 +57,10 @@ export function Welcome({open,name,onConnect,onClose}:{open:boolean;name?:string
      <View style={s.stepIcon}><Icon name={icon} size={18} color={c.blue}/></View>
      <Text style={[ui.body,{flex:1,color:c.ink}]}>{text}</Text>
     </View>)}
+    <View style={[s.step,{marginTop:4}]}>
+     <View style={s.stepIcon}><Icon name="document-text-outline" size={18} color={c.blue}/></View>
+     <Text style={[ui.body,{flex:1,color:c.ink}]}>{t('On Home, add the plate and documents: Yazzy shows the vignette, technical inspection and insurance dates, and checks for fines from KAT and АПИ.')}</Text>
+    </View>
     <View style={{height:12}}/>
     <Button title={t('Connect the adapter')} icon="bluetooth" onPress={onConnect}/>
     <Button kind="light" title={t('Later')} onPress={onClose}/>

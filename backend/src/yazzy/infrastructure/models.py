@@ -90,6 +90,8 @@ class Vehicle(Scoped, Base):
     model: Mapped[str] = mapped_column(default="")
     year: Mapped[int | None]
     category: Mapped[str] = mapped_column(default="PERSONAL")  # PERSONAL or BUSINESS
+    # Plate, inspection and insurance dates, and the last vignette and fine checks (never the owner's EGN).
+    documents: Mapped[dict | None] = mapped_column(JSON)
     fuel_type: Mapped[str] = mapped_column(default="PETROL")
     powertrain: Mapped[str] = mapped_column(default="ICE")
     origin: Mapped[str] = mapped_column(default="REAL")

@@ -31,6 +31,7 @@ class VehiclePatch(Contract):
     service_due_at: float | None = None
     service_due_km: float | None = Field(default=None, ge=0)
     profile: dict | None = None
+    documents: dict | None = None
 
     @field_validator("profile")
     @classmethod
@@ -38,6 +39,18 @@ class VehiclePatch(Contract):
         # The car report is a few kilobytes; anything far larger is not one.
         if value is not None and len(json.dumps(value)) > 65536:
             raise ValueError("Vehicle profile too large")
+        return value
+
+    @field_validator("documents")
+    @classmethod
+    def plain_documents(cls, value):
+        # Plate, VIN, ГТП and insurance dates and the last vignette/toll check: small, and never the owner's
+        # identity numbers, which stay on the phone.
+        if value is None:
+            return value
+        allowed = {"plate", "vin", "gtpUntil", "insuranceUntil", "vignette", "apiFines", "katFines", "checkedAt"}
+        if set(value) - allowed or len(json.dumps(value)) > 8192:
+            raise ValueError("Unexpected vehicle documents")
         return value
 
 

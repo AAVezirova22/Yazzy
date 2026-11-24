@@ -85,3 +85,13 @@ def test_business_dashboard_shows_last_drive_and_live_position(client, enrolled)
     assert car["live"] is True and car["speedKmh"] == 48
     assert car["position"]["latitude"] == 42.69 and car["position"]["longitude"] == 23.32
     assert board["summary"]["cars"] == 1 and board["summary"]["liveNow"] == 1
+
+
+def test_vehicle_documents_are_saved_but_never_identity_numbers(client):
+    car = client.get("/api/v1/vehicles").json()[0]
+    docs = {"plate": "A2612PT", "gtpUntil": "2027-03-12", "insuranceUntil": "2027-03-03",
+            "vignette": {"until": "2027-03-03T23:59:59", "active": True, "checkedAt": 1}}
+    saved = client.patch(f"/api/v1/vehicles/{car['id']}", json={"version": car["version"], "documents": docs})
+    assert saved.status_code == 200 and saved.json()["documents"] == docs
+    leak = client.patch(f"/api/v1/vehicles/{car['id']}", json={"version": saved.json()["version"], "documents": {**docs, "egn": "1"}})
+    assert leak.status_code == 422

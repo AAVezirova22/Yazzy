@@ -44,6 +44,14 @@
     }
    ],
    [
+    "expo-image-picker",
+    {
+     "photosPermission": "Yazzy reads the registration certificate (talon) you pick to fill in the plate.",
+     "cameraPermission": "Yazzy photographs the registration certificate (talon) to fill in the plate.",
+     "microphonePermission": false
+    }
+   ],
+   [
     "expo-font",
     {
      "fonts": [

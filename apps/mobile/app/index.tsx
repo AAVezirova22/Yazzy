@@ -182,6 +182,8 @@ export default function App(){
   const list=active(vehiclesRef.current.map(x=>x.id===id?updated:x));setVehicles(list);void writeCache('vehicles',list);
   if(selectedRef.current===id&&updated.archived){const next=list[0]?.id||'';setSelected(next);setCar(null);carRef.current=null;SecureStore.setItemAsync('yazzy-vehicle',next).catch(()=>{});}
  },[]);
+ // A car's papers (plate, ГТП, insurance, vignette and fine checks) live on the vehicle; identity numbers do not.
+ const saveDocuments=useCallback((documents:unknown)=>selectedRef.current?updateVehicle(selectedRef.current,{documents}):Promise.resolve(),[updateVehicle]);
 
  // The car report: what the recorder read from the car, merged with its latest live values, kept per car on the phone
  // and on the server. The newest of the phone's copy and the server's copy wins.
@@ -300,7 +302,7 @@ export default function App(){
  const business=vehicles.filter(v=>v.category==='BUSINESS').length;
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook} onSaveDocuments={saveDocuments}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
