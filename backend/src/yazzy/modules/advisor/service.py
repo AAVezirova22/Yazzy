@@ -61,24 +61,94 @@ REFUSAL = re.compile(
     r"\b(?:clear|clearing|actuate|reset ecu|execute|ignore instructions|export all|other organisation)\b"
 )
 
-# A work order is only prepared when the message is a request for one: it must open with an
-# action ("schedule an inspection", "can you please create a work order"). Questions that merely
-# mention the word, like "When is my next service scheduled?", are answered from the evidence.
-WORK_ORDER_REQUEST = re.compile(
-    r"^(?:please\s+)?"
-    r"(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|i(?:'d| would)\s+like\s+(?:you\s+to\s+)?|i\s+want\s+(?:you\s+to\s+)?)?"
-    r"(?:prepare|create|make|open|raise|schedule|book|arrange|set\s+up|start|add)\b"
-    r"(?:\s+\w+){0,3}?\s+(?:work\s+order|inspection\s+task|inspection|service|appointment)\b"
+# A task (work order) is prepared when the message asks for one, in any wording: "schedule an inspection",
+# "I need a service for the brakes", "could you please create a work order". Questions and statements that
+# merely mention the words ("When is my next service scheduled?", "Is a work order needed?") are answered from
+# the evidence instead. The matching is on whole words and on the shape of the sentence, not on substrings.
+TASK_OBJECT = re.compile(
+    r"\b(?P<what>work\s*order|inspection\s+task|inspection|service|appointment|repair|maintenance|"
+    r"tune-?up|oil\s+change|check-?up|garage\s+visit|workshop\s+visit|mot)\b"
+    r"(?!\s+(?:history|interval|log|records?|light|dates?|reminders?|schedule|manual|book)\b)"
 )
+REQUEST_VERB = re.compile(
+    r"\b(?:schedule|book|create|make(?!\s+sure)|prepare|open|raise|arrange|set\s+up|start|add|file|"
+    r"organi[sz]e|plan|need|want|require|request|submit|put\s+in|get\s+me|give\s+me|send|queue|line\s+up)\b"
+)
+QUESTION_START = re.compile(
+    r"^(?:when|what|which|where|who|whom|whose|why|how|is|are|was|were|does|do|did|has|have|had|"
+    r"should|shall|tell|explain|show|list)\b"
+)
+INFORMATION = re.compile(
+    r"\b(?:know|tell\s+me|explain|show\s+me|find\s+out|wondering|curious|whether|"
+    r"when|what|which|why|how\s+(?:much|many|long|often|soon))\b"
+)
+NEGATION = re.compile(
+    r"\b(?:don'?t|do\s+not|doesn'?t|didn'?t|never|no\s+need|cancel|without|stop|already|not)\b"
+)
+# Entering something that already happened belongs in the service history, which the owner fills in.
+HISTORY = re.compile(
+    r"\b(?:service|maintenance|repair)\s+(?:history|records?|log)\b|\b(?:history|records?)\b.*\b(?:service|maintenance)\b"
+)
+RECORD_VERB = re.compile(r"\b(?:add|log|record|save|enter|note|put|write|store|track|register)\b")
+GENERIC_TASKS = {
+    "work order",
+    "workorder",
+    "inspection task",
+    "inspection",
+    "appointment",
+    "check-up",
+    "checkup",
+}
+DETAIL = re.compile(
+    r"^\s*(?:task\s+)?(?:for|about|regarding|on|because\s+of|due\s+to|to\s+(?:fix|check|replace|inspect|"
+    r"look\s+at|investigate|change|repair)|[:\-])\s*(.+)$",
+    re.S,
+)
+DEFAULT_TITLE = "Review recorded evidence with a technician"
 
 
 def wants_refusal(message: str) -> bool:
     return REFUSAL.search(message.lower()) is not None
 
 
+def _normal(message: str) -> str:
+    return message.lower().replace("\u2019", "'").strip()
+
+
+def wants_history_entry(message: str) -> bool:
+    text = _normal(message)
+    return HISTORY.search(text) is not None and RECORD_VERB.search(text) is not None
+
+
+def task_request(message: str) -> dict | None:
+    """The task the message asks for ({"title": ...}), or None when it is not a request for one."""
+    text = _normal(message)
+    thing = TASK_OBJECT.search(text)
+    if not thing or HISTORY.search(text) or NEGATION.search(text) or QUESTION_START.match(text):
+        return None
+    verb = REQUEST_VERB.search(text[: thing.start()])
+    if not verb:
+        return None
+    between = text[: thing.start()]
+    if INFORMATION.search(between) or len(text[verb.start() : thing.start()].split()) > 8:
+        return None
+    what = re.sub(r"\s+", " ", thing.group("what"))
+    label = "Inspection" if what == "inspection task" else what.capitalize()
+    detail = DETAIL.match(message[thing.end() :])
+    extra = ""
+    if detail:
+        extra = re.sub(r"^(?:the|my|a|an)\s+", "", detail.group(1).strip().rstrip(".!?, ")).strip()
+    if extra:
+        title = f"{label}: {extra}"[:120]
+    elif what not in GENERIC_TASKS:
+        title = label
+    else:
+        title = DEFAULT_TITLE
+    return {"title": title}
+
+
 def wants_work_order(message: str) -> bool:
-    text = re.sub(r"\s+", " ", message.lower().replace("\u2019", "'")).strip(" \t\n.!?,;:-")
-    return WORK_ORDER_REQUEST.search(text) is not None
+    return task_request(message) is not None
 
 
 def answer(db, ctx, vehicle_id, message):
@@ -110,7 +180,14 @@ def answer(db, ctx, vehicle_id, message):
             "type": "EXPLANATION",
             "text": "Vehicle write commands, arbitrary code and access to other organisations are unavailable.",
         }
-    if wants_work_order(message):
+    if wants_history_entry(message):
+        return {
+            **base,
+            "type": "EXPLANATION",
+            "text": "Past services are kept in Health \u203a Service. Tap Add service record there and enter what was done, the date, the price and the kilometres, and Yazzy will remind you when it is due again.",
+        }
+    task = task_request(message)
+    if task:
         require_role(ctx)
         pending = PendingAction(
             tenant_id=ctx.tenant_id,
@@ -119,7 +196,7 @@ def answer(db, ctx, vehicle_id, message):
             payload={
                 "vehicleId": v.id,
                 "vehicleVersion": v.version,
-                "title": "Review recorded evidence with a technician",
+                "title": task["title"],
                 "findingIds": [f.id for f in findings],
             },
             expires_at=time.time() + 600,
@@ -131,7 +208,7 @@ def answer(db, ctx, vehicle_id, message):
             **base,
             "type": "CONFIRMATION",
             "pendingActionId": pending.id,
-            "text": "Review and confirm this inspection task. No appointment has been booked.",
+            "text": f"Review and confirm this task: {task['title']}. No appointment has been booked.",
             "proposal": pending.payload,
         }
     if "fuel" in lower and trips:

@@ -252,6 +252,109 @@ def test_advisor_service_date_questions_create_no_pending_action(client):
         assert db.scalars(select(PendingAction)).all() == []
 
 
+def test_advisor_understands_requests_in_any_wording(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message in [
+        "Could you create a work order",
+        "I need a service for the brakes",
+        "I'd like to book an inspection please",
+        "Please make me an appointment for an oil change",
+        "can you set up a work order for the squeaking noise?",
+        "We want to schedule maintenance",
+        "Arrange a garage visit",
+        "i think i should schedule an inspection",
+    ]:
+        r = ask(client, v, message)
+        assert r["type"] == "CONFIRMATION", message
+
+
+def test_advisor_questions_and_negations_create_nothing(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message in [
+        "Do I need a service soon?",
+        "Can you tell me when to schedule my next service?",
+        "I want to know when my service is due",
+        "Why was the inspection scheduled?",
+        "I don't need a work order",
+        "Cancel the work order",
+        "What does a work order do?",
+        "My service history looks short",
+    ]:
+        assert ask(client, v, message)["type"] != "CONFIRMATION", message
+    with transaction() as db:
+        assert db.scalars(select(PendingAction)).all() == []
+
+
+def test_advisor_uses_the_details_in_the_task_title(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    r = ask(client, v, "Schedule an inspection for the brake noise.")
+    assert r["proposal"]["title"] == "Inspection: brake noise"
+    assert ask(client, v, "Book a service")["proposal"]["title"] == "Service"
+    assert (
+        ask(client, v, "Create a work order")["proposal"]["title"]
+        == "Review recorded evidence with a technician"
+    )
+
+
+def test_advisor_points_past_services_to_the_service_history(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    r = ask(client, v, "Add my oil change to the service history")
+    assert r["type"] == "EXPLANATION"
+    assert "Health" in r["text"] and "pendingActionId" not in r
+
+
+def test_confirmed_task_shows_in_the_car_work_orders(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    assert client.get(f"/api/v1/vehicles/{v['id']}/work-orders").json() == []
+    action = ask(client, v, "Could you create a work order for the brake noise")["pendingActionId"]
+    done = client.post(f"/api/v1/pending-actions/{action}/confirm").json()
+    orders = client.get(f"/api/v1/vehicles/{v['id']}/work-orders").json()
+    assert [o["id"] for o in orders] == [done["workOrderId"]]
+    assert orders[0]["title"] == "Work order: brake noise"
+    assert orders[0]["status"] == "OPEN" and orders[0]["createdAt"] > 0
+    done_order = client.patch(
+        f"/api/v1/work-orders/{orders[0]['id']}",
+        json={"version": orders[0]["version"], "status": "COMPLETED"},
+    ).json()
+    assert done_order["status"] == "COMPLETED"
+
+
+def test_service_history_notes_due_km_edit_and_delete(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    base = f"/api/v1/vehicles/{v['id']}/maintenance-records"
+    created = client.post(
+        base,
+        json={
+            "description": "Engine oil change 5W-30",
+            "observedAt": 1_700_000_000,
+            "odometerKm": 152_300,
+            "actualCost": 89.5,
+            "notes": "Castrol, new filter",
+            "nextDueKm": 162_300,
+        },
+    )
+    assert created.status_code == 201, created.text
+    record = created.json()
+    assert record["notes"] == "Castrol, new filter" and record["nextDueKm"] == 162_300
+    edited = client.put(
+        f"/api/v1/maintenance-records/{record['id']}",
+        json={
+            "description": "Engine oil and filter",
+            "observedAt": 1_700_000_000,
+            "odometerKm": 152_400,
+            "actualCost": 95,
+            "nextDueKm": 162_400,
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["description"] == "Engine oil and filter"
+    assert edited.json()["notes"] is None and edited.json()["odometerKm"] == 152_400
+    assert [m["id"] for m in client.get(base).json()] == [record["id"]]
+    assert client.delete(f"/api/v1/maintenance-records/{record['id']}").json() == {"deleted": True}
+    assert client.get(base).json() == []
+    assert client.delete(f"/api/v1/maintenance-records/{record['id']}").status_code == 404
+
+
 def test_advisor_clear_requests_still_prepare_a_pending_action(client):
     v = client.get("/api/v1/vehicles").json()[0]
     for message in [

@@ -871,6 +871,61 @@ def add_maintenance(
     return serialize(m)
 
 
+EDITABLE_SERVICE_FIELDS = (
+    "description",
+    "observed_at",
+    "odometer_km",
+    "actual_cost",
+    "currency",
+    "notes",
+    "next_due_km",
+)
+
+
+@app.put("/api/v1/maintenance-records/{record_id}")
+def update_maintenance(
+    record_id: str,
+    data: MaintenanceInput,
+    ctx=Depends(authenticate),
+    db=Depends(get_db, scope="function"),
+):
+    m = scoped(db, Maintenance, ctx, record_id)
+    vehicle(db, ctx, m.vehicle_id, write=True)
+    for field in EDITABLE_SERVICE_FIELDS:
+        setattr(m, field, getattr(data, field))
+    db.flush()
+    audit(db, ctx, "MAINTENANCE_UPDATED", m.id)
+    return serialize(m)
+
+
+@app.delete("/api/v1/maintenance-records/{record_id}")
+def delete_maintenance(
+    record_id: str, ctx=Depends(authenticate), db=Depends(get_db, scope="function")
+):
+    m = scoped(db, Maintenance, ctx, record_id)
+    vehicle(db, ctx, m.vehicle_id, write=True)
+    db.delete(m)
+    audit(db, ctx, "MAINTENANCE_DELETED", record_id)
+    return {"deleted": True}
+
+
+@app.get("/api/v1/vehicles/{vehicle_id}/work-orders")
+def vehicle_work_orders(
+    vehicle_id: str, ctx=Depends(authenticate), db=Depends(get_db, scope="function")
+):
+    """The tasks prepared for one car (for example from the advisor), newest first."""
+    vehicle(db, ctx, vehicle_id)
+    return [
+        serialize(w)
+        for w in db.scalars(
+            select(WorkOrder)
+            .where(WorkOrder.tenant_id == ctx.tenant_id, WorkOrder.vehicle_id == vehicle_id)
+            .order_by(WorkOrder.created_at.desc())
+            .limit(100)
+        )
+    ]
+
+
 @app.get("/api/v1/organisations/{organisation_id}/fleet")
 def fleet(organisation_id: str, ctx=Depends(authenticate), db=Depends(get_db, scope="function")):
     if organisation_id != ctx.tenant_id:

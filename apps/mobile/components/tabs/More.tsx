@@ -11,11 +11,11 @@ import {server} from '../server';
 import {LANGS,setLang,t,tp,useLang} from '../i18n';
 
 type Props={vehicle:any;vehicleCount:number;selected:string;api:string;padBottom:number;onVehicles:()=>void;onCar:()=>void;onConnected:()=>void;onDisconnected:()=>void;onSignOut:()=>void;
- business:number;onBusiness:()=>void;onSaveDocuments:(documents:Documents)=>Promise<void>};
+ business:number;onBusiness:()=>void;onSaveDocuments:(documents:Documents)=>Promise<void>;onTask:()=>void;onShowTask:()=>void};
 const build=Number(Constants.expoConfig?.extra?.versionCode)||null;
 
 /** The evidence-based assistant, the selected car's documents (Data), vehicles, language and the account. */
-export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,padBottom,onVehicles,onCar,onSignOut,business,onBusiness,onSaveDocuments}:Props){
+export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,padBottom,onVehicles,onCar,onSignOut,business,onBusiness,onSaveDocuments,onTask,onShowTask}:Props){
  const insets=useSafeAreaInsets(),[busy,run]=useAction(),lang=useLang();
  const [message,setMessage]=useState(''),[answer,setAnswer]=useState<any>(null);
  const host=api.replace(/^https?:\/\//,''),account=server.account;
@@ -29,7 +29,11 @@ export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,pa
     <TextInput style={[ui.input,{flex:1,marginBottom:0}]} value={message} onChangeText={setMessage} placeholder={t('Why did fuel use go up?')} placeholderTextColor={c.faint}/>
     <PressableScale accessibilityRole="button" accessibilityLabel={t('Ask')} disabled={busy||!message.trim()} scale={0.92} onPress={()=>run(async()=>setAnswer(await server.call('/assistant/messages',{vehicleId:selected,message})))} style={[s.send,(busy||!message.trim())&&{opacity:0.45}]}><Icon name="arrow-up" size={20} color="#fff"/></PressableScale>
    </View>
-   {answer&&<View style={s.answer}><Text style={[ui.body,{color:c.ink2}]}>{answer.text}</Text>{answer.type==='CONFIRMATION'&&<Button title={t('Confirm inspection task')} icon="checkmark" onPress={()=>run(async()=>{await server.call('/pending-actions/'+answer.pendingActionId+'/confirm',{});Alert.alert(t('Work order created'));})}/>}</View>}
+   {answer&&<View style={s.answer}><Text style={[ui.body,{color:c.ink2}]}>{answer.text}</Text>{answer.type==='CONFIRMATION'&&<Button title={t('Confirm task')} icon="checkmark" onPress={()=>run(async()=>{
+    await server.call('/pending-actions/'+answer.pendingActionId+'/confirm',{});
+    setAnswer(null);setMessage('');onTask();
+    Alert.alert(t('Work order created'),t('It is listed in Health › Service under Planned.'),[{text:t('Later'),style:'cancel'},{text:t('Show it'),onPress:onShowTask}]);
+   })}/>}</View>}
   </View>
   <Section title={t('Data')}/>
   {vehicle?<CarDocuments vehicle={vehicle} onSave={onSaveDocuments}/>:<Text style={[ui.body,{paddingHorizontal:4}]}>{t('Add a vehicle to keep its documents here.')}</Text>}

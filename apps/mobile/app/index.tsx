@@ -30,8 +30,10 @@ import {lookupVin} from '../components/vinCar';
 
 const empty:RecorderSnapshot={recording:false,connected:false,queued:0,error:null,signals:{},qualification:'PENDING_DEVICE_TEST'};
 // Fetched one after another: the free server has a tenth of a CPU, and trips come first because Home and Trips show them.
-const PARTS:[Exclude<keyof Car,'vehicleId'>,string][]=[['trips','trips'],['fuel','fuel-report'],['findings','findings'],['service','maintenance-records']];
-const blank=(id:string):Car=>({vehicleId:id,fuel:null,trips:null,findings:null,service:null});
+const PARTS:[Exclude<keyof Car,'vehicleId'>,string][]=[['trips','trips'],['fuel','fuel-report'],['findings','findings'],['service','maintenance-records'],['workOrders','work-orders']];
+const blank=(id:string):Car=>({vehicleId:id,fuel:null,trips:null,findings:null,service:null,workOrders:null});
+// Parts a server that predates them may not have: their absence is not a failed refresh.
+const OPTIONAL=new Set(['workOrders']);
 const STALE_MS=30000;
 const quiet=(message:string)=>/[.!?]$/.test(message)?message:t("Couldn't refresh ({reason}).",{reason:message});
 
@@ -96,7 +98,7 @@ export default function App(){
    let next=carRef.current?.vehicleId===id?carRef.current:blank(id),failure='';
    for(const [key,path] of PARTS){
     try{const value=await server.call(`/vehicles/${id}/${path}`);if(selectedRef.current!==id)return;next={...next,[key]:value};carRef.current=next;setCar(next);}
-    catch(e){failure=(e as Error).message;if(/reach|in time/.test(failure))break;}
+    catch(e){const message=(e as Error).message;if(OPTIONAL.has(key)&&/404/.test(message))continue;failure=message;if(/reach|in time/.test(failure))break;}
    }
    if(selectedRef.current!==id)return;
    if(!failure)fresh.current[id]=Date.now();
@@ -135,6 +137,36 @@ export default function App(){
   return()=>{active=false;};
  },[mode,session,selected]);
 
+ /** Replaces one part of the selected car's data (the service history, say) and keeps the phone's copy. */
+ const patchCar=useCallback((id:string,change:(car:Car)=>Car)=>{
+  const cur=carRef.current;if(!cur||cur.vehicleId!==id)return;
+  const next=change(cur);carRef.current=next;setCar(next);void writeCache('car-'+id,next);
+ },[]);
+ const byDate=(a:any,b:any)=>(b.observedAt||0)-(a.observedAt||0);
+ /** Adds a service to the history, or saves the changes to an existing one. */
+ const saveService=useCallback(async(fields:Record<string,unknown>,recordId?:string)=>{
+  const id=selectedRef.current;if(!id)return;
+  const saved=recordId?await server.call(`/maintenance-records/${recordId}`,fields,'PUT'):await server.call(`/vehicles/${id}/maintenance-records`,fields);
+  patchCar(id,cur=>({...cur,service:[saved,...(cur.service||[]).filter(r=>r.id!==saved.id)].sort(byDate)}));
+ },[patchCar]);
+ const deleteService=useCallback(async(record:any)=>{
+  const id=selectedRef.current;if(!id)return;
+  await server.call(`/maintenance-records/${record.id}`,undefined,'DELETE');
+  patchCar(id,cur=>({...cur,service:(cur.service||[]).filter(r=>r.id!==record.id)}));
+ },[patchCar]);
+ /** Marks a planned task done or cancelled. A stale copy (changed elsewhere) is refetched once and tried again. */
+ const setWorkOrder=useCallback(async(order:any,status:'COMPLETED'|'CANCELLED')=>{
+  const id=selectedRef.current;if(!id)return;
+  let updated;
+  try{updated=await server.call(`/work-orders/${order.id}`,{version:order.version,status},'PATCH');}
+  catch(e){
+   if((e as Error).message!=='STALE_VERSION')throw e;
+   const fresh=(await server.call(`/vehicles/${id}/work-orders`) as any[]).find(o=>o.id===order.id);if(!fresh)throw e;
+   updated=await server.call(`/work-orders/${order.id}`,{version:fresh.version,status},'PATCH');
+  }
+  patchCar(id,cur=>({...cur,workOrders:(cur.workOrders||[]).map(o=>o.id===updated.id?updated:o)}));
+ },[patchCar]);
+
  // Recorder status: re-render only when it actually changed, poll slowly when idle and not at all in the background.
  const snapKey=useRef('');
  const refreshSnapshot=useCallback(()=>available?Recorder.snapshot().then(next=>{const key=JSON.stringify(next);if(key!==snapKey.current){snapKey.current=key;setSnapshot(next);}}).catch(()=>{}):Promise.resolve(),[]);
@@ -157,6 +189,9 @@ export default function App(){
   setTab(next);setVisited(v=>v.includes(next)?v:[...v,next]);
   if(next==='Home'||next==='Trips'||next==='Health')void refresh(false);
  },[refresh]);
+ /** A task the advisor prepared was confirmed: bring the car's data up to date so it is listed in Health › Service. */
+ const taskCreated=useCallback(()=>{void refresh(true);},[refresh]);
+ const showService=useCallback(()=>go('Service'),[go]);
  // Once Home is up, quietly render the other tabs one by one, so even the first visit to each opens instantly.
  useEffect(()=>{
   if(!mode)return;
@@ -306,9 +341,9 @@ export default function App(){
  const page=(key:TabKey)=>{switch(key){
   case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} spot={spot} live={snapshot.connected&&recorderVehicle===selected} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
-  case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
+  case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} workOrders={car?.workOrders??null} trips={car?.trips??null} obdKm={carInfo.odometerKm} vinModel={report?.vinModel} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh} onSaveService={saveService} onDeleteService={deleteService} onWorkOrder={setWorkOrder}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
-  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected} onSignOut={signOut} business={business} onBusiness={openBusiness} onSaveDocuments={saveDocuments}/>;
+  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected} onSignOut={signOut} business={business} onBusiness={openBusiness} onSaveDocuments={saveDocuments} onTask={taskCreated} onShowTask={showService}/>;
  }};
 
  return <View key={lang} style={s.screen}>

@@ -81,9 +81,11 @@ class FuelInput(Contract):
 class MaintenanceInput(Contract):
     description: str = Field(min_length=1, max_length=2000)
     observed_at: float
-    odometer_km: float | None = Field(default=None, ge=0)
-    actual_cost: float | None = Field(default=None, ge=0)
+    odometer_km: float | None = Field(default=None, ge=0, le=10_000_000)
+    actual_cost: float | None = Field(default=None, ge=0, le=10_000_000)
     currency: str = Field(default="EUR", pattern=r"^[A-Z]{3}$")
+    notes: str | None = Field(default=None, max_length=4000)
+    next_due_km: float | None = Field(default=None, ge=0, le=10_000_000)
     outcome: dict = Field(default_factory=dict)
     reset_baseline: bool = False
 

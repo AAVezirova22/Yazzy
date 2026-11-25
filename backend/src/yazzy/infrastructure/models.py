@@ -275,6 +275,9 @@ class Maintenance(Scoped, Base):
     currency: Mapped[str]
     outcome: Mapped[dict] = mapped_column(JSON, default=dict)
     reset_baseline: Mapped[bool] = mapped_column(default=False)
+    # Free-text details, and the odometer reading at which this service should be done again.
+    notes: Mapped[str | None]
+    next_due_km: Mapped[float | None]
 
 
 class WorkOrder(Scoped, Base):
@@ -288,6 +291,7 @@ class WorkOrder(Scoped, Base):
     finding_ids: Mapped[list] = mapped_column(JSON, default=list)
     version: Mapped[int] = mapped_column(default=1)
     origin: Mapped[str]
+    created_at: Mapped[float] = mapped_column(default=time.time)
 
 
 class Quote(Scoped, Base):
