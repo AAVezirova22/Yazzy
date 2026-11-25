@@ -749,6 +749,14 @@ export const RU:Record<string,string>={
  "Vignette":"Виньетка",
  "toll fines":"штрафы АПИ",
  "vignette":"виньетка",
+ "Add a vehicle to keep its documents here.":"Добавьте автомобиль, чтобы хранить здесь его документы.",
+ "Clear filters":"Сбросить фильтры",
+ "Data":"Данные",
+ "No trips match":"Нет подходящих поездок",
+ "Try another period or kind of trip.":"Попробуйте другой период или тип поездки.",
+ "All time":"За всё время",
+ "Hard events":"Резкие события",
+ "Stops":"Стоянки",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */

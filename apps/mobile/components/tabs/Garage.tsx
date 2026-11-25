@@ -10,8 +10,6 @@ import {haptic,PressableScale} from '../motion';
 import {RouteArt,WeekBars} from '../art';
 import {LightSurface} from '../LightSurface';
 import {CarImage} from '../CarImage';
-import {CarDocuments} from '../CarDocuments';
-import type {Documents} from '../carChecks';
 import type {VinModel} from '../vinCar';
 import {distance,minutes} from '../TripDetail';
 import {ago,carLine,clock,fmt,greeting,lastWeek,latest,routeOf,smoothDriving,weekday} from '../format';
@@ -21,7 +19,7 @@ import {locale,t,tp} from '../i18n';
 
 type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:string;recorder:{label:string;live:boolean;recording:boolean};padBottom:number;
  onRefresh:()=>void;onSwitch:()=>void;onGo:(view:string)=>void;onOpenTrip:(t:any)=>void;
- carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean;hasVin:boolean;maker?:string|null;vin?:string|null;odometerKm?:number|null;fuelPct?:number|null;readingsAt?:number|null};onOpenCar:()=>void;vinModel?:VinModel|null;onSetYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void;business:number;onBusiness:()=>void;onLook:()=>void;onSaveDocuments:(documents:Documents)=>Promise<void>};
+ carInfo:{label:string;kind:Kind|null;mil?:boolean;codes:number;read:boolean;hasVin:boolean;maker?:string|null;vin?:string|null;odometerKm?:number|null;fuelPct?:number|null;readingsAt?:number|null};onOpenCar:()=>void;vinModel?:VinModel|null;onSetYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void;business:number;onBusiness:()=>void;onLook:()=>void};
 
 /**
  * Home. A realistic, illustrative car sits on a light studio wash with square quick actions; as you scroll, the
@@ -29,7 +27,7 @@ type Props={vehicle:any;car:Car|null;refreshing:boolean;busy:boolean;offline:str
  * dropped with Reduce Motion). Below: live status
  * tiles, the last trip, smooth driving and reminders, each one card you can read at a glance.
  */
-export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar,vinModel,onSetYear,onEnterVin,onPickModel,business,onBusiness,onLook,onSaveDocuments}:Props){
+export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offline,recorder,padBottom,onRefresh,onSwitch,onGo,onOpenTrip,carInfo,onOpenCar,vinModel,onSetYear,onEnterVin,onPickModel,business,onBusiness,onLook}:Props){
  const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),carWidth=Math.min(width-24,430),reduced=useReducedMotion();
  const lastTrip=latest(car?.trips,'startAt'),lastService=latest(car?.service,'observedAt'),findingCount=car?.findings?.length??0;
  const week=useMemo(()=>lastWeek(car?.trips),[car?.trips]),weekKm=week.reduce((a,b)=>a+b,0),fuel=car?.fuel;
@@ -88,7 +86,6 @@ export const GarageTab=memo(function GarageTab({vehicle,car,refreshing,busy,offl
   <View style={s.sheet}>
    {offline?<Notice icon="cloud-offline-outline" tone="warn">{offline} Showing what was saved on this phone.</Notice>:null}
    <Updater/>
-   {vehicle?<CarDocuments vehicle={vehicle} onSave={onSaveDocuments}/>:null}
    {business?<ListRow icon="briefcase" title={t('Business dashboard')} caption={tp(business,'{n} business car','{n} business cars')+' · '+t('live locations, kilometres')} onPress={onBusiness}/>:null}
    {!vehicle?<View style={ui.card}>
     <Text style={ui.title}>{t('No vehicle yet')}</Text>

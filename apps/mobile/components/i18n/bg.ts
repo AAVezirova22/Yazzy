@@ -749,6 +749,14 @@ export const BG:Record<string,string>={
  "Vignette":"Винетка",
  "toll fines":"глоби към АПИ",
  "vignette":"винетка",
+ "Add a vehicle to keep its documents here.":"Добавете автомобил, за да пазите документите му тук.",
+ "Clear filters":"Изчисти филтрите",
+ "Data":"Данни",
+ "No trips match":"Няма такива пътувания",
+ "Try another period or kind of trip.":"Опитайте друг период или вид пътуване.",
+ "All time":"Всички",
+ "Hard events":"Резки събития",
+ "Stops":"Престои",
 };
 
 /** Counted texts: [one, other]. */

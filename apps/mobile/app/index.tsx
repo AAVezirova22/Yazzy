@@ -302,11 +302,11 @@ export default function App(){
  const business=vehicles.filter(v=>v.category==='BUSINESS').length;
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
-  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook} onSaveDocuments={saveDocuments}/>;
+  case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook}/>;
   case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
-  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected} onSignOut={signOut} business={business} onBusiness={openBusiness}/>;
+  case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected} onSignOut={signOut} business={business} onBusiness={openBusiness} onSaveDocuments={saveDocuments}/>;
  }};
 
  return <View key={lang} style={s.screen}>

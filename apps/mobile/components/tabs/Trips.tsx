@@ -1,8 +1,9 @@
-import {memo,useCallback,useMemo} from 'react';
-import {ActivityIndicator,FlatList,Platform,Pressable,RefreshControl,StyleSheet,Text,View} from 'react-native';
+import {memo,useCallback,useMemo,useState} from 'react';
+import {ActivityIndicator,FlatList,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {c,F,radius,type,ui} from '../theme';
 import {Chip,Empty,Icon,ScreenHeader} from '../kit';
+import {haptic} from '../motion';
 import {PressableScale} from '../motion';
 import {RouteArt} from '../art';
 import {distance,minutes} from '../TripDetail';
@@ -13,7 +14,8 @@ type Props={vehicle:any;trips:any[]|null;refreshing:boolean;busy:boolean;offline
 
 /** Every recorded drive, newest first, under a one-line summary of the week. Virtualised: only nearby rows are drawn. */
 export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offline,padBottom,onRefresh,onOpenTrip,onRebuild}:Props){
- const insets=useSafeAreaInsets();
+ const insets=useSafeAreaInsets(),[period,setPeriod]=useState<Period>('all'),[kind,setKind]=useState<Kind>('all');
+ const shown=useMemo(()=>filterTrips(trips,period,kind),[trips,period,kind]),filtered=period!=='all'||kind!=='all';
  const row=useCallback(({item}:{item:any})=><TripRow trip={item} onOpen={onOpenTrip}/>,[onOpenTrip]);
  const week=useMemo(()=>{
   const km=lastWeek(trips).reduce((a,b)=>a+b,0),since=Date.now()/1000-7*86400;
@@ -21,7 +23,7 @@ export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offl
   const seconds=drives.reduce((a,t)=>a+(t.metrics?.durationSeconds||0),0);
   return {km,count:drives.length,seconds,smooth:smoothDriving(trips,7)};
  },[trips]);
- return <FlatList data={trips||[]} keyExtractor={t=>t.id} renderItem={row}
+ return <FlatList data={shown} keyExtractor={t=>t.id} renderItem={row}
   initialNumToRender={7} maxToRenderPerBatch={6} windowSize={7} removeClippedSubviews={Platform.OS==='android'}
   contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}}
   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.blue} colors={[c.blue]} progressViewOffset={insets.top}/>}
@@ -36,10 +38,44 @@ export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offl
     <View style={s.divider}/>
     <Summary label={t('Smooth')} value={week.smooth.drives?`${week.smooth.smooth}/${week.smooth.drives}`:'—'}/>
    </View>:null}
+   {trips?.length?<View style={s.filters}>
+    <Choices items={PERIODS} value={period} onChange={setPeriod}/>
+    <Choices items={KINDS} value={kind} onChange={setKind}/>
+    {filtered?<View style={[ui.row,{justifyContent:'space-between'}]}>
+     <Text style={ui.caption}>{tp(shown.length,'{n} trip','{n} trips')}</Text>
+     <Pressable accessibilityRole="button" hitSlop={8} onPress={()=>{setPeriod('all');setKind('all');}}><Text style={s.reset}>{t('Clear filters')}</Text></Pressable>
+    </View>:null}
+   </View>:null}
   </>}
   ListFooterComponent={trips?<Pressable accessibilityRole="button" onPress={onRebuild} style={({pressed})=>[s.rebuild,pressed&&{opacity:0.6}]}><Icon name="construct-outline" size={15} color={c.blue}/><Text style={s.rebuildText}>{t('Missing a drive? Rebuild trips from recordings')}</Text></Pressable>:null}
-  ListEmptyComponent={trips?<Empty icon="map-outline" title={t('Nothing here yet')} text={t('Recorded drives appear here with their route.')}/>:<Loading text={busy?t('Loading…'):offline}/>}/>;
+  ListEmptyComponent={trips?.length&&filtered?<Empty icon="funnel-outline" title={t('No trips match')} text={t('Try another period or kind of trip.')}/>:trips?<Empty icon="map-outline" title={t('Nothing here yet')} text={t('Recorded drives appear here with their route.')}/>:<Loading text={busy?t('Loading…'):offline}/>}/>;
 });
+
+type Period='all'|'today'|'7'|'30';
+type Kind='all'|'smooth'|'events'|'stops';
+const PERIODS:[Period,string][]=[['all','All time'],['today','Today'],['7','7 days'],['30','30 days']];
+const KINDS:[Kind,string][]=[['all','All trips'],['smooth','Smooth'],['events','Hard events'],['stops','Stops']];
+
+/** The trips in a period and of a kind; stops (engine on, not driving) only appear when asked for. */
+function filterTrips(trips:any[]|null,period:Period,kind:Kind){
+ const now=new Date(),from=period==='today'?new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime()/1000
+  :period==='7'?Date.now()/1000-7*86400:period==='30'?Date.now()/1000-30*86400:0;
+ return (trips||[]).filter(d=>{
+  if((d.startAt??0)<from)return false;
+  const stop=d.status==='STATIONARY',events=(d.metrics?.drivingEvents||[]).length;
+  return kind==='all'?true:kind==='stops'?stop:!stop&&(kind==='events'?events>0:events===0);
+ });
+}
+
+/** A row of filter chips, scrolling sideways on narrow phones. */
+function Choices<T extends string>({items,value,onChange}:{items:[T,string][];value:T;onChange:(v:T)=>void}){
+ return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
+  {items.map(([key,label])=>{const on=key===value;return <Pressable key={key} accessibilityRole="button" accessibilityState={{selected:on}}
+   onPress={()=>{if(!on){haptic.step();onChange(key);}}} style={[s.choice,on&&s.choiceOn]}>
+   <Text style={[s.choiceText,on&&{color:'#fff'}]}>{t(label)}</Text>
+  </Pressable>;})}
+ </ScrollView>;
+}
 
 function Summary({label,value,unit}:{label:string;value:string;unit?:string}){
  return <View style={{flex:1}}>
@@ -82,6 +118,11 @@ const s=StyleSheet.create({
  thumbEmpty:{alignItems:'center',justifyContent:'center'},
  distance:{fontFamily:F[600],fontSize:20,color:c.ink,letterSpacing:-0.5,marginTop:4,fontVariant:['tabular-nums']},
  meta:{fontFamily:F[600],fontSize:13,color:c.muted,fontVariant:['tabular-nums']},
+ filters:{gap:10,marginBottom:12},
+ choice:{borderWidth:1,borderColor:c.line,backgroundColor:c.surface,borderRadius:radius.pill,paddingVertical:7,paddingHorizontal:14,minHeight:36,justifyContent:'center'},
+ choiceOn:{backgroundColor:c.blue,borderColor:c.blue},
+ choiceText:{fontFamily:F[600],fontSize:13,color:c.ink2},
+ reset:{fontFamily:F[700],fontSize:13,color:c.blue},
  rebuild:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingVertical:14,paddingHorizontal:8},
  rebuildText:{fontFamily:F[700],fontSize:13.5,color:c.blue,flexShrink:1,textAlign:'center'},
 });
