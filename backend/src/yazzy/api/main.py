@@ -1006,7 +1006,7 @@ def quote_review(quote_id: str, ctx=Depends(authenticate), db=Depends(get_db, sc
 def assistant_message(
     data: AdvisorInput, ctx=Depends(authenticate), db=Depends(get_db, scope="function")
 ):
-    result = answer(db, ctx, data.vehicle_id, data.message)
+    result = answer(db, ctx, data.vehicle_id, data.message, data.language)
     audit(
         db,
         ctx,

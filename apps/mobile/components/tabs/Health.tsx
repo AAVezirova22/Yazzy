@@ -8,6 +8,7 @@ import {ago,day,pretty} from '../format';
 import {Loading} from './Trips';
 import {ServiceDetail,ServiceForm,ServiceRow,type ServiceFields} from '../ServiceRecord';
 import {currentKm,dueOf,dueText,openReminders} from '../service';
+import {localizeService} from '../serviceTerms';
 import type {VinModel} from '../vinCar';
 import {t} from '../i18n';
 
@@ -60,7 +61,7 @@ export const HealthTab=memo(function HealthTab({vehicle,findings,service,workOrd
     <IconTile icon={next.due.tone==='red'?'alert-circle':'notifications'} tone={next.due.tone==='blue'?'blue':next.due.tone}/>
     <View style={{flex:1}}>
      <Text style={type.overline}>{t('Due next')}</Text>
-     <Text style={[ui.title,{marginTop:3}]} numberOfLines={2}>{next.r.description}</Text>
+     <Text style={[ui.title,{marginTop:3}]} numberOfLines={2}>{localizeService(next.r.description)}</Text>
      <View style={{marginTop:8}}><Chip tone={next.due.tone} label={dueText(next.due)}/></View>
     </View>
     <Icon name="chevron-forward" size={16} color={c.faint}/>
@@ -73,7 +74,7 @@ export const HealthTab=memo(function HealthTab({vehicle,findings,service,workOrd
       <IconTile icon="clipboard-outline" tone="blue"/>
       <View style={{flex:1}}>
        <Text style={type.overline}>{o.createdAt?`${day(o.createdAt)} · ${ago(o.createdAt)}`:t('Task')}</Text>
-       <Text style={[ui.title,{marginTop:3}]}>{o.title}</Text>
+       <Text style={[ui.title,{marginTop:3}]}>{localizeService(o.title)}</Text>
        <View style={[ui.row,{gap:6,marginTop:8,flexWrap:'wrap'}]}><Chip tone="blue" label={t(pretty(o.status))}/>{o.origin==='SIMULATED'?<Chip label={t('simulated')}/>:null}</View>
       </View>
      </View>

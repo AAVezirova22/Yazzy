@@ -152,6 +152,8 @@ class QuoteInput(Contract):
 class AdvisorInput(Contract):
     vehicle_id: Identifier
     message: str = Field(min_length=1, max_length=2000)
+    # The app's language: answers Bulgarian or Russian when the letters alone cannot tell which.
+    language: Literal["en", "bg", "ru"] | None = None
 
 
 class CorrectionInput(Contract):

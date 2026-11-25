@@ -10,7 +10,8 @@ import {LightSurface} from './LightSurface';
 import {CarImage} from './CarImage';
 import type {VinModel} from './vinCar';
 import {ago,day} from './format';
-import {dueOf,dueText,intervalOf,kmText,money,typedNumber,type Due} from './service';
+import {dueText,intervalOf,kmText,money,typedNumber,type Due} from './service';
+import {localizeService} from './serviceTerms';
 import {locale,t} from './i18n';
 
 export type Km={km:number;estimated:boolean}|null;
@@ -23,7 +24,7 @@ export const ServiceRow=memo(function ServiceRow({record:d,due,onOpen}:{record:a
   <IconTile icon="construct" tone="green" size={48}/>
   <View style={{flex:1}}>
    <Text style={type.overline} numberOfLines={1}>{d.observedAt?`${day(d.observedAt)} · ${ago(d.observedAt)}`:t('Undated')}</Text>
-   <Text style={s.rowTitle} numberOfLines={2}>{d.description}</Text>
+   <Text style={s.rowTitle} numberOfLines={2}>{localizeService(d.description)}</Text>
    {facts?<Text style={s.meta} numberOfLines={1}>{facts}</Text>:null}
    {due?<View style={{marginTop:8}}><Chip tone={due.tone} icon={due.tone==='red'?'alert-circle':'time-outline'} label={dueText(due)}/></View>:null}
   </View>
@@ -51,7 +52,7 @@ export function ServiceDetail({record:r,vehicleName,vinModel,km,due,onClose,onEd
    <View style={s.hero}>
     <LightSurface/>
     <Text style={s.heroOver} numberOfLines={1}>{longDate(r.observedAt)}</Text>
-    <Text style={s.heroTitle} numberOfLines={4}>{r.description}</Text>
+    <Text style={s.heroTitle} numberOfLines={4}>{localizeService(r.description)}</Text>
     <View style={s.heroStats}>
      <HeroStat label={t('Kilometres')} value={r.odometerKm!=null?kmText(r.odometerKm):'—'}/>
      <View style={s.heroDivider}/>

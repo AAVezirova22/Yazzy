@@ -27,7 +27,7 @@ export const MoreTab=memo(function MoreTab({vehicle,vehicleCount,selected,api,pa
    <Text style={[ui.body,{marginTop:4,marginBottom:12}]}>{t('Answers come from your car\'s recorded evidence, never invented readings.')}</Text>
    <View style={[ui.row,{gap:10}]}>
     <TextInput style={[ui.input,{flex:1,marginBottom:0}]} value={message} onChangeText={setMessage} placeholder={t('Why did fuel use go up?')} placeholderTextColor={c.faint}/>
-    <PressableScale accessibilityRole="button" accessibilityLabel={t('Ask')} disabled={busy||!message.trim()} scale={0.92} onPress={()=>run(async()=>setAnswer(await server.call('/assistant/messages',{vehicleId:selected,message})))} style={[s.send,(busy||!message.trim())&&{opacity:0.45}]}><Icon name="arrow-up" size={20} color="#fff"/></PressableScale>
+    <PressableScale accessibilityRole="button" accessibilityLabel={t('Ask')} disabled={busy||!message.trim()} scale={0.92} onPress={()=>run(async()=>setAnswer(await server.call('/assistant/messages',{vehicleId:selected,message,language:lang})))} style={[s.send,(busy||!message.trim())&&{opacity:0.45}]}><Icon name="arrow-up" size={20} color="#fff"/></PressableScale>
    </View>
    {answer&&<View style={s.answer}><Text style={[ui.body,{color:c.ink2}]}>{answer.text}</Text>{answer.type==='CONFIRMATION'&&<Button title={t('Confirm task')} icon="checkmark" onPress={()=>run(async()=>{
     await server.call('/pending-actions/'+answer.pendingActionId+'/confirm',{});

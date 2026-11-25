@@ -425,6 +425,122 @@ def test_advisor_does_not_mistake_other_questions_for_service_questions(client):
         assert ask(client, v, message)["type"] != "SERVICE_STATUS", message
 
 
+def ask_in(client, vehicle, message, language=None):
+    body = {"vehicleId": vehicle["id"], "message": message}
+    if language:
+        body["language"] = language
+    return client.post("/api/v1/assistant/messages", json=body).json()
+
+
+def test_advisor_answers_service_questions_in_bulgarian(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    add_service(client, v, "Oil change", 1_700_000_000, 150_000, 160_000)
+    set_odometer(v, 156_800)
+    for question in [
+        "Кои сервизи предстоят?",
+        "Кога е следващата смяна на масло?",
+        "Какво предстои за поддръжка?",
+        "Кога е следващият сервиз",
+    ]:
+        r = ask_in(client, v, question, "bg")
+        assert r["type"] == "SERVICE_STATUS", question
+        assert r["language"] == "bg", question
+        assert "Предстои:" in r["text"], question
+        # The saved English name is shown in Bulgarian, with the distance left in km.
+        assert "Смяна на масло: след 3 200 км (при 160 000 км)" in r["text"], question
+        assert "Текущи километри: 156 800 км." in r["text"], question
+    overdue = set_odometer(v, 160_400) or ask_in(client, v, "Има ли просрочен сервиз?", "bg")
+    assert "просрочено с 400 км (срокът беше при 160 000 км)" in overdue["text"]
+
+
+def test_advisor_answers_service_questions_in_russian(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    assert "Состояние" in ask_in(client, v, "Какое обслуживание предстоит?", "ru")["text"]
+    add_service(client, v, "Oil change", 1_700_000_000, 150_000, 160_000)
+    set_odometer(v, 156_800)
+    for question in ["Какое обслуживание предстоит?", "Когда следующая замена масла?"]:
+        r = ask_in(client, v, question, "ru")
+        assert r["type"] == "SERVICE_STATUS" and r["language"] == "ru", question
+        assert "Предстоит:" in r["text"], question
+        assert "Замена масла: через 3 200 км (при 160 000 км)" in r["text"], question
+    # Letters only Russian uses settle the language even when the app is set to Bulgarian.
+    assert ask_in(client, v, "Что предстоит по обслуживанию?", "bg")["language"] == "ru"
+
+
+def test_advisor_language_follows_the_question(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    add_service(client, v, "Oil change", 1_700_000_000, 150_000, 160_000)
+    set_odometer(v, 156_800)
+    english = ask_in(client, v, "What services are due?", "bg")
+    assert english["language"] == "en" and "Due next:" in english["text"]
+    assert "Oil change: in 3 200 km (at 160 000 km)" in english["text"]
+    bulgarian = ask_in(client, v, "Кои сервизи предстоят?")
+    assert bulgarian["language"] == "bg"
+
+
+def test_advisor_replies_in_the_users_language_everywhere(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message, language, expected in [
+        ("Изчисти всички кодове за грешки", "bg", "не са налични"),
+        ("Очисти все коды неисправностей", "ru", "недоступны"),
+        ("Как е колата?", "bg", "Все още не са събрани данни"),
+        ("Как дела у машины?", "ru", "Данные об автомобиле ещё не собраны"),
+        ("Добави смяна на масло в историята на сервиза", "bg", "Състояние"),
+        ("Добавь замену масла в историю обслуживания", "ru", "Состояние"),
+    ]:
+        r = ask_in(client, v, message, language)
+        assert expected in r["text"], (message, r["text"])
+    assert "unavailable" in ask_in(client, v, "Clear all fault codes", "bg")["text"]
+    assert "unclear" not in ask_in(client, v, "Is it unclear?")["text"]
+
+
+def test_advisor_creates_a_task_from_bulgarian_and_russian_requests(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message, language, title in [
+        ("Направи работна поръчка за спирачките", "bg", "Работна поръчка: спирачките"),
+        ("Искам да запазя час за сервиз", "bg", "Час за сервиз"),
+        ("Създай заказ-наряд на замену колодок", "ru", "Заказ-наряд: замену колодок"),
+        ("Запиши ме на обслуживание", "ru", "Обслуживание"),
+    ]:
+        r = ask_in(client, v, message, language)
+        assert r["type"] == "CONFIRMATION", message
+        assert r["proposal"]["title"].lower() == title.lower(), (message, r["proposal"]["title"])
+    for message in [
+        "Кога е следващият ми сервиз?",
+        "Трябва ли ми сервиз?",
+        "Не ми трябва сервиз",
+        "Когда мой следующий сервис?",
+    ]:
+        assert ask_in(client, v, message, "bg")["type"] != "CONFIRMATION", message
+    default = ask_in(client, v, "Създай работна поръчка", "bg")
+    assert default["proposal"]["title"] == "Преглед на записаните данни с техник"
+
+
+def test_advisor_finds_a_job_by_name_across_languages(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    add_service(client, v, "Brake pads", 1_690_000_000, 140_000)
+    add_service(client, v, "Oil change", 1_700_000_000, 150_000, 160_000)
+    r = ask_in(client, v, "Кога последно сменях спирачните накладки?", "bg")
+    assert r["type"] == "SERVICE_STATUS"
+    assert "Спирачни накладки, " in r["text"] and "Смяна на масло" not in r["text"]
+
+
+def test_service_names_are_translated_only_when_fully_known():
+    from yazzy.modules.advisor.language import localize_service
+
+    assert localize_service("Oil change", "bg") == "Смяна на масло"
+    assert localize_service("oil change", "ru") == "замена масла"
+    assert localize_service("Engine oil change 5W-30", "bg") == "Смяна на моторно масло 5W-30"
+    assert localize_service("Oil change, brake pads", "ru") == "Замена масла, тормозные колодки"
+    assert localize_service("Смяна на масло", "en") == "Oil change"
+    assert localize_service("Смяна на масло", "ru") == "Замена масла"
+    assert localize_service("Oil change at Bosch workshop", "bg") == "Oil change at Bosch workshop"
+    assert localize_service("Brake pads and tyres", "bg") == "Спирачни накладки и гуми"
+    assert localize_service("Нещо друго", "en") == "Нещо друго"
+    assert localize_service("Inspection: brake noise", "bg") == "Проверка: brake noise"
+    assert localize_service("Work order: спирачките", "ru") == "Заказ-наряд: спирачките"
+
+
 def test_advisor_clear_requests_still_prepare_a_pending_action(client):
     v = client.get("/api/v1/vehicles").json()[0]
     for message in [
