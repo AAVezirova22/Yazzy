@@ -1,12 +1,13 @@
 import re
 import time
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 from sqlalchemy import select
 
 from yazzy.config import settings
-from yazzy.infrastructure.models import Finding, PendingAction, Quote, Trip
+from yazzy.infrastructure.models import Finding, Maintenance, PendingAction, Quote, Trip
 from yazzy.modules.identity.policy import audit, require_role, scoped, vehicle
 from yazzy.modules.trips.domain import aggregate
 
@@ -151,6 +152,148 @@ def wants_work_order(message: str) -> bool:
     return task_request(message) is not None
 
 
+# Questions about the service history: what is due, how far away it is, when something was last done. They are
+# answered from the records the owner keeps in Health > Service, never from guesses about the car.
+SERVICE_WORDS = re.compile(
+    r"\b(?:services?|serviced|servicing|maintenance|oil\s+change|overdue|reminders?|upcoming|due)\b"
+)
+RECALL_WORDS = re.compile(
+    r"\b(?:last|next|due|since|ago|history|did\s+i|have\s+i|how\s+(?:far|long|many|soon)|left|remaining)\b"
+)
+GENERIC_WORDS = {
+    "and", "the", "for", "with", "new", "full", "engine", "light", "change", "check", "replacement",
+    "what", "when", "which", "have", "this", "that", "from", "last", "next", "does", "did", "was",
+    "were", "much", "many", "long", "soon", "service", "services", "serviced", "done", "need", "needs",
+    "your", "mine", "car", "vehicle",
+}  # fmt: skip
+
+
+def _words(text: str) -> set[str]:
+    return {
+        w for w in re.findall(r"[^\W\d_]+", text.lower()) if len(w) >= 3 and w not in GENERIC_WORDS
+    }
+
+
+def _same_job(a: str, b: str) -> bool:
+    x, y = _words(a), _words(b)
+    if not x or not y:
+        return False
+    shared = len(x & y)
+    return shared >= min(2, len(x), len(y)) and shared / min(len(x), len(y)) >= 0.5
+
+
+def asks_about_service(message: str, records: list) -> bool:
+    text = _normal(message)
+    if SERVICE_WORDS.search(text):
+        return True
+    named = (
+        _words(text) & set().union(*(_words(r.description) for r in records)) if records else set()
+    )
+    return bool(named) and RECALL_WORDS.search(text) is not None
+
+
+def _km(value: float) -> str:
+    return f"{round(value):,}".replace(",", " ") + " km"
+
+
+def _date(at: float) -> str:
+    return datetime.fromtimestamp(at, UTC).strftime("%d %b %Y")
+
+
+def service_status(v, records: list, trips: list, message: str) -> dict:
+    """What the service history says is due, and what was last done."""
+    if not records:
+        return {
+            "text": "No services are recorded for this car yet. Open Health \u203a Service and tap Add service: enter what was done, the date, the price and the kilometres, and choose a reminder (for example 10 000 km). Then I can tell you what is due.",
+            "items": [],
+            "currentKm": None,
+        }
+    asked = _words(message)
+    focus = [r for r in records if asked & _words(r.description)] or records
+    # Where the odometer stands: the car's own reading, or the last recorded kilometres plus the drives since.
+    reading = v.odometer_km
+    latest = next((r for r in records if r.odometer_km is not None), None)
+    estimated = False
+    if latest is not None:
+        driven = sum(
+            (t.metrics or {}).get("distanceKm") or 0
+            for t in trips
+            if t.start_at > latest.observed_at and t.status != "STATIONARY"
+        )
+        guess = latest.odometer_km + driven
+        if reading is None or guess > reading:
+            reading, estimated = guess, True
+    open_reminders = [
+        r
+        for r in focus
+        if r.next_due_km is not None
+        and not any(
+            o.id != r.id
+            and o.observed_at > r.observed_at
+            and _same_job(o.description, r.description)
+            for o in records
+        )
+    ]
+    items = []
+    for r in open_reminders:
+        left = None if reading is None else r.next_due_km - reading
+        status = (
+            "UNKNOWN"
+            if left is None
+            else "OVERDUE"
+            if left <= 0
+            else "DUE_SOON"
+            if left <= 1000
+            else "OK"
+        )
+        items.append(
+            {
+                "recordId": r.id,
+                "description": r.description,
+                "dueKm": r.next_due_km,
+                "leftKm": left,
+                "status": status,
+            }
+        )
+    items.sort(key=lambda i: i["leftKm"] if i["leftKm"] is not None else i["dueKm"])
+    lines = []
+    if items:
+        lines.append("Due next:")
+        for i in items:
+            if i["leftKm"] is None:
+                when = f"due at {_km(i['dueKm'])}"
+            elif i["leftKm"] <= 0:
+                when = f"overdue by {_km(-i['leftKm'])} (was due at {_km(i['dueKm'])})"
+            else:
+                when = f"in {_km(i['leftKm'])} (at {_km(i['dueKm'])})"
+            lines.append(f"\u2022 {i['description']}: {when}")
+        if reading is not None:
+            lines.append(
+                f"Current kilometres: {'about ' if estimated else ''}{_km(reading)}"
+                + (", estimated from your last entry and the drives since." if estimated else ".")
+            )
+        else:
+            lines.append(
+                "The car's current kilometres are unknown, so the distance left cannot be worked out."
+            )
+    else:
+        lines.append(
+            "No service reminder is open for this."
+            if focus is not records
+            else "No service reminders are open. Choose Remind me after when you add a service to get one."
+        )
+    lines.append("Last recorded:")
+    for r in focus[:3]:
+        at = f" at {_km(r.odometer_km)}" if r.odometer_km is not None else ""
+        lines.append(f"\u2022 {r.description}, {_date(r.observed_at)}{at}")
+    return {
+        "text": "\n".join(lines),
+        "items": items,
+        "currentKm": reading,
+        "kmEstimated": estimated,
+    }
+
+
 def answer(db, ctx, vehicle_id, message):
     v = vehicle(db, ctx, vehicle_id)
     findings = list(
@@ -211,6 +354,16 @@ def answer(db, ctx, vehicle_id, message):
             "text": f"Review and confirm this task: {task['title']}. No appointment has been booked.",
             "proposal": pending.payload,
         }
+    records = list(
+        db.scalars(
+            select(Maintenance)
+            .where(Maintenance.tenant_id == ctx.tenant_id, Maintenance.vehicle_id == v.id)
+            .order_by(Maintenance.observed_at.desc())
+            .limit(200)
+        )
+    )
+    if asks_about_service(message, records):
+        return {**base, "type": "SERVICE_STATUS", **service_status(v, records, trips, message)}
     if "fuel" in lower and trips:
         return {
             **base,

@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from yazzy.api.main import app
 from yazzy.infrastructure.db import transaction
-from yazzy.infrastructure.models import Job, Membership, PendingAction
+from yazzy.infrastructure.models import Job, Membership, PendingAction, Vehicle
 from yazzy.workers.runner import drain, run_job
 
 
@@ -353,6 +353,76 @@ def test_service_history_notes_due_km_edit_and_delete(client):
     assert client.delete(f"/api/v1/maintenance-records/{record['id']}").json() == {"deleted": True}
     assert client.get(base).json() == []
     assert client.delete(f"/api/v1/maintenance-records/{record['id']}").status_code == 404
+
+
+def add_service(client, vehicle, description, at, odometer, due=None):
+    r = client.post(
+        f"/api/v1/vehicles/{vehicle['id']}/maintenance-records",
+        json={
+            "description": description,
+            "observedAt": at,
+            "odometerKm": odometer,
+            "nextDueKm": due,
+        },
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def set_odometer(vehicle, km):
+    with transaction() as db:
+        db.get(Vehicle, vehicle["id"]).odometer_km = km
+
+
+def test_advisor_reports_what_service_is_due_from_the_history(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    empty = ask(client, v, "What services are due?")
+    assert empty["type"] == "SERVICE_STATUS" and "Health" in empty["text"]
+    assert empty["items"] == []
+
+    add_service(client, v, "Engine oil change 5W-30", 1_700_000_000, 150_000, 160_000)
+    set_odometer(v, 156_800)
+    r = ask(client, v, "What services are due?")
+    assert r["type"] == "SERVICE_STATUS"
+    assert "Engine oil change 5W-30: in 3 200 km (at 160 000 km)" in r["text"]
+    assert r["items"][0]["status"] == "OK" and r["items"][0]["leftKm"] == 3200
+    assert "Current kilometres: 156 800 km." in r["text"]
+    assert "No supported persistent change" not in r["text"]
+
+    set_odometer(v, 159_500)
+    assert ask(client, v, "what is due next")["items"][0]["status"] == "DUE_SOON"
+    set_odometer(v, 160_400)
+    r = ask(client, v, "Is my oil change overdue?")
+    assert r["items"][0]["status"] == "OVERDUE"
+    assert "overdue by 400 km (was due at 160 000 km)" in r["text"]
+
+
+def test_advisor_estimates_kilometres_and_answers_about_one_job(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    add_service(client, v, "Brake pads", 1_690_000_000, 140_000)
+    add_service(client, v, "Oil change", 1_700_000_000, 150_000, 160_000)
+    r = ask(client, v, "When did I last change the oil?")
+    assert r["type"] == "SERVICE_STATUS"
+    assert "Oil change, " in r["text"] and "Brake pads" not in r["text"]
+    assert "about 150 000 km" in r["text"] and r["kmEstimated"] is True
+    brakes = ask(client, v, "When were my brake pads last done?")
+    assert "Brake pads, " in brakes["text"] and "No service reminder is open" in brakes["text"]
+
+
+def test_advisor_drops_a_reminder_once_the_same_job_is_logged_again(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    add_service(client, v, "Oil change", 1_690_000_000, 130_000, 140_000)
+    add_service(client, v, "Engine oil change", 1_700_000_000, 150_000, 160_000)
+    set_odometer(v, 152_000)
+    items = ask(client, v, "Which services are due?")["items"]
+    assert [i["dueKm"] for i in items] == [160_000]
+
+
+def test_advisor_does_not_mistake_other_questions_for_service_questions(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    add_service(client, v, "Engine oil change", 1_700_000_000, 150_000, 160_000)
+    for message in ["Is my oil pressure low?", "Why is the engine hot?", "Will my battery fail?"]:
+        assert ask(client, v, message)["type"] != "SERVICE_STATUS", message
 
 
 def test_advisor_clear_requests_still_prepare_a_pending_action(client):
