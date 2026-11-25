@@ -217,10 +217,59 @@ def test_pending_action_rechecks_version_and_is_idempotent(client):
     assert len(client.get("/api/v1/organisations/personal-sandbox/work-orders").json()) == 1
 
 
+def ask(client, vehicle, message):
+    return client.post(
+        "/api/v1/assistant/messages", json={"vehicleId": vehicle["id"], "message": message}
+    ).json()
+
+
+REFUSAL_TEXT = (
+    "Vehicle write commands, arbitrary code and access to other organisations are unavailable."
+)
+
+
+def test_advisor_refusal_matches_whole_words(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message in ["Is the result unclear?", "Is nuclear power relevant?", "Why is it unclear?"]:
+        assert ask(client, v, message)["text"] != REFUSAL_TEXT, message
+    for message in ["Clear all fault codes", "please CLEAR the codes!", "Execute this script"]:
+        r = ask(client, v, message)
+        assert r["text"] == REFUSAL_TEXT, message
+
+
+def test_advisor_service_date_questions_create_no_pending_action(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message in [
+        "When is my next service scheduled?",
+        "Is a work order needed for this?",
+        "What is an inspection task?",
+        "Is my schedule free for the garage?",
+    ]:
+        r = ask(client, v, message)
+        assert r["type"] != "CONFIRMATION", message
+        assert "pendingActionId" not in r, message
+    with transaction() as db:
+        assert db.scalars(select(PendingAction)).all() == []
+
+
+def test_advisor_clear_requests_still_prepare_a_pending_action(client):
+    v = client.get("/api/v1/vehicles").json()[0]
+    for message in [
+        "Prepare a work order",
+        "Schedule an inspection",
+        "Can you please schedule a service?",
+        "I'd like you to create an inspection task.",
+    ]:
+        r = ask(client, v, message)
+        assert r["type"] == "CONFIRMATION", message
+        assert r["pendingActionId"], message
+
+
 def test_expired_action_and_revoked_permission(client):
     v = client.get("/api/v1/vehicles").json()[0]
     action = client.post(
-        "/api/v1/assistant/messages", json={"vehicleId": v["id"], "message": "work order"}
+        "/api/v1/assistant/messages",
+        json={"vehicleId": v["id"], "message": "Create a work order"},
     ).json()["pendingActionId"]
     with transaction() as db:
         db.get(PendingAction, action).expires_at = time.time() - 1

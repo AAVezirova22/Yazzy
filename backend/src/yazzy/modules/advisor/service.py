@@ -1,3 +1,4 @@
+import re
 import time
 from typing import Protocol
 
@@ -55,6 +56,31 @@ TOOLS = frozenset(
 )
 
 
+# Refusals match whole words, so "unclear" and "nuclear" are not mistaken for "clear".
+REFUSAL = re.compile(
+    r"\b(?:clear|clearing|actuate|reset ecu|execute|ignore instructions|export all|other organisation)\b"
+)
+
+# A work order is only prepared when the message is a request for one: it must open with an
+# action ("schedule an inspection", "can you please create a work order"). Questions that merely
+# mention the word, like "When is my next service scheduled?", are answered from the evidence.
+WORK_ORDER_REQUEST = re.compile(
+    r"^(?:please\s+)?"
+    r"(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|i(?:'d| would)\s+like\s+(?:you\s+to\s+)?|i\s+want\s+(?:you\s+to\s+)?)?"
+    r"(?:prepare|create|make|open|raise|schedule|book|arrange|set\s+up|start|add)\b"
+    r"(?:\s+\w+){0,3}?\s+(?:work\s+order|inspection\s+task|inspection|service|appointment)\b"
+)
+
+
+def wants_refusal(message: str) -> bool:
+    return REFUSAL.search(message.lower()) is not None
+
+
+def wants_work_order(message: str) -> bool:
+    text = re.sub(r"\s+", " ", message.lower().replace("\u2019", "'")).strip(" \t\n.!?,;:-")
+    return WORK_ORDER_REQUEST.search(text) is not None
+
+
 def answer(db, ctx, vehicle_id, message):
     v = vehicle(db, ctx, vehicle_id)
     findings = list(
@@ -78,24 +104,13 @@ def answer(db, ctx, vehicle_id, message):
         "probability": None,
     }
     prefix = "These readings are simulated. " if v.origin == "SIMULATED" else ""
-    if any(
-        s in lower
-        for s in [
-            "clear",
-            "actuate",
-            "reset ecu",
-            "execute",
-            "ignore instructions",
-            "export all",
-            "other organisation",
-        ]
-    ):
+    if wants_refusal(message):
         return {
             **base,
             "type": "EXPLANATION",
             "text": "Vehicle write commands, arbitrary code and access to other organisations are unavailable.",
         }
-    if any(s in lower for s in ["work order", "schedule", "inspection task"]):
+    if wants_work_order(message):
         require_role(ctx)
         pending = PendingAction(
             tenant_id=ctx.tenant_id,
