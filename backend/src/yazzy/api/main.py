@@ -791,19 +791,29 @@ def fuel_report(
 @app.get("/api/v1/vehicles/{vehicle_id}/diagnostics")
 def diagnostics(vehicle_id: str, ctx=Depends(authenticate), db=Depends(get_db, scope="function")):
     vehicle(db, ctx, vehicle_id)
-    return [
-        {"code": s.value, "observedAt": s.observed_at, "origin": s.origin}
-        for s in db.scalars(
-            select(Sample)
-            .where(
-                Sample.tenant_id == ctx.tenant_id,
-                Sample.vehicle_id == vehicle_id,
-                Sample.signal == "DTC",
-            )
-            .order_by(Sample.observed_at.desc())
-            .limit(100)
+    # The phone reports the codes it reads at the start and end of every connection, so one code arrives
+    # many times: list each code once, newest first, with when it was first and last read.
+    codes: dict[str, dict] = {}
+    for s in db.scalars(
+        select(Sample)
+        .where(
+            Sample.tenant_id == ctx.tenant_id,
+            Sample.vehicle_id == vehicle_id,
+            Sample.signal == "DTC",
         )
-    ]
+        .order_by(Sample.observed_at.desc())
+        .limit(2000)
+    ):
+        if s.value in codes:
+            codes[s.value]["firstObservedAt"] = s.observed_at
+        else:
+            codes[s.value] = {
+                "code": s.value,
+                "observedAt": s.observed_at,
+                "firstObservedAt": s.observed_at,
+                "origin": s.origin,
+            }
+    return list(codes.values())[:100]
 
 
 @app.get("/api/v1/vehicles/{vehicle_id}/findings")

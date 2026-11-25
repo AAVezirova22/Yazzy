@@ -73,6 +73,8 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   private var ignitionOn=false
   private var lastEcuAt=Date.distantPast
   private var lastSpeed=0.0
+  private var codesRead=[String:[String]]()
+  private var codesSent=Set<String>()
   private var pollIndex=0
   private var failures=0
   private var lastObdAt=Date.distantPast
@@ -135,7 +137,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   }
   private func resumeIfArmed(){if UserDefaults.standard.bool(forKey:armedKey) && !recording{try? start()}}
   func stop(){
-    if recording{try? store.enqueue(signal:"USER_STOP",value:1,unit:"bool")}
+    if recording{uploadCodes(everything:true);try? store.enqueue(signal:"USER_STOP",value:1,unit:"bool")}
     UserDefaults.standard.set(false,forKey:armedKey);startWhenReady=false
     recording=false;connected=false;ignitionOn=false;timer?.invalidate();location.stopUpdatingLocation()
     if let p=peripheral{central.cancelPeripheralConnection(p)};trip.stop(time:Date().timeIntervalSince1970);trip.save();sync();try? store.newSession()
@@ -184,10 +186,18 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   }
   func peripheral(_ peripheral:CBPeripheral,didUpdateNotificationStateFor characteristic:CBCharacteristic,error:Error?){
     if error != nil || !characteristic.isNotifying{self.error="Adapter does not accept the selected notification characteristic";return}
-    connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;identify=[];afterReport=false;headerSet=false;nextReportAt=Date.distantPast;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
+    connected=true;codesRead=[:];codesSent=[];lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;identify=[];afterReport=false;headerSet=false;nextReportAt=Date.distantPast;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
   }
   private func tick(){guard recording else{return};if ignitionOn&&Date().timeIntervalSince(lastEcuAt)>20{ignitionOff()};sync();pump()}
-  private func ignitionOff(){guard ignitionOn else{return};ignitionOn=false;if lastSpeed<=1{try? store.enqueue(signal:"IGNITION",value:0,unit:"bool")};sync()}
+  // Fault codes: what the car reports as stored (03), pending (07) and permanent (0A) is uploaded as DTC readings the first
+  // time it is read on a connection (a new code mid-drive goes up when it first shows) and again when the drive ends
+  // (ignition off or Stop), so the server's diagnostics list has them after a real drive. Only codes read on this connection are sent.
+  private func uploadCodes(everything:Bool){
+    for code in Set(codesRead.values.flatMap{$0}).sorted() where everything || !codesSent.contains(code){
+      if (try? store.enqueue(signal:"DTC",value:code,unit:"code")) != nil{codesSent.insert(code)}
+    }
+  }
+  private func ignitionOff(){guard ignitionOn else{return};ignitionOn=false;uploadCodes(everything:true);if lastSpeed<=1{try? store.enqueue(signal:"IGNITION",value:0,unit:"bool")};sync()}
   /// "Connect now": reissues the connection to the saved adapter and waits up to 10 s for it to answer. Calls `done` with
   /// whether the adapter is connected (it is also true when it already was). Throws when Bluetooth is off.
   func reconnect(_ done:@escaping (Bool)->Void) throws {
@@ -257,6 +267,10 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
       if command=="ATRV",let volts=profile["batteryVoltage"] as? Double{signals["ADAPTER_VOLTAGE"]=volts}
       profile["readAt"]=Date().timeIntervalSince1970;profile["supported"]=supported.sorted()
       if let data=try? JSONSerialization.data(withJSONObject:profile),let json=String(data:data,encoding:.utf8){profileJson=json;UserDefaults.standard.set(json,forKey:profileKey)}
+      if ["03","07","0A"].contains(command){
+        codesRead[command]=profile[command=="03" ? "stored":command=="07" ? "pending":"permanent"] as? [String] ?? []
+        uploadCodes(everything:false)
+      }
     }
     for (signal,value,unit) in ElmDecoder.decode(frame,command:command){
       signals[signal]=value

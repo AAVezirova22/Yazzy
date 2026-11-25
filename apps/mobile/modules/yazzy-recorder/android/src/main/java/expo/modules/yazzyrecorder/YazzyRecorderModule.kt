@@ -118,7 +118,19 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  // ignition-off marker: the server would end the trip there. Readings resume on reconnect; a car that really was
  // switched off shows as a long silence while standing.
  private fun linkLost(){ignitionOn=false;sync(true)}
- private fun ignitionOff(){if(!ignitionOn)return;ignitionOn=false;if(lastSpeed<=1)try{store.enqueue("IGNITION",0,"bool")}catch(_:Exception){};sync(true)}
+ private fun ignitionOff(){if(!ignitionOn)return;ignitionOn=false;uploadCodes(true);if(lastSpeed<=1)try{store.enqueue("IGNITION",0,"bool")}catch(_:Exception){};sync(true)}
+ // Fault codes: what the car reports as stored (03), pending (07) and permanent (0A) is uploaded as DTC readings the first
+ // time it is read on a connection (a new code mid-drive goes up when it first shows) and again when the drive ends
+ // (ignition off or Stop), so the server's diagnostics list has them after a real drive. Only codes read on this connection are sent.
+ // stop() runs on the caller's thread while readings arrive on the handler, so these are thread-safe collections.
+ private val codesRead=java.util.concurrent.ConcurrentHashMap<String,List<String>>()
+ private val codesSent=java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+ private fun uploadCodes(everything:Boolean){
+  for(code in codesRead.values.flatten().distinct()){
+   if(!everything&&code in codesSent)continue
+   try{store.enqueue("DTC",code,"code");codesSent.add(code)}catch(_:Exception){/* a full queue is reported by the next reading */}
+  }
+ }
  fun resetProfile(){handler.post{profile=JSONObject();profileJson=null;parkedJson=null;reportPrefs.edit().clear().apply()}}
  private var supported=mutableSetOf<String>()
  private var pollIndex=0
@@ -188,7 +200,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
  fun reset(){ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();RecorderSecret.clear(context);store.clear();resetProfile()}
  /** Lets go of the adapter without ending the trip or disarming: recording picks up where it left off on restart. */
  fun suspend(){ignitionOn=false;recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;sync(true)}
- fun stop(){if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
+ fun stop(){if(recording)uploadCodes(true);if(recording)try{store.enqueue("USER_STOP",1,"bool")}catch(_:Exception){};ignitionOn=false;armedPrefs.edit().putBoolean("armed",false).apply();recording=false;connected=false;handler.removeCallbacks(ticker);stopLocation();gatt?.disconnect();gatt?.close();gatt=null;trip.stop(System.currentTimeMillis()/1000.0);tripPrefs.edit().clear().putString("state","CLOSED").apply();store.newSession();sync(true)}
  override fun onConnectionStateChange(g:BluetoothGatt,status:Int,newState:Int){handler.post{if(newState==BluetoothProfile.STATE_CONNECTED)g.discoverServices() else if(newState==BluetoothProfile.STATE_DISCONNECTED){inspecting?.completeExceptionally(IllegalStateException(if(status==BluetoothGatt.GATT_SUCCESS)"The adapter disconnected during inspection" else "Could not connect to the adapter (Bluetooth status $status)"));if(g!==gatt)return@post;val was=connected;linkLost();connected=false;inFlight=null;stopLocation();if(was)error="Bluetooth disconnected; waiting for the adapter to come back";if(recording)handler.postDelayed({if(recording&&gatt===g)connect()},5000)}}}
  override fun onServicesDiscovered(g:BluetoothGatt,status:Int){handler.post{
   if(status!=BluetoothGatt.GATT_SUCCESS){error="Service discovery failed";inspecting?.completeExceptionally(IllegalStateException("Service discovery failed (Bluetooth status $status)"));return@post}
@@ -204,7 +216,7 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
   descriptor.value=if(notify.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY!=0)BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
   g.writeDescriptor(descriptor)
  }}
- override fun onDescriptorWrite(g:BluetoothGatt,d:BluetoothGattDescriptor,status:Int){handler.post{if(status==BluetoothGatt.GATT_SUCCESS){connected=true;lastObdAt=SystemClock.elapsedRealtime();error=null;if(recording)startLocation();setup=ArrayDeque(ElmDecoder.setup);identify.clear();nextReportAt=0L;supported.clear();buffer="";inFlight=null;failures=0;answered=false}else error="Notification subscription failed"}}
+ override fun onDescriptorWrite(g:BluetoothGatt,d:BluetoothGattDescriptor,status:Int){handler.post{if(status==BluetoothGatt.GATT_SUCCESS){connected=true;lastObdAt=SystemClock.elapsedRealtime();error=null;if(recording)startLocation();codesRead.clear();codesSent.clear();setup=ArrayDeque(ElmDecoder.setup);identify.clear();nextReportAt=0L;supported.clear();buffer="";inFlight=null;failures=0;answered=false}else error="Notification subscription failed"}}
  override fun onCharacteristicChanged(g:BluetoothGatt,c:BluetoothGattCharacteristic){val bytes=c.value?.copyOf()?:return;handler.post{receive(bytes)}}
  private fun receive(bytes:ByteArray){val command=inFlight?:return;buffer+=bytes.toString(Charsets.US_ASCII);if(buffer.length>8192){buffer="";inFlight=null;error="Malformed adapter response";return};if(!buffer.contains('>'))return;val frame=buffer.substringBefore('>');buffer="";inFlight=null;failures=0;answered=true;lastObdAt=SystemClock.elapsedRealtime()
   if(command in ElmDecoder.setup&&command.startsWith("01"))supported.addAll(ElmDecoder.supported(frame.replace('\r','\n'),command))
@@ -213,6 +225,10 @@ class RecorderManager private constructor(private val context:Context):Bluetooth
    if(command=="ATRV"&&profile.has("batteryVoltage"))synchronized(signals){signals["ADAPTER_VOLTAGE"]=profile.getDouble("batteryVoltage")}
    profile.put("readAt",System.currentTimeMillis()/1000.0).put("supported",org.json.JSONArray(supported.sorted()))
    profileJson=profile.toString();reportPrefs.edit().putString("profile",profileJson).apply()
+   if(command=="03"||command=="07"||command=="0A"){
+    profile.optJSONArray(when(command){"03"->"stored";"07"->"pending";else->"permanent"})?.let{a->codesRead[command]=List(a.length()){a.getString(it)}}
+    uploadCodes(false)
+   }
   }catch(_:Exception){/* a malformed reply only leaves that line of the report empty */}
   for((signal,value,unit) in ElmDecoder.decode(frame.replace('\r','\n'),command)){synchronized(signals){signals[signal]=value};if(signal=="VEHICLE_SPEED"||signal=="ENGINE_RPM"){lastEcuAt=SystemClock.elapsedRealtime();if(signal=="VEHICLE_SPEED")lastSpeed=value;if(value>0)lastMovingAt=lastEcuAt;if(!ignitionOn){ignitionOn=true;try{store.enqueue("IGNITION",1,"bool")}catch(_:Exception){}}};if(signal !in ElmDecoder.uploaded)continue;if(signal=="VEHICLE_SPEED"){trip.observe(System.currentTimeMillis()/1000.0,value,null);tripPrefs.edit().putString("state",trip.state).putString("start",trip.start?.toString()).putString("last",trip.last?.toString()).apply()};try{store.enqueue(signal,value,unit)}catch(_:Exception){error="Queue full; recording stopped";stop();return}}
   handler.postDelayed({poll()},20)

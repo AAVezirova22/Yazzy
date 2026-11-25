@@ -537,3 +537,38 @@ def test_trip_chart_keeps_each_buckets_lowest_and_highest_reading(client, enroll
     assert [p["value"] for p in points] == [0, 40] + [40] * 8 + [40, 0]
     assert [p["observedAt"] for p in points] == sorted(p["observedAt"] for p in points)
     assert set(points[0]) == {"observedAt", "value", "quality", "origin"}
+
+
+def dtc_batch(enrol, session, batch, codes, start):
+    return {
+        **payload(enrol, session=session, batch=batch, start=start),
+        "samples": [
+            {
+                "sequence": i,
+                "observedAt": datetime.fromtimestamp(start + i * 0.1, timezone.utc).isoformat(),
+                "signal": "DTC",
+                "value": code,
+                "unit": "code",
+            }
+            for i, code in enumerate(codes)
+        ],
+    }
+
+
+def test_fault_codes_from_the_phone_show_in_diagnostics_once_each(client, enrolled):
+    v, e = enrolled
+    url = f"/api/v1/vehicles/{v['id']}/diagnostics"
+    assert client.get(url).json() == []
+    start = max(time.time(), e["validFrom"]) + 0.01
+    # Two connections each report their stored, pending and permanent codes; P0301 is read both times.
+    first = upload(client, e, dtc_batch(e, "s1", "d1", ["P0301", "P0420"], start))
+    assert first.status_code == 202, first.text
+    second = upload(client, e, dtc_batch(e, "s2", "d2", ["P0301", "U0100"], start + 1))
+    assert second.status_code == 202, second.text
+    codes = client.get(url).json()
+    assert [c["code"] for c in codes] == ["U0100", "P0301", "P0420"]
+    again = next(c for c in codes if c["code"] == "P0301")
+    assert again["observedAt"] > again["firstObservedAt"]
+    # A malformed code is refused rather than stored.
+    bad = upload(client, e, dtc_batch(e, "s3", "d3", ["p0301"], start + 2))
+    assert bad.status_code == 422
