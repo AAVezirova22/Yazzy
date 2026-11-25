@@ -757,6 +757,11 @@ export const BG:Record<string,string>={
  "All time":"Всички",
  "Hard events":"Резки събития",
  "Stops":"Престои",
+ "All":"Всички",
+ "By date":"По дата",
+ "Longest":"Най-дълги",
+ "Shortest":"Най-къси",
+ "Try another period.":"Опитайте друг период.",
 };
 
 /** Counted texts: [one, other]. */

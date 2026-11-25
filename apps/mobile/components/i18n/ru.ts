@@ -757,6 +757,11 @@ export const RU:Record<string,string>={
  "All time":"За всё время",
  "Hard events":"Резкие события",
  "Stops":"Стоянки",
+ "All":"Все",
+ "By date":"По дате",
+ "Longest":"Самые длинные",
+ "Shortest":"Самые короткие",
+ "Try another period.":"Попробуйте другой период.",
 };
 
 /** Counted texts: [one (1, 21…), few (2–4, 22…), many (5–20, 0…)]. */
