@@ -48,13 +48,14 @@ export function MapPreview({region,height=180,onPress,onReady,fallback,children,
  * a shared value driven by the pan on the UI thread, and the release velocity carries into the settling spring.
  * The screen fades in (a slide would move the map surface mid-draw) and the map is created once it is shown.
  */
-export function FullMap({visible,onClose,region,title,showsUser,onUser,peek,more,children}:{visible:boolean;onClose:()=>void;region:Region;title:string;showsUser?:boolean;onUser?:(p:LatLng)=>void;peek?:ReactNode;more?:ReactNode;children?:ReactNode}){
+export function FullMap({visible,onClose,region,title,showsUser,onUser,onReady,peek,more,children}:{visible:boolean;onClose:()=>void;region:Region;title:string;showsUser?:boolean;onUser?:(p:LatLng)=>void;onReady?:(map:MapView)=>void;peek?:ReactNode;more?:ReactNode;children?:ReactNode}){
  const insets=useSafeAreaInsets(),[ready,setReady]=useState(false),[peekHeight,setPeekHeight]=useState(0),map=useRef<MapView|null>(null);
  useEffect(()=>{if(!visible)setReady(false);},[visible]);
  return <Modal visible={visible} animationType="fade" statusBarTranslucent navigationBarTranslucent onShow={()=>setTimeout(()=>setReady(true),60)} onRequestClose={onClose}>
   <GestureHandlerRootView style={s.full}>
    {ready&&nativeMaps?<MapView ref={r=>{map.current=r;}} style={StyleSheet.absoluteFill} initialRegion={region} showsUserLocation={showsUser} showsMyLocationButton={false} toolbarEnabled={false} showsCompass={false}
     mapPadding={{top:insets.top+60,right:0,left:0,bottom:peekHeight}}
+    onMapReady={()=>{if(map.current)onReady?.(map.current);}}
     onUserLocationChange={e=>{const p=e.nativeEvent.coordinate;if(p)onUser?.({latitude:p.latitude,longitude:p.longitude});}}>{children}</MapView>:null}
    <View style={[s.top,{top:insets.top+10}]}>
     <RoundButton icon="close" label={t('Close map')} onPress={onClose}/>

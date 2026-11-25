@@ -21,7 +21,7 @@ import {DriveTab} from '../components/tabs/Drive';
 import {MoreTab} from '../components/tabs/More';
 import type {Car} from '../components/tabs/types';
 import {CarReport} from '../components/CarReport';
-import {detect,makerFromVin,serverType,type CarProfile,type Kind} from '../components/car';
+import {carSpot,detect,makerFromVin,serverType,type CarProfile,type Kind} from '../components/car';
 import {readCache,server,writeCache} from '../components/server';
 import {carLine} from '../components/format';
 import {available,Recorder,type RecorderSnapshot} from '../modules/yazzy-recorder/src';
@@ -289,6 +289,8 @@ export default function App(){
  });
  const setKind=useCallback((k:Kind|null)=>{const id=selectedRef.current;if(!id)return;storeReport(id,{...(reports.current[id]||{}),userKind:k},true);},[storeReport]);
  const openCar=useCallback(()=>setCarOpen(true),[]);
+ // The car's last spot; keyed on the parked fix itself because the report object changes with every live reading.
+ const spot=useMemo(()=>carSpot(report,car?.trips),[report?.parked?.latitude,report?.parked?.longitude,report?.parked?.at,car?.trips]);
  const carInfo=useMemo(()=>{const type=detect(report);return {label:type.label,kind:type.kind,mil:report?.mil,codes:(report?.stored||[]).length,read:!!report?.readAt,hasVin:!!report?.vin,maker:makerFromVin(report?.vin),
   vin:report?.vin||null,odometerKm:report?.signals?.ODOMETER??report?.odometerKm??null,fuelPct:report?.signals?.FUEL_LEVEL??null,readingsAt:report?.signalsAt??report?.readAt??null};},[report,lang]);
 
@@ -303,7 +305,7 @@ export default function App(){
  const vehicle=vehicles.find(v=>v.id===selected),navBottom=Math.max(insets.bottom,10)+8,padBottom=navBottom+NAV_HEIGHT+28;
  const page=(key:TabKey)=>{switch(key){
   case 'Home':return <GarageTab vehicle={vehicle} car={car} refreshing={pulling} busy={refreshing} offline={offline} recorder={recorder} padBottom={padBottom} onRefresh={pullToRefresh} onSwitch={openGarage} onGo={go} onOpenTrip={setTripView} carInfo={carInfo} onOpenCar={openCar} vinModel={report?.vinModel} onSetYear={pickYear} onEnterVin={enterVin} onPickModel={pickModel} business={business} onBusiness={openBusiness} onLook={openLook}/>;
-  case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
+  case 'Trips':return <TripsTab vehicle={vehicle} trips={car?.trips??null} spot={spot} live={snapshot.connected&&recorderVehicle===selected} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onRefresh={pullToRefresh} onOpenTrip={setTripView} onRebuild={rebuildNow}/>;
   case 'Health':return <HealthTab vehicle={vehicle} findings={car?.findings??null} service={car?.service??null} view={healthView} refreshing={pulling} busy={refreshing} offline={offline} padBottom={padBottom} onView={go} onRefresh={pullToRefresh}/>;
   case 'Drive':return <DriveTab vehicle={vehicle} selected={selected} api={api} snapshot={snapshot} view={driveView} padBottom={padBottom} onView={go} refreshSnapshot={refreshSnapshot}/>;
   case 'More':return <MoreTab vehicle={vehicle} vehicleCount={vehicles.length} selected={selected} api={api} padBottom={padBottom} onVehicles={openGarage} onCar={openCar} onConnected={boot} onDisconnected={disconnected} onSignOut={signOut} business={business} onBusiness={openBusiness} onSaveDocuments={saveDocuments}/>;

@@ -6,14 +6,16 @@ import {Chip,Empty,Icon,ScreenHeader} from '../kit';
 import {haptic} from '../motion';
 import {PressableScale} from '../motion';
 import {RouteArt} from '../art';
+import {ParkedCarButton} from '../CarMap';
+import type {Spot} from '../car';
 import {distance,minutes} from '../TripDetail';
 import {clock,fmt,routeOf,weekday} from '../format';
 import {t,tp} from '../i18n';
 
-type Props={vehicle:any;trips:any[]|null;refreshing:boolean;busy:boolean;offline:string;padBottom:number;onRefresh:()=>void;onOpenTrip:(t:any)=>void;onRebuild:()=>void};
+type Props={vehicle:any;trips:any[]|null;spot:(Spot&{source:'recorder'|'trip'})|null;live:boolean;refreshing:boolean;busy:boolean;offline:string;padBottom:number;onRefresh:()=>void;onOpenTrip:(t:any)=>void;onRebuild:()=>void};
 
 /** Every recorded drive, newest first, under a one-line summary of the chosen period. Virtualised: only nearby rows are drawn. */
-export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offline,padBottom,onRefresh,onOpenTrip,onRebuild}:Props){
+export const TripsTab=memo(function TripsTab({vehicle,trips,spot,live,refreshing,busy,offline,padBottom,onRefresh,onOpenTrip,onRebuild}:Props){
  const insets=useSafeAreaInsets(),[period,setPeriod]=useState<Period>('all'),[order,setOrder]=useState<Order>('date');
  const shown=useMemo(()=>filterTrips(trips,period,order),[trips,period,order]),filtered=period!=='all'||order!=='date';
  const row=useCallback(({item}:{item:any})=><TripRow trip={item} onOpen={onOpenTrip}/>,[onOpenTrip]);
@@ -29,7 +31,7 @@ export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offl
   contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}}
   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.blue} colors={[c.blue]} progressViewOffset={insets.top}/>}
   ListHeaderComponent={<>
-   <ScreenHeader title={t('Trips')} subtitle={vehicle?vehicle.name:t('No vehicle selected')} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>
+   <ScreenHeader title={t('Trips')} subtitle={vehicle?vehicle.name:t('No vehicle selected')} right={<View style={[ui.row,{gap:10}]}>{busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}{spot?<ParkedCarButton spot={spot} live={live}/>:null}</View>}/>
    {trips?.length?<View style={[ui.card,s.summary]}>
     <Summary label={t(PERIOD_LABEL[period])} value={fmt(stats.km,0)} unit={t('km')}/>
     <View style={s.divider}/>
