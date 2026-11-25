@@ -40,6 +40,9 @@ BUILD_DIR = Path.home() / "Library/Caches/yazzy-ios-build"
 # (or Expo/React Native is upgraded) and pass --no-sdk-compat to check.
 COMPAT_SDK = "26.5"
 MARKER = "Xcode 27 rejects pod targets below iOS 15.0"
+# @react-native-ml-kit/text-recognition (the registration-certificate scan) declares iOS 15.5 in its podspec; CocoaPods
+# refuses to resolve it while the app targets Expo's default 15.1 ("required a higher minimum deployment target").
+IOS_MINIMUM = "15.5"
 
 # Xcode 27 rejects pod targets below iOS 15 (react-native-maps' privacy bundle is set to 11.0). ios/ is generated and
 # gitignored, so `expo prebuild` can regenerate the Podfile without this; build() puts it back before every build.
@@ -92,6 +95,30 @@ def ensure_podfile_fix() -> bool:
     podfile.write_text(text.replace(PODFILE_ANCHOR, PODFILE_FIX, 1), encoding="utf-8")
     print("Added the Xcode 27 deployment-target fix to ios/Podfile", flush=True)
     return True
+
+
+def ensure_deployment_target() -> bool:
+    """Raises the app's iOS deployment target to IOS_MINIMUM in the generated ios/ folder (Podfile.properties.json, which
+    the Podfile reads for `platform :ios`, and the Xcode project). Returns True when anything changed, which means the
+    Pods need regenerating. `expo prebuild` resets both, so this runs before every build."""
+    changed = False
+    props_path = IOS / "Podfile.properties.json"
+    props = json.loads(props_path.read_text(encoding="utf-8")) if props_path.exists() else {}
+    if float(props.get("ios.deploymentTarget", "0")) < float(IOS_MINIMUM):
+        props["ios.deploymentTarget"] = IOS_MINIMUM
+        props_path.write_text(json.dumps(props, indent=2) + "\n", encoding="utf-8")
+        changed = True
+    project_path = IOS / "Yazzy.xcodeproj/project.pbxproj"
+    project = project_path.read_text(encoding="utf-8")
+    raised = re.sub(r"IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);",
+                    lambda m: m.group(0) if float(m.group(1)) >= float(IOS_MINIMUM)
+                    else f"IPHONEOS_DEPLOYMENT_TARGET = {IOS_MINIMUM};", project)
+    if raised != project:
+        project_path.write_text(raised, encoding="utf-8")
+        changed = True
+    if changed:
+        print(f"Set the iOS deployment target to {IOS_MINIMUM}", flush=True)
+    return changed
 
 
 def missing_packages() -> list:
@@ -194,6 +221,7 @@ def main():
     if not IOS.exists():
         run(["npx", "expo", "prebuild", "--platform", "ios", "--no-install"], MOBILE, env)
     patched = ensure_podfile_fix()
+    patched = ensure_deployment_target() or patched
     if args.pods or patched or pods_outdated():
         run(["pod", "install"], IOS, env)
 

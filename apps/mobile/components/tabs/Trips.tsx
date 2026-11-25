@@ -7,22 +7,23 @@ import {haptic} from '../motion';
 import {PressableScale} from '../motion';
 import {RouteArt} from '../art';
 import {distance,minutes} from '../TripDetail';
-import {clock,fmt,lastWeek,routeOf,smoothDriving,weekday} from '../format';
+import {clock,fmt,routeOf,weekday} from '../format';
 import {t,tp} from '../i18n';
 
 type Props={vehicle:any;trips:any[]|null;refreshing:boolean;busy:boolean;offline:string;padBottom:number;onRefresh:()=>void;onOpenTrip:(t:any)=>void;onRebuild:()=>void};
 
-/** Every recorded drive, newest first, under a one-line summary of the week. Virtualised: only nearby rows are drawn. */
+/** Every recorded drive, newest first, under a one-line summary of the chosen period. Virtualised: only nearby rows are drawn. */
 export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offline,padBottom,onRefresh,onOpenTrip,onRebuild}:Props){
  const insets=useSafeAreaInsets(),[period,setPeriod]=useState<Period>('all'),[order,setOrder]=useState<Order>('date');
  const shown=useMemo(()=>filterTrips(trips,period,order),[trips,period,order]),filtered=period!=='all'||order!=='date';
  const row=useCallback(({item}:{item:any})=><TripRow trip={item} onOpen={onOpenTrip}/>,[onOpenTrip]);
- const week=useMemo(()=>{
-  const km=lastWeek(trips).reduce((a,b)=>a+b,0),since=Date.now()/1000-7*86400;
-  const drives=(trips||[]).filter(t=>t.startAt>=since&&t.status!=='STATIONARY');
-  const seconds=drives.reduce((a,t)=>a+(t.metrics?.durationSeconds||0),0);
-  return {km,count:drives.length,seconds,smooth:smoothDriving(trips,7)};
- },[trips]);
+ // The summary follows the period filter: all time, today, the last 7 or the last 30 days. Stops (engine on, no driving) are not drives.
+ const stats=useMemo(()=>{
+  const from=periodStart(period),drives=(trips||[]).filter(d=>(d.startAt??0)>=from&&d.status!=='STATIONARY'&&d.metrics);
+  const km=drives.reduce((a,d)=>a+(d.metrics.distanceKm||0),0),seconds=drives.reduce((a,d)=>a+(d.metrics.durationSeconds||0),0);
+  const smooth=drives.filter(d=>!(d.metrics.drivingEvents||[]).length).length;
+  return {km,count:drives.length,seconds,smooth};
+ },[trips,period]);
  return <FlatList data={shown} keyExtractor={t=>t.id} renderItem={row}
   initialNumToRender={7} maxToRenderPerBatch={6} windowSize={7} removeClippedSubviews={Platform.OS==='android'}
   contentContainerStyle={{paddingHorizontal:16,paddingTop:insets.top+8,paddingBottom:padBottom}}
@@ -30,13 +31,13 @@ export const TripsTab=memo(function TripsTab({vehicle,trips,refreshing,busy,offl
   ListHeaderComponent={<>
    <ScreenHeader title={t('Trips')} subtitle={vehicle?vehicle.name:t('No vehicle selected')} right={busy&&!refreshing?<ActivityIndicator color={c.blue}/>:null}/>
    {trips?.length?<View style={[ui.card,s.summary]}>
-    <Summary label={t('Last 7 days')} value={fmt(week.km,0)} unit={t('km')}/>
+    <Summary label={t(PERIOD_LABEL[period])} value={fmt(stats.km,0)} unit={t('km')}/>
     <View style={s.divider}/>
-    <Summary label={t('Drives')} value={String(week.count)}/>
+    <Summary label={t('Drives')} value={String(stats.count)}/>
     <View style={s.divider}/>
-    <Summary label={t('Driving')} value={minutes(week.seconds)}/>
+    <Summary label={t('Driving')} value={minutes(stats.seconds)}/>
     <View style={s.divider}/>
-    <Summary label={t('Smooth')} value={week.smooth.drives?`${week.smooth.smooth}/${week.smooth.drives}`:'—'}/>
+    <Summary label={t('Smooth')} value={stats.count?`${stats.smooth}/${stats.count}`:'—'}/>
    </View>:null}
    {trips?.length?<View style={s.filters}>
     <Choices items={PERIODS} value={period} onChange={setPeriod}/>
@@ -56,11 +57,18 @@ type Order='date'|'longest'|'shortest';
 const PERIODS:[Period,string][]=[['all','All'],['today','Today'],['7','7 days'],['30','30 days']];
 const ORDERS:[Order,string][]=[['date','By date'],['longest','Longest'],['shortest','Shortest']];
 
+const PERIOD_LABEL:Record<Period,string>={all:'All time',today:'Today','7':'Last 7 days','30':'Last 30 days'};
+
+/** Start of a period as epoch seconds: midnight today, or 7 / 30 days back; 0 for all time. */
+function periodStart(period:Period){
+ const now=new Date();
+ return period==='today'?new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime()/1000
+  :period==='7'?Date.now()/1000-7*86400:period==='30'?Date.now()/1000-30*86400:0;
+}
+
 /** The trips of a period, newest first or by distance. Sorted by distance, stops (engine on, no driving) are left out. */
 function filterTrips(trips:any[]|null,period:Period,order:Order){
- const now=new Date(),from=period==='today'?new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime()/1000
-  :period==='7'?Date.now()/1000-7*86400:period==='30'?Date.now()/1000-30*86400:0;
- const inPeriod=(trips||[]).filter(d=>(d.startAt??0)>=from);
+ const from=periodStart(period),inPeriod=(trips||[]).filter(d=>(d.startAt??0)>=from);
  if(order==='date')return [...inPeriod].sort((a,b)=>(b.startAt??0)-(a.startAt??0));
  const km=(d:any)=>d.metrics?.distanceKm??0;
  return inPeriod.filter(d=>d.status!=='STATIONARY').sort((a,b)=>order==='longest'?km(b)-km(a):km(a)-km(b));
