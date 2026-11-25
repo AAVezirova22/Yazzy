@@ -42,9 +42,9 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
   await SecureStore.setItemAsync('yazzy-configured',key);await permissions();await Recorder.start();
  }
 
- const live=snapshot.recording&&snapshot.connected,recommended=pickChannels(characteristics),waiting=snapshot.recording&&!snapshot.connected,canNudge=Platform.OS==='android';
+ const live=snapshot.recording&&snapshot.connected,recommended=pickChannels(characteristics),waiting=snapshot.recording&&!snapshot.connected;
  const adapterName=peripherals.find(p=>p.id===peripheral)?.name||t('your adapter');
- /** Finds the saved adapter and links up now rather than when Android's background auto-connect gets round to it. */
+ /** Finds the saved adapter and links up now rather than when the system's background auto-connect gets round to it. */
  const connectNow=()=>run(async()=>{
   await permissions();const found=await Recorder.reconnect();await refreshSnapshot();
   if(!found)Alert.alert(t('Adapter not found nearby'),t("Yazzy looked for {adapter} for 10 seconds. Check that the ignition is on, the adapter's light is on, and no other app or phone is connected to it. Auto-connect keeps waiting in the background.",{adapter:adapterName}));
@@ -80,7 +80,7 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
    </View>
    {snapshot.error?<Notice tone="error">{snapshot.error}</Notice>:null}
    {waiting&&<Notice icon="time">{t('Waiting for your adapter. Turn the car on and it connects by itself, even with the app closed. Each start of the car begins a new trip.')}</Notice>}
-   {waiting&&canNudge?<Button title={t(busy?'Looking for the adapter…':'Connect now')} icon="bluetooth" disabled={busy} onPress={connectNow}/>:null}
+   {waiting?<Button title={t(busy?'Looking for the adapter…':'Connect now')} icon="bluetooth" disabled={busy} onPress={connectNow}/>:null}
    {snapshot.recording?<Button title={t(snapshot.connected?'Stop recording':'Disarm auto-connect')} icon="stop" disabled={busy} onPress={()=>run(async()=>{await Recorder.stop();await refreshSnapshot();})}/>
     :<Button title={t(snapshot.configured&&!(write&&notify&&peripheral)?'Start with saved adapter':'Start recording')} icon="play" disabled={busy} onPress={()=>run(async()=>{await start();await refreshSnapshot();})}/>}
    <Button kind="light" title={t('Upload now')} icon="cloud-upload-outline" disabled={busy} onPress={()=>run(async()=>{await Recorder.sync();await refreshSnapshot();})}/>
@@ -101,7 +101,7 @@ export const DriveTab=memo(function DriveTab({vehicle,selected,api,snapshot,view
      <IconTile icon={live?'checkmark-circle':'time'} tone={live?'green':'blue'}/>
      <View style={{flex:1}}><Text style={s.rowTitle}>{t(live?'Connected to {adapter}':'Waiting for {adapter}',{adapter:adapterName})}</Text><Text style={ui.caption}>{t(live?'Recording. Stop on the Record tab to change adapters.':'Auto-connect is on: it links up when the car is switched on.')}</Text></View>
     </View>
-    {waiting&&canNudge?<Button title={t(busy?'Looking for the adapter…':'Connect now')} icon="bluetooth" disabled={busy} onPress={connectNow} style={{marginTop:12}}/>:null}
+    {waiting?<Button title={t(busy?'Looking for the adapter…':'Connect now')} icon="bluetooth" disabled={busy} onPress={connectNow} style={{marginTop:12}}/>:null}
    </View>:null}
    <View style={ui.card}>
     <Text style={ui.title}>{t(snapshot.recording?'Use a different adapter':'Find your adapter')}</Text>

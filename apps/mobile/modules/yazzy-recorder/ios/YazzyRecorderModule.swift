@@ -23,6 +23,10 @@ public class YazzyRecorderModule: Module {
     AsyncFunction("stop") { DispatchQueue.main.async { self.recorder.stop() } }
     AsyncFunction("reset") { (promise:Promise) in DispatchQueue.main.async { do{try self.recorder.reset();promise.resolve(nil)}catch{promise.reject("RECORDER_RESET",error.localizedDescription)} } }
     AsyncFunction("sync") { DispatchQueue.main.async { self.recorder.sync() } }
+    // "Connect now": links up to the saved adapter immediately instead of waiting for the system's background connection.
+    AsyncFunction("reconnect") { (promise:Promise) in DispatchQueue.main.async { do{try self.recorder.reconnect{promise.resolve($0)}}catch{promise.reject("RECORDER_RECONNECT",error.localizedDescription)} } }
+    // The phone's newest known position, without switching GPS on; nil without location permission.
+    AsyncFunction("lastLocation") { (promise:Promise) in DispatchQueue.main.async { promise.resolve(self.recorder.lastLocation()) } }
     AsyncFunction("snapshot") { (promise:Promise) in DispatchQueue.main.async { promise.resolve(self.recorder.snapshot()) } }
   }
 }
@@ -63,6 +67,12 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   // Where the car is: the last GPS fix taken while the car was moving or its engine ran, so the phone is still inside it.
   private var parkedJson:String?
   private var lastMovingAt=Date.distantPast
+  // Ignition as the phone sees it: on with the first speed or RPM answer, off when the car stops answering while standing
+  // still (switched off). The markers let the server start and close trips without waiting for a later drive.
+  // A dropped Bluetooth link is not the car being switched off (it drops at red lights too), so it writes no ignition-off marker.
+  private var ignitionOn=false
+  private var lastEcuAt=Date.distantPast
+  private var lastSpeed=0.0
   private var pollIndex=0
   private var failures=0
   private var lastObdAt=Date.distantPast
@@ -127,20 +137,20 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   func stop(){
     if recording{try? store.enqueue(signal:"USER_STOP",value:1,unit:"bool")}
     UserDefaults.standard.set(false,forKey:armedKey);startWhenReady=false
-    recording=false;connected=false;timer?.invalidate();location.stopUpdatingLocation()
+    recording=false;connected=false;ignitionOn=false;timer?.invalidate();location.stopUpdatingLocation()
     if let p=peripheral{central.cancelPeripheralConnection(p)};trip.stop(time:Date().timeIntervalSince1970);trip.save();sync();try? store.newSession()
   }
   /// Explicit user reset: stop, discard the queue and forget the pairing (server, device, assignment, adapter).
   func reset() throws {
     UserDefaults.standard.set(false,forKey:armedKey);startWhenReady=false
-    recording=false;connected=false;timer?.invalidate();location.stopUpdatingLocation()
+    recording=false;connected=false;ignitionOn=false;timer?.invalidate();location.stopUpdatingLocation()
     if let p=peripheral{central.cancelPeripheralConnection(p)};peripheral=nil
     trip.stop(time:Date().timeIntervalSince1970);trip.save()
     try store.clear();RecorderSecret.clear()
     error=nil;signals=[:];syncFailures=0;nextSync=Date();resetProfile()
   }
   func centralManagerDidUpdateState(_ central:CBCentralManager){
-    if central.state != .poweredOn{connected=false;error="Bluetooth unavailable";return}
+    if central.state != .poweredOn{connected=false;ignitionOn=false;error="Bluetooth unavailable";return}
     if recording{if let p=peripheral{error=nil;central.connect(p)}}  // Bluetooth came back while armed
     else if startWhenReady{try? start()}
     else{resumeIfArmed()}                                          // relaunched while armed: re-arm without the UI
@@ -156,7 +166,7 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
   func centralManager(_ central:CBCentralManager,willRestoreState dict:[String:Any]){if let p=(dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first{peripheral=p;p.delegate=self;error="Bluetooth state restored; verify recording continuity"}}
   func centralManager(_ central:CBCentralManager,didConnect peripheral:CBPeripheral){peripheral.discoverServices(nil)}
   func centralManager(_ central:CBCentralManager,didFailToConnect peripheral:CBPeripheral,error:Error?){connected=false;self.error="Connection failed";if recording{DispatchQueue.main.asyncAfter(deadline:.now()+5){if self.recording{central.connect(peripheral)}}};finishInspect("Could not connect to the adapter"+(error.map{": "+$0.localizedDescription} ?? ""),cancel:peripheral)}
-  func centralManager(_ central:CBCentralManager,didDisconnectPeripheral peripheral:CBPeripheral,error:Error?){finishInspect("The adapter disconnected during inspection");connected=false;inFlight=nil;setLocation(active:false);self.error="Connection lost; measurements unavailable";if recording{DispatchQueue.main.asyncAfter(deadline:.now()+5){if self.recording{central.connect(peripheral)}}}}
+  func centralManager(_ central:CBCentralManager,didDisconnectPeripheral peripheral:CBPeripheral,error:Error?){finishInspect("The adapter disconnected during inspection");connected=false;ignitionOn=false;inFlight=nil;setLocation(active:false);self.error="Connection lost; measurements unavailable";if recording{DispatchQueue.main.asyncAfter(deadline:.now()+5){if self.recording{central.connect(peripheral)}}}}
   func peripheral(_ peripheral:CBPeripheral,didDiscoverServices error:Error?){guard error==nil else{self.error="Service discovery failed";finishInspect("Service discovery failed: "+(error?.localizedDescription ?? ""),cancel:peripheral);return};pendingServices=peripheral.services?.count ?? 0;if pendingServices==0{finishInspect("The adapter exposed no services",cancel:peripheral);return};for service in peripheral.services ?? []{peripheral.discoverCharacteristics(nil,for:service)}}
   func peripheral(_ peripheral:CBPeripheral,didDiscoverCharacteristicsFor service:CBService,error:Error?){
     let c=RecorderSecret.read()
@@ -176,7 +186,35 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     if error != nil || !characteristic.isNotifying{self.error="Adapter does not accept the selected notification characteristic";return}
     connected=true;lastObdAt=Date();setLocation(active:true);setup=ElmDecoder.setup;identify=[];afterReport=false;headerSet=false;nextReportAt=Date.distantPast;supported=[];inFlight=nil;buffer="";failures=0;self.error=nil
   }
-  private func tick(){guard recording else{return};sync();pump()}
+  private func tick(){guard recording else{return};if ignitionOn&&Date().timeIntervalSince(lastEcuAt)>20{ignitionOff()};sync();pump()}
+  private func ignitionOff(){guard ignitionOn else{return};ignitionOn=false;if lastSpeed<=1{try? store.enqueue(signal:"IGNITION",value:0,unit:"bool")};sync()}
+  /// "Connect now": reissues the connection to the saved adapter and waits up to 10 s for it to answer. Calls `done` with
+  /// whether the adapter is connected (it is also true when it already was). Throws when Bluetooth is off.
+  func reconnect(_ done:@escaping (Bool)->Void) throws {
+    guard recording,!connected else{done(connected);return}
+    guard central.state == .poweredOn else{throw NSError(domain:"BluetoothUnavailable",code:1,userInfo:[NSLocalizedDescriptionKey:"Bluetooth is off. Turn it on and try again"])}
+    var adapter=peripheral
+    if adapter==nil,let id=RecorderSecret.read()?["peripheralId"],let uuid=UUID(uuidString:id){adapter=central.retrievePeripherals(withIdentifiers:[uuid]).first}
+    guard let p=adapter else{done(false);return}
+    peripheral=p;p.delegate=self
+    if p.state == .disconnected{error=nil;central.connect(p)}
+    let deadline=Date().addingTimeInterval(10)
+    func wait(){
+      if connected || !recording || Date()>=deadline{done(connected);return}
+      DispatchQueue.main.asyncAfter(deadline:.now()+0.25){wait()}
+    }
+    wait()
+  }
+  /// The phone's newest known position, without switching GPS on. Asks for permission the first time; nil until it is given.
+  func lastLocation()->[String:Any]?{
+    switch location.authorizationStatus {
+    case .notDetermined:location.requestWhenInUseAuthorization();return nil
+    case .authorizedAlways,.authorizedWhenInUse:break
+    default:return nil
+    }
+    guard let fix=location.location,fix.horizontalAccuracy>=0 else{return nil}
+    return ["latitude":fix.coordinate.latitude,"longitude":fix.coordinate.longitude,"accuracy":fix.horizontalAccuracy,"at":fix.timestamp.timeIntervalSince1970]
+  }
   /// The next car-report request. The VIN reads that need the car to lack a VIN, or a CAN bus to address its engine ECU, are skipped otherwise.
   private func nextReport()->String?{
     while !identify.isEmpty{
@@ -222,7 +260,10 @@ final class NativeRecorder: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     }
     for (signal,value,unit) in ElmDecoder.decode(frame,command:command){
       signals[signal]=value
-      if (signal=="VEHICLE_SPEED"||signal=="ENGINE_RPM")&&value>0{lastMovingAt=Date()}
+      if signal=="VEHICLE_SPEED"||signal=="ENGINE_RPM"{
+        lastEcuAt=Date();if signal=="VEHICLE_SPEED"{lastSpeed=value};if value>0{lastMovingAt=Date()}
+        if !ignitionOn{ignitionOn=true;try? store.enqueue(signal:"IGNITION",value:1,unit:"bool")}
+      }
       guard ElmDecoder.uploaded.contains(signal) else{continue}
       if signal=="VEHICLE_SPEED"{trip.observe(time:Date().timeIntervalSince1970,speed:value,ignition:nil);trip.save()}
       do{try store.enqueue(signal:signal,value:value,unit:unit)}catch{self.error="Durable queue unavailable or full; recording stopped";stop();return}
