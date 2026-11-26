@@ -12,6 +12,7 @@ import {CarLocation} from './CarMap';
 import {battery12,boost,carSpot,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
 import {carLine,fmt,latest} from './format';
 import type {Car} from './tabs/types';
+import {CodeReplies} from './CodeReplies';
 import {t,tp} from './i18n';
 
 type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void;onPickYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void};
@@ -92,6 +93,7 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear,
      {codes.length?codes.map(code=><Code key={code} code={code} kind="Stored"/>):p.stored?<Text style={[ui.body,{marginVertical:4}]}>{t('No fault codes stored.')}</Text>:null}
      {pending.map(code=><Code key={code} code={code} kind="Pending"/>)}
      {permanent.map(code=><Code key={'p'+code} code={code} kind="Permanent"/>)}
+     <CodeReplies replies={p.codeReplies}/>
      {p.distanceSinceClearKm!=null?<Row label={t('Driven since codes were cleared')} value={t('{n} km',{n:p.distanceSinceClearKm})}/>:null}
      {p.warmupsSinceClear!=null?<Row label={t('Warm-ups since codes were cleared')} value={String(p.warmupsSinceClear)}/>:null}
      {p.distanceWithMilKm?<Row label={t('Driven with the light on')} value={t('{n} km',{n:p.distanceWithMilKm})} tone="warn"/>:null}

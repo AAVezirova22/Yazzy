@@ -31,6 +31,20 @@ class ElmDecoderTest {
   assertEquals(emptyList<Any>(),list(report("0A" to "4A 00\r"),"permanent"))
   assertEquals(listOf("C0123","B1234","U0100"),list(report("03" to "008\r0: 43 03 41 23 92\r1: 34 C1 00 00 00 00 00\r"),"stored"))
  }
+ // On CAN a short frame can be padded with zeros, so its length must not decide the layout: the protocol does.
+ @Test fun faultCodesFollowTheProtocolTheAdapterReports(){
+  assertEquals(listOf("P0171"),list(report("ATDPN" to "A6\r","03" to "43 01 01 71 00 00 00\r"),"stored"))
+  assertEquals(listOf("P0171","P0420"),list(report("ATDPN" to "A6\r","03" to "43 02 01 71 04 20 00\r"),"stored"))
+  assertEquals(listOf("P0420"),list(report("ATDPN" to "7\r","03" to "43 01 04 20 00 00 00\r"),"stored"))
+  assertEquals(listOf("P0420"),list(report("ATDPN" to "A8\r","0A" to "4A 01 04 20\r"),"permanent"))
+  assertEquals(listOf("P0171","P0420","P0133"),list(report("ATDPN" to "A4\r","03" to "43 01 71 04 20 01 33\r"),"stored"))
+  assertEquals(listOf("P0171","P0420"),list(report("ATDPN" to "A3\r","03" to "43 01 71 00 00 00 00\r43 04 20 00 00 00 00\r"),"stored"))
+  assertEquals(emptyList<Any>(),list(report("ATDPN" to "A6\r","03" to "43 00\r"),"stored"))
+ }
+ @Test fun theCarsOwnReplyIsKeptForChecking(){
+  val p=report("ATDPN" to "A6\r","03" to "SEARCHING...\r43 01 01 71 00 00 00\r")
+  assertEquals("SEARCHING... | 43 01 01 71 00 00 00",p.getJSONObject("codeReplies").getString("03"))
+ }
  @Test fun monitorStatusGivesLampCodesIgnitionAndReadiness(){
   val p=report("0101" to "41 01 81 07 65 04\r")
   assertTrue(p.getBoolean("mil"));assertEquals(1,p.getInt("dtcCount"));assertEquals("SPARK",p.getString("ignition"))

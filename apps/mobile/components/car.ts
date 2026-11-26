@@ -7,7 +7,7 @@ import {t,tp} from './i18n';
 export type Monitor={id:string;complete:boolean};
 export type CarProfile={
  readAt?:number;vin?:string;/** The car's own answer when it gave no VIN (for example NO DATA). */vinReply?:string;/** The owner typed the VIN. */vinManual?:boolean;/** Which mode 09 requests (01…20) the car offers; without 02 it cannot give its VIN over OBD. */mode09?:string[];ecus?:string[];protocol?:string;obdStandard?:number;fuelType?:number;ignition?:'SPARK'|'COMPRESSION';
- mil?:boolean;dtcCount?:number;readiness?:Monitor[];stored?:string[];pending?:string[];permanent?:string[];
+ mil?:boolean;dtcCount?:number;readiness?:Monitor[];stored?:string[];pending?:string[];permanent?:string[];/** The car's own reply to the code requests (03, 07, 0A), kept so a code can be checked against another scanner. */codeReplies?:Record<string,string>;
  distanceSinceClearKm?:number;distanceWithMilKm?:number;warmupsSinceClear?:number;minutesWithMil?:number;minutesSinceClear?:number;
  odometerKm?:number;batteryVoltage?:number;supported?:string[];
  /** Production year from the engine ECU's manufacturing date (UDS 22 F18B / KWP 1A 8B), when the ECU tells it. */
@@ -77,18 +77,56 @@ const CODES:Record<string,string>={
  P0500:'Vehicle speed sensor A',P0505:'Idle air control system',P0506:'Idle speed lower than expected',P0507:'Idle speed higher than expected',
  P0562:'System voltage low',P0563:'System voltage high',P0606:'Control module processor',P0700:'Transmission control system (lamp request)',
  P0A7F:'Hybrid battery pack deterioration',P0A80:'Replace hybrid battery pack',P2002:'Particulate filter efficiency below threshold (bank 1)',P2463:'Particulate filter soot accumulation',
+ P0010:'Intake camshaft position actuator circuit (bank 1)',P0011:'Intake camshaft timing over-advanced (bank 1)',P0012:'Intake camshaft timing over-retarded (bank 1)',
+ P0013:'Exhaust camshaft position actuator circuit (bank 1)',P0014:'Exhaust camshaft timing over-advanced (bank 1)',P0015:'Exhaust camshaft timing over-retarded (bank 1)',
+ P0125:'Coolant too cold for closed-loop fuel control',P0170:'Fuel trim malfunction (bank 1)',P0173:'Fuel trim malfunction (bank 2)',P0217:'Engine over-temperature',P0230:'Fuel pump primary circuit',
+ P0402:'EGR flow excessive',P0403:'EGR circuit',P0410:'Secondary air injection system',P0411:'Secondary air injection: incorrect flow',
+ P0421:'Warm-up catalyst efficiency below threshold (bank 1)',P0441:'Evaporative emission system: incorrect purge flow',P0443:'Evaporative purge control valve circuit',
+ P0446:'Evaporative vent control circuit',P0457:'Evaporative emission system leak (fuel cap loose or missing)',P0480:'Cooling fan 1 control circuit',P0510:'Closed throttle position switch',
+ P0560:'System voltage',P0561:'System voltage unstable',P0601:'Control module memory checksum error',P0602:'Control module programming error',
+ P0705:'Transmission range sensor circuit',P0715:'Input / turbine speed sensor circuit',P0720:'Output speed sensor circuit',P0730:'Incorrect gear ratio',P0740:'Torque converter clutch circuit',
+ P2096:'Post-catalyst fuel trim too lean (bank 1)',P2097:'Post-catalyst fuel trim too rich (bank 1)',P2187:'System too lean at idle (bank 1)',P2188:'System too rich at idle (bank 1)',
+ P2101:'Throttle actuator control motor circuit',P2106:'Throttle actuator: forced limited power',P2135:'Throttle position sensors A / B voltage correlation',P2138:'Pedal position sensors D / E voltage correlation',
  U0100:'Lost communication with engine control module',U0101:'Lost communication with transmission control module',U0121:'Lost communication with ABS control module',
 };
 
 const SYSTEM:Record<string,string>={P:'Powertrain',C:'Chassis',B:'Body',U:'Network'};
 const AREA:Record<string,string>={'0':'Fuel, air and emission controls','1':'Fuel and air metering','2':'Fuel and air metering (injectors)','3':'Ignition system or misfire','4':'Auxiliary emission controls','5':'Speed, idle control and inputs','6':'Computer and output circuits','7':'Transmission','8':'Transmission','9':'Transmission','A':'Hybrid propulsion','B':'Hybrid propulsion','C':'Hybrid propulsion'};
-export function describeCode(code:string){
- const cylinder=/^P030([1-8])$/.exec(code);
- if(cylinder)return t('Cylinder {n} misfire detected',{n:cylinder[1]});
+// The standard code families (SAE J2012), built from parts so every part is translated once. A code outside every
+// family and the list above is not described at all: guessing a meaning for a code is worse than saying it is unknown.
+const FAULTS5=['circuit malfunction','range or performance problem','signal too low','signal too high','intermittent signal'];
+const SENSORS:[number,string][]=[
+ [100,'Mass air flow sensor'],[105,'Manifold pressure sensor'],[110,'Intake air temperature sensor'],[115,'Coolant temperature sensor'],
+ [120,'Throttle position sensor A'],[190,'Fuel rail pressure sensor'],[220,'Throttle position sensor B'],[335,'Crankshaft position sensor A'],[340,'Camshaft position sensor A'],
+];
+const FAULTS6=['circuit malfunction','signal too low','signal too high','slow response','no activity detected','heater circuit'];
+// [first code, bank, sensor]: six codes each, in the order of FAULTS6.
+const OXYGEN:[number,number,number][]=[[130,1,1],[136,1,2],[142,1,3],[150,2,1],[156,2,2],[162,2,3]];
+const KNOCK:[number,number][]=[[325,1],[330,2]];
+const COIL='ABCDEFGHIJKL';
+
+/** The meaning of a code from the list or its family, in the chosen language; null when the app does not know it. */
+export function codeMeaning(code:string):string|null{
+ const cylinder=/^P03(0[1-9]|1[0-2])$/.exec(code);
+ if(cylinder)return t('Cylinder {n} misfire detected',{n:Number(cylinder[1])});
  if(CODES[code])return t(CODES[code]);
+ if(!/^P0[0-9]{3}$/.test(code))return null;
+ // The digits of these codes are decimal (P0139 is followed by P0140), so the arithmetic is decimal too.
+ const n=Number(code.slice(1));
+ for(const [first,part] of SENSORS)if(n>=first&&n<first+5)return `${t(part)}: ${t(FAULTS5[n-first])}`;
+ for(const [first,bank,sensor] of OXYGEN)if(n>=first&&n<first+6)return `${t('Oxygen sensor')} (${t('bank {b}, sensor {s}',{b:bank,s:sensor})}): ${t(FAULTS6[n-first])}`;
+ for(const [first,bank] of KNOCK)if(n>=first&&n<first+4)return `${t('Knock sensor')} (${t('bank {b}',{b:bank})}): ${t(FAULTS5[n-first])}`;
+ if(n>=201&&n<=212)return t('Fuel injector circuit, cylinder {n}',{n:n-200});
+ if(n>=351&&n<=362)return t('Ignition coil {l} circuit',{l:COIL[n-351]});
+ return null;
+}
+
+export function describeCode(code:string){
+ const known=codeMeaning(code);
+ if(known)return known;
  const sys=t(SYSTEM[code[0]]||'Unknown system'),d=code[1],area=code[0]==='P'&&(d==='0'||d==='2')?AREA[code[2]]:null;
  const own=code[0]==='P'?d==='1'||(d==='3'&&code[2]<'4'):d==='1'||d==='2';
- return `${sys}${area?` · ${t(area)}`:''}${own?` · ${t('manufacturer-specific code')}`:''}`;
+ return `${t("Not in Yazzy's list")} · ${sys}${area?` · ${t(area)}`:''}${own?` · ${t('manufacturer-specific code')}`:''}`;
 }
 
 const WMI:Record<string,string>={

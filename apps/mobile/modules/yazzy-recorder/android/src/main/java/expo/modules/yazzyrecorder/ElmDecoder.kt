@@ -114,10 +114,16 @@ object ElmDecoder {
    }
    "03","07","0A"->{
     val mode=command.toInt(16)+0x40
-    // CAN replies carry a count byte first (an even total length); older protocols pad to three codes per line.
-    val codes=all.filter{it.isNotEmpty()&&it[0]==mode}.flatMap{m->val data=if(m.size%2==0)m.drop(2).take(2*(m.getOrElse(1){0})) else m.drop(1)
+    // ISO 15765-4 CAN (protocols 6 to 9) puts a count byte after the mode byte, and a short frame may be padded with
+    // zeros, so its length says nothing; older protocols send up to three codes per line with no count at all. The
+    // protocol the adapter reports decides; only before it is known does an even length stand for CAN.
+    val link=p.optString("protocol")
+    val codes=all.filter{it.isNotEmpty()&&it[0]==mode}.flatMap{m->val can=if(link.isEmpty())m.size%2==0 else link in listOf("6","7","8","9")
+     val data=if(can)m.drop(2).take(2*(m.getOrElse(1){0})) else m.drop(1)
      data.chunked(2).filter{it.size==2&&(it[0]!=0||it[1]!=0)}.map{dtc(it[0],it[1])}}.distinct()
     p.put(when(command){"03"->"stored";"07"->"pending";else->"permanent"},JSONArray(codes))
+    // The car's own words, kept so a code can be checked against another scanner.
+    p.put("codeReplies",(p.optJSONObject("codeReplies")?:JSONObject()).put(command,reply.replace('\r','\n').lines().map{it.trim()}.filter{it.isNotEmpty()}.joinToString(" | ").take(240)))
    }
   }
  }
