@@ -10,8 +10,8 @@ import {ServiceDetail,ServiceForm,ServiceRow,type ServiceFields} from '../Servic
 import {currentKm,dueOf,dueText,openReminders} from '../service';
 import {localizeService} from '../serviceTerms';
 import type {VinModel} from '../vinCar';
-import {battery12,describeCode,MONITOR,since,type CarProfile} from '../car';
-import {CodeReplies} from '../CodeReplies';
+import {battery12,MONITOR,since,type CarProfile} from '../car';
+import {CodeItem} from '../CodeItem';
 import {t,tp} from '../i18n';
 
 type Props={vehicle:any;report:CarProfile|null;onOpenCar:()=>void;findings:any[]|null;service:any[]|null;workOrders:any[]|null;trips:any[]|null;obdKm:number|null;vinModel?:VinModel|null;view:'Health'|'Service';refreshing:boolean;busy:boolean;offline:string;padBottom:number;
@@ -28,13 +28,6 @@ export function engineStatus(p:CarProfile|null){
  const read=!!p&&(p.mil!=null||p.stored!=null),listed=stored.length+pending.length+permanent.length,count=Math.max(p?.dtcCount||0,listed);
  const state:'fault'|'pending'|'ok'|'unknown'=!read?'unknown':p?.mil||stored.length||permanent.length||(p?.dtcCount||0)>0?'fault':pending.length?'pending':'ok';
  return {state,stored,pending,permanent,listed,count,light:p?.mil===true,readAt:p?.readAt};
-}
-
-function CodeRow({code,kind}:{code:string;kind:string}){
- return <View style={s.code}>
-  <View style={s.codeTag}><Text style={s.codeText}>{code}</Text></View>
-  <View style={{flex:1}}><Text style={s.codeTitle}>{describeCode(code)}</Text><Text style={ui.caption}>{t(kind)}</Text></View>
- </View>;
 }
 
 /** Evidence-backed findings, and the service history with what is planned and what is due next. */
@@ -77,13 +70,12 @@ export const HealthTab=memo(function HealthTab({vehicle,report,onOpenCar,finding
      </View>
     </View>
     <View style={{marginTop:6}}>
-     {engine.stored.map(code=><CodeRow key={code} code={code} kind="Stored"/>)}
-     {engine.pending.map(code=><CodeRow key={'n'+code} code={code} kind="Pending"/>)}
-     {engine.permanent.map(code=><CodeRow key={'p'+code} code={code} kind="Permanent"/>)}
+     {engine.stored.map(code=><CodeItem key={code} code={code}/>)}
+     {engine.pending.map(code=><CodeItem key={'n'+code} code={code} kind="Pending"/>)}
+     {engine.permanent.map(code=><CodeItem key={'p'+code} code={code} kind="Permanent"/>)}
     </View>
     {!engine.listed?<Text style={[ui.body,{marginTop:8}]}>{t('The car reports the light on, but its codes could not be listed. Open the car report to read them again.')}</Text>:null}
     {report?.distanceWithMilKm?<Text style={[ui.caption,{marginTop:8}]}>{t('Driven with the light on')}: {t('{n} km',{n:report.distanceWithMilKm})}</Text>:null}
-    <CodeReplies replies={report?.codeReplies}/>
     <View style={s.next}><Text style={[ui.body,{color:c.ink2}]}>{engine.state==='pending'?t('Not confirmed yet: the car saw this once. Watch whether the light comes on.'):t('Yazzy only reads your car; it cannot say which part failed. Have the codes checked at a workshop.')}</Text></View>
     <Button title={t('Open car report')} icon="document-text-outline" kind="light" onPress={onOpenCar} style={{marginBottom:0}}/>
    </View>:null}
@@ -185,8 +177,4 @@ const s=StyleSheet.create({
  nextLabel:{fontFamily:F[700],fontSize:12.5,color:c.amber,marginBottom:4},
  dueCard:{flexDirection:'row',alignItems:'center',gap:14},
  divider:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
- code:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:9,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
- codeTag:{backgroundColor:c.amber50,borderRadius:radius.sm,paddingVertical:5,paddingHorizontal:9},
- codeText:{fontFamily:F[700],fontSize:13,letterSpacing:0.6,color:c.amber,fontVariant:['tabular-nums']},
- codeTitle:{fontFamily:F[600],fontSize:14,color:c.ink},
 });

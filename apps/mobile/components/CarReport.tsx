@@ -9,10 +9,10 @@ import {LightSurface} from './LightSurface';
 import {CarImage} from './CarImage';
 import {exportCarPdf} from './carPdf';
 import {CarLocation} from './CarMap';
-import {battery12,boost,carSpot,describeCode,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
+import {battery12,boost,carSpot,detect,KINDS,kindIcon,makerFromVin,MONITOR,OBD_STANDARD,PROTOCOL,READINGS,readingText,since,type CarProfile,type Kind} from './car';
 import {carLine,fmt,latest} from './format';
 import type {Car} from './tabs/types';
-import {CodeReplies} from './CodeReplies';
+import {CodeItem} from './CodeItem';
 import {t,tp} from './i18n';
 
 type Props={vehicle:any;report:CarProfile|null;live:boolean;car:Car|null;onClose:()=>void;onSetKind:(k:Kind|null)=>void;onPickYear:()=>void;onEnterVin:()=>void;onPickModel:()=>void};
@@ -90,10 +90,9 @@ export function CarReport({vehicle,report,live,car,onClose,onSetKind,onPickYear,
 
     <Card title={t('Check engine')} right={<View style={[s_.lamp,{backgroundColor:p.mil?c.amber:p.mil===false?c.green:c.track}]}><Icon name={p.mil?'warning':'checkmark'} size={14} color="#fff"/></View>}>
      <Row label={t('Warning light')} value={p.mil==null?'—':p.mil?t('On'):t('Off')} tone={p.mil?'warn':undefined}/>
-     {codes.length?codes.map(code=><Code key={code} code={code} kind="Stored"/>):p.stored?<Text style={[ui.body,{marginVertical:4}]}>{t('No fault codes stored.')}</Text>:null}
-     {pending.map(code=><Code key={code} code={code} kind="Pending"/>)}
-     {permanent.map(code=><Code key={'p'+code} code={code} kind="Permanent"/>)}
-     <CodeReplies replies={p.codeReplies}/>
+     {codes.length?codes.map(code=><CodeItem key={code} code={code}/>):p.stored?<Text style={[ui.body,{marginVertical:4}]}>{t('No fault codes stored.')}</Text>:null}
+     {pending.map(code=><CodeItem key={code} code={code} kind="Pending"/>)}
+     {permanent.map(code=><CodeItem key={'p'+code} code={code} kind="Permanent"/>)}
      {p.distanceSinceClearKm!=null?<Row label={t('Driven since codes were cleared')} value={t('{n} km',{n:p.distanceSinceClearKm})}/>:null}
      {p.warmupsSinceClear!=null?<Row label={t('Warm-ups since codes were cleared')} value={String(p.warmupsSinceClear)}/>:null}
      {p.distanceWithMilKm?<Row label={t('Driven with the light on')} value={t('{n} km',{n:p.distanceWithMilKm})} tone="warn"/>:null}
@@ -149,13 +148,6 @@ function Row({label,value,note,tone,mono:isMono}:{label:string;value:string;note
   <View style={{flexShrink:1,alignItems:'flex-end'}}><Text style={[s_.rowValue,{color},isMono&&{fontFamily:mono,fontSize:13}]} selectable>{value}</Text>{note?<Text style={[ui.caption,{color:tone==='ok'?c.green:color,textAlign:'right'}]}>{note}</Text>:null}</View>
  </View>;
 }
-function Code({code,kind}:{code:string;kind:string}){
- return <View style={s_.code}>
-  <View style={s_.codeTag}><Text style={s_.codeText}>{code}</Text></View>
-  <View style={{flex:1}}><Text style={s_.codeTitle}>{describeCode(code)}</Text><Text style={ui.caption}>{t(kind)}</Text></View>
- </View>;
-}
-
 const s_=StyleSheet.create({
  page:{flex:1,backgroundColor:c.bg},
  hero:{backgroundColor:c.surface,paddingHorizontal:20,paddingBottom:24,overflow:'hidden',minHeight:250},
@@ -182,10 +174,6 @@ const s_=StyleSheet.create({
  rowLabel:{fontFamily:F[500],fontSize:14,color:c.muted,flexShrink:0,maxWidth:'55%'},
  rowValue:{fontFamily:F[700],fontSize:14,textAlign:'right',fontVariant:['tabular-nums']},
  lamp:{width:26,height:26,borderRadius:radius.sm,alignItems:'center',justifyContent:'center'},
- code:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:9,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:c.line},
- codeTag:{backgroundColor:c.amber50,borderRadius:radius.sm,paddingVertical:5,paddingHorizontal:8},
- codeText:{fontFamily:mono,fontSize:13,fontWeight:'700',color:c.amber},
- codeTitle:{fontFamily:F[600],fontSize:14,color:c.ink},
  grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:10,marginTop:4},
  tile:{width:'48.5%',backgroundColor:c.surface2,borderRadius:radius.md,padding:12},
  tileValue:{fontFamily:F[700],fontSize:16,color:c.ink,fontVariant:['tabular-nums']},

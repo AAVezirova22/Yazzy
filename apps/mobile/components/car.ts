@@ -7,7 +7,7 @@ import {t,tp} from './i18n';
 export type Monitor={id:string;complete:boolean};
 export type CarProfile={
  readAt?:number;vin?:string;/** The car's own answer when it gave no VIN (for example NO DATA). */vinReply?:string;/** The owner typed the VIN. */vinManual?:boolean;/** Which mode 09 requests (01…20) the car offers; without 02 it cannot give its VIN over OBD. */mode09?:string[];ecus?:string[];protocol?:string;obdStandard?:number;fuelType?:number;ignition?:'SPARK'|'COMPRESSION';
- mil?:boolean;dtcCount?:number;readiness?:Monitor[];stored?:string[];pending?:string[];permanent?:string[];/** The car's own reply to the code requests (03, 07, 0A), kept so a code can be checked against another scanner. */codeReplies?:Record<string,string>;
+ mil?:boolean;dtcCount?:number;readiness?:Monitor[];stored?:string[];pending?:string[];permanent?:string[];
  distanceSinceClearKm?:number;distanceWithMilKm?:number;warmupsSinceClear?:number;minutesWithMil?:number;minutesSinceClear?:number;
  odometerKm?:number;batteryVoltage?:number;supported?:string[];
  /** Production year from the engine ECU's manufacturing date (UDS 22 F18B / KWP 1A 8B), when the ECU tells it. */
@@ -87,6 +87,10 @@ const CODES:Record<string,string>={
  P0705:'Transmission range sensor circuit',P0715:'Input / turbine speed sensor circuit',P0720:'Output speed sensor circuit',P0730:'Incorrect gear ratio',P0740:'Torque converter clutch circuit',
  P2096:'Post-catalyst fuel trim too lean (bank 1)',P2097:'Post-catalyst fuel trim too rich (bank 1)',P2187:'System too lean at idle (bank 1)',P2188:'System too rich at idle (bank 1)',
  P2101:'Throttle actuator control motor circuit',P2106:'Throttle actuator: forced limited power',P2135:'Throttle position sensors A / B voltage correlation',P2138:'Pedal position sensors D / E voltage correlation',
+ P0400:'EGR flow malfunction',P0404:'EGR circuit range / performance',P0405:'EGR sensor A circuit low',P0406:'EGR sensor A circuit high',P0407:'EGR sensor B circuit low',P0408:'EGR sensor B circuit high',P0409:'EGR sensor A circuit',
+ P0444:'Evaporative purge control valve circuit open',P0445:'Evaporative purge control valve circuit shorted',P0447:'Evaporative vent control circuit open',P0448:'Evaporative vent control circuit shorted',
+ P0449:'Evaporative vent valve / solenoid circuit',P0450:'Evaporative emission pressure sensor circuit',P0451:'Evaporative emission pressure sensor range / performance',P0452:'Evaporative emission pressure sensor circuit low',
+ P0453:'Evaporative emission pressure sensor circuit high',P0454:'Evaporative emission pressure sensor intermittent',P0508:'Idle control system circuit low',P0509:'Idle control system circuit high',
  U0100:'Lost communication with engine control module',U0101:'Lost communication with transmission control module',U0121:'Lost communication with ABS control module',
 };
 

@@ -41,10 +41,6 @@ class ElmDecoderTest {
   assertEquals(listOf("P0171","P0420"),list(report("ATDPN" to "A3\r","03" to "43 01 71 00 00 00 00\r43 04 20 00 00 00 00\r"),"stored"))
   assertEquals(emptyList<Any>(),list(report("ATDPN" to "A6\r","03" to "43 00\r"),"stored"))
  }
- @Test fun theCarsOwnReplyIsKeptForChecking(){
-  val p=report("ATDPN" to "A6\r","03" to "SEARCHING...\r43 01 01 71 00 00 00\r")
-  assertEquals("SEARCHING... | 43 01 01 71 00 00 00",p.getJSONObject("codeReplies").getString("03"))
- }
  @Test fun monitorStatusGivesLampCodesIgnitionAndReadiness(){
   val p=report("0101" to "41 01 81 07 65 04\r")
   assertTrue(p.getBoolean("mil"));assertEquals(1,p.getInt("dtcCount"));assertEquals("SPARK",p.getString("ignition"))

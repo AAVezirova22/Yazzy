@@ -211,10 +211,6 @@ enum ElmDecoder {
         let data:[Int]=can ? Array(m.dropFirst(2).prefix(2*(m.count>1 ? m[1]:0))) : Array(m.dropFirst(1))
         return stride(from:0,to:data.count-1,by:2).map{(data[$0],data[$0+1])}.filter{$0.0 != 0 || $0.1 != 0}.map{dtc($0.0,$0.1)}})
       p[command=="03" ? "stored":command=="07" ? "pending":"permanent"]=codes
-      // The car's own words, kept so a code can be checked against another scanner.
-      var raw=(p["codeReplies"] as? [String:String]) ?? [:]
-      raw[command]=String(reply.replacingOccurrences(of:"\r",with:"\n").components(separatedBy:"\n").map{$0.trimmingCharacters(in:.whitespaces)}.filter{!$0.isEmpty}.joined(separator:" | ").prefix(240))
-      p["codeReplies"]=raw
     default:break
     }
   }

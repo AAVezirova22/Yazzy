@@ -122,8 +122,6 @@ object ElmDecoder {
      val data=if(can)m.drop(2).take(2*(m.getOrElse(1){0})) else m.drop(1)
      data.chunked(2).filter{it.size==2&&(it[0]!=0||it[1]!=0)}.map{dtc(it[0],it[1])}}.distinct()
     p.put(when(command){"03"->"stored";"07"->"pending";else->"permanent"},JSONArray(codes))
-    // The car's own words, kept so a code can be checked against another scanner.
-    p.put("codeReplies",(p.optJSONObject("codeReplies")?:JSONObject()).put(command,reply.replace('\r','\n').lines().map{it.trim()}.filter{it.isNotEmpty()}.joinToString(" | ").take(240)))
    }
   }
  }
